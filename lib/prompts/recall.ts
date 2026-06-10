@@ -4,7 +4,7 @@ export const RECALL_COMPRESSED = `
 THE PHILOSOPHY
 Compressed blocks contain summaries, not the original details. When you need exact code, error messages, file paths, or user instructions that were compressed, use \`recall_compressed\` to get the original messages back.
 
-Use \`recall_compressed(action: "get")\` to retrieve original messages by block ID, single message ID, or message ID range.
+Use \`recall_compressed(action: "get")\` to retrieve original messages by single message ID or message ID range.
 
 Use \`recall_compressed(action: "search")\` to search within messages for specific details. Scope the search to a block, block range, or message ID range.
 
@@ -17,7 +17,7 @@ THE FORMAT OF RECALL_COMPRESSED
 \`\`\`
 {
   action: "get" | "search",     // Required: what to do
-  blockId?: number,             // For "get" / "search": block ID (e.g. 3)
+  blockId?: number,             // For "search": block ID (e.g. 3)
   messageId?: string,           // For "get": single raw message ID (e.g. "m0005")
   messageIdStart?: string,      // For "get" / "search": message range start (e.g. "m0005")
   messageIdEnd?: string,        // For "get" / "search": message range end

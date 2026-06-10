@@ -27,7 +27,7 @@ function buildSchema() {
         blockId: tool.schema
             .number()
             .optional()
-            .describe("Block ID for 'get' or to scope 'search' to a single block"),
+            .describe("Block ID to scope 'search' (e.g. 3)"),
         messageId: tool.schema
             .string()
             .optional()
@@ -221,13 +221,7 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
     let targetIds: string[] | null = null
     let label = ""
 
-    if (input.blockId !== undefined) {
-        targetIds = collectMessageIdsForBlock(ctx, input.blockId)
-        if (targetIds === null) {
-            throw new Error(`Block ${input.blockId} not found.`)
-        }
-        label = `Block #${input.blockId}`
-    } else if (input.messageId) {
+    if (input.messageId) {
         const rawId = resolveRefToRawId(ctx, input.messageId)
         if (!rawId) {
             throw new Error(`Message ${input.messageId} not found in context.`)
@@ -238,7 +232,7 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
         targetIds = collectMessageIdsForMessageRange(ctx, messages, input.messageIdStart, input.messageIdEnd)
         label = `Messages ${input.messageIdStart} → ${input.messageIdEnd}`
     } else {
-        throw new Error("Provide a blockId, messageId, or messageIdStart/messageIdEnd to retrieve messages.")
+        throw new Error("Provide a messageId or messageIdStart/messageIdEnd to retrieve messages.")
     }
 
     if (!targetIds || targetIds.length === 0) {

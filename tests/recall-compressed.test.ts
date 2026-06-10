@@ -129,7 +129,7 @@ function toolCtx(sessionID: string, messageID: string) {
 
 // ── "get" tests ─────────────────────────────────────────────────────────────
 
-test("recall get by blockId returns original messages", async () => {
+test("recall get by messageId returns compressed message", async () => {
     const sessionID = `ses_recall_get_block_${Date.now()}`
     const rawMessages = buildMessages(sessionID)
     const state = createSessionState()
@@ -145,13 +145,13 @@ test("recall get by blockId returns original messages", async () => {
 
     const recallTool = makeRecallTool(state, rawMessages)
     const result = await recallTool.execute(
-        { action: "get", blockId: 1 },
+        { action: "get", messageId: "m0001" },
         toolCtx(sessionID, "msg-recall-1"),
     )
 
     const output = typeof result === "string" ? result : result.output
     assert.match(output, /Fix the auth bug/, "should include user message text")
-    assert.match(output, /1 message/, "block 1 covers one message in message mode")
+    assert.match(output, /1 message/, "should show 1 message")
 })
 
 test("recall get by messageId returns single message", async () => {
@@ -205,18 +205,6 @@ test("recall get by messageId range returns messages in range", async () => {
     assert.doesNotMatch(output, /Applied fix.*30m/, "should NOT include m0003")
 })
 
-test("recall get missing blockId returns error", async () => {
-    const sessionID = `ses_recall_get_missing_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-
-    const recallTool = makeRecallTool(state, rawMessages)
-    await assert.rejects(
-        () => recallTool.execute({ action: "get", blockId: 99 }, toolCtx(sessionID, "msg-recall-1")),
-        /not found|does not exist|no block/i,
-    )
-})
-
 test("recall get with no target returns error", async () => {
     const sessionID = `ses_recall_get_no_target_${Date.now()}`
     const rawMessages = buildMessages(sessionID)
@@ -225,7 +213,7 @@ test("recall get with no target returns error", async () => {
     const recallTool = makeRecallTool(state, rawMessages)
     await assert.rejects(
         () => recallTool.execute({ action: "get" }, toolCtx(sessionID, "msg-recall-1")),
-        /blockId.*messageId|provide.*target/i,
+        /messageId|provide.*target/i,
     )
 })
 
@@ -363,7 +351,7 @@ test("recall search with missing query returns error", async () => {
 
 // ── edge cases ───────────────────────────────────────────────────────────────
 
-test("recall get deactivated block still works", async () => {
+test("recall get works regardless of block active state", async () => {
     const sessionID = `ses_recall_get_inactive_${Date.now()}`
     const rawMessages = buildMessages(sessionID)
     const state = createSessionState()
@@ -383,10 +371,10 @@ test("recall get deactivated block still works", async () => {
 
     const recallTool = makeRecallTool(state, rawMessages)
     const result = await recallTool.execute(
-        { action: "get", blockId: 1 },
+        { action: "get", messageId: "m0001" },
         toolCtx(sessionID, "msg-recall-1"),
     )
 
     const output = typeof result === "string" ? result : result.output
-    assert.match(output, /Fix the auth bug/, "should retrieve from deactivated block")
+    assert.match(output, /Fix the auth bug/, "should retrieve the message regardless of block state")
 })
