@@ -77,10 +77,11 @@ function formatMessage(msg: WithParts): string {
 function resolveRefToRawId(ctx: ToolContext, ref: string): string | null {
     const rawId = ctx.state.messageIds.byRef.get(ref)
     if (rawId) return rawId
-    return ref
+    return null
 }
 
-function findMessageIndex(messages: WithParts[], rawId: string): number {
+function findMessageIndex(messages: WithParts[], rawId: string | null): number {
+    if (!rawId) return -1
     for (let i = 0; i < messages.length; i++) {
         if (messages[i]?.info.id === rawId) return i
     }
@@ -228,6 +229,9 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
         label = `Block #${input.blockId}`
     } else if (input.messageId) {
         const rawId = resolveRefToRawId(ctx, input.messageId)
+        if (!rawId) {
+            throw new Error(`Message ${input.messageId} not found in context.`)
+        }
         targetIds = [rawId]
         label = `Message ${input.messageId}`
     } else if (input.messageIdStart && input.messageIdEnd) {
@@ -237,7 +241,7 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
         throw new Error("Provide a blockId, messageId, or messageIdStart/messageIdEnd to retrieve messages.")
     }
 
-    if (targetIds.length === 0) {
+    if (!targetIds || targetIds.length === 0) {
         return `${label}: no messages found.`
     }
 
