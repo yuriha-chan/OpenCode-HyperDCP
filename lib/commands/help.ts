@@ -30,6 +30,8 @@ const TOOL_COMMANDS: Record<string, [string, string]> = {
     compress: ["/dcp compress [focus]", "Trigger manual compress tool execution"],
     decompress: ["/dcp decompress <n>", "Restore selected compression"],
     recompress: ["/dcp recompress <n>", "Re-apply a user-decompressed compression"],
+    view: ["/dcp view <n>", "View compression summary and metadata"],
+    edit: ["/dcp edit <n> [text]", "Edit a compression summary (/dcp edit <n> -a to append)"],
 }
 
 function getVisibleCommands(state: SessionState, config: PluginConfig): [string, string][] {

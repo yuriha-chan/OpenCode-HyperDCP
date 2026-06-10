@@ -27,12 +27,14 @@ import {
     applyPendingManualTrigger,
     handleContextCommand,
     handleDecompressCommand,
+    handleEditCommand,
     handleHelpCommand,
     handleManualToggleCommand,
     handleManualTriggerCommand,
     handleRecompressCommand,
     handleStatsCommand,
     handleSweepCommand,
+    handleViewCommand,
 } from "./commands"
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
@@ -266,6 +268,22 @@ export function createCommandExecuteHandler(
                     args: subArgs,
                 })
                 throw new Error("__DCP_RECOMPRESS_HANDLED__")
+            }
+
+            if (subcommand === "view") {
+                await handleViewCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_VIEW_HANDLED__")
+            }
+
+            if (subcommand === "edit") {
+                await handleEditCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_EDIT_HANDLED__")
             }
 
             await handleHelpCommand(commandCtx)
