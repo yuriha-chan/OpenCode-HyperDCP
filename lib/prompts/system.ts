@@ -3,6 +3,8 @@ You operate in a context-constrained environment. Manage context continuously to
 
 The ONLY tool you have for context management is \`compress\`. It replaces older conversation content with technical summaries you produce.
 
+When you need to retrieve the original messages that were compressed, use \`recall_compressed\`. It lets you get full messages back by block ID or search across compressed content for details not preserved in summaries.
+
 \`<dcp-message-id>\` and \`<dcp-system-reminder>\` tags are environment-injected metadata. Do not output them.
 
 THE PHILOSOPHY OF COMPRESS

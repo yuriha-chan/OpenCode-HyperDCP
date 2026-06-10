@@ -5,6 +5,7 @@ import type { Logger } from "../logger"
 import { SYSTEM as SYSTEM_PROMPT } from "./system"
 import { COMPRESS_RANGE as COMPRESS_RANGE_PROMPT } from "./compress-range"
 import { COMPRESS_MESSAGE as COMPRESS_MESSAGE_PROMPT } from "./compress-message"
+import { RECALL_COMPRESSED as RECALL_COMPRESSED_PROMPT } from "./recall"
 import { CONTEXT_LIMIT_NUDGE } from "./context-limit-nudge"
 import { TURN_NUDGE } from "./turn-nudge"
 import { ITERATION_NUDGE } from "./iteration-nudge"
@@ -14,6 +15,7 @@ export type PromptKey =
     | "system"
     | "compress-range"
     | "compress-message"
+    | "recall"
     | "context-limit-nudge"
     | "turn-nudge"
     | "iteration-nudge"
@@ -22,6 +24,7 @@ type EditablePromptField =
     | "system"
     | "compressRange"
     | "compressMessage"
+    | "recallCompressed"
     | "contextLimitNudge"
     | "turnNudge"
     | "iterationNudge"
@@ -50,6 +53,7 @@ export interface RuntimePrompts {
     system: string
     compressRange: string
     compressMessage: string
+    recallCompressed: string
     contextLimitNudge: string
     turnNudge: string
     iterationNudge: string
@@ -81,6 +85,14 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
         description: "message-mode compress tool instructions and summary constraints",
         usage: "Registered as the message-mode compress tool description",
         runtimeField: "compressMessage",
+    },
+    {
+        key: "recall",
+        fileName: "recall.md",
+        label: "Recall Compressed",
+        description: "recall_compressed tool instructions for retrieving original messages",
+        usage: "Registered as the recall_compressed tool description",
+        runtimeField: "recallCompressed",
     },
     {
         key: "context-limit-nudge",
@@ -127,6 +139,7 @@ const BUNDLED_EDITABLE_PROMPTS: Record<EditablePromptField, string> = {
     system: SYSTEM_PROMPT,
     compressRange: COMPRESS_RANGE_PROMPT,
     compressMessage: COMPRESS_MESSAGE_PROMPT,
+    recallCompressed: RECALL_COMPRESSED_PROMPT,
     contextLimitNudge: CONTEXT_LIMIT_NUDGE,
     turnNudge: TURN_NUDGE,
     iterationNudge: ITERATION_NUDGE,
@@ -142,6 +155,7 @@ function createBundledRuntimePrompts(): RuntimePrompts {
         system: BUNDLED_EDITABLE_PROMPTS.system,
         compressRange: BUNDLED_EDITABLE_PROMPTS.compressRange,
         compressMessage: BUNDLED_EDITABLE_PROMPTS.compressMessage,
+        recallCompressed: BUNDLED_EDITABLE_PROMPTS.recallCompressed,
         contextLimitNudge: BUNDLED_EDITABLE_PROMPTS.contextLimitNudge,
         turnNudge: BUNDLED_EDITABLE_PROMPTS.turnNudge,
         iterationNudge: BUNDLED_EDITABLE_PROMPTS.iterationNudge,
