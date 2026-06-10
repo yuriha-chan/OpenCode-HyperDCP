@@ -31,9 +31,12 @@ import {
     handleHelpCommand,
     handleManualToggleCommand,
     handleManualTriggerCommand,
+    handleMessagesCommand,
+    handleProtectCommand,
     handleRecompressCommand,
     handleStatsCommand,
     handleSweepCommand,
+    handleUnprotectCommand,
     handleViewCommand,
 } from "./commands"
 import { type HostPermissionSnapshot } from "./host-permissions"
@@ -284,6 +287,30 @@ export function createCommandExecuteHandler(
                     args: subArgs,
                 })
                 throw new Error("__DCP_EDIT_HANDLED__")
+            }
+
+            if (subcommand === "messages") {
+                await handleMessagesCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_MESSAGES_HANDLED__")
+            }
+
+            if (subcommand === "protect") {
+                await handleProtectCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_PROTECT_HANDLED__")
+            }
+
+            if (subcommand === "unprotect") {
+                await handleUnprotectCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_UNPROTECT_HANDLED__")
             }
 
             await handleHelpCommand(commandCtx)

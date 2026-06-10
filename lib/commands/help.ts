@@ -24,6 +24,9 @@ const BASE_COMMANDS: [string, string][] = [
     ["/dcp stats", "Show DCP pruning statistics"],
     ["/dcp sweep [n]", "Prune tools since last user message, or last n tools"],
     ["/dcp manual [on|off]", "Toggle manual mode or set explicit state"],
+    ["/dcp messages [from] [to]", "List message IDs with truncated previews"],
+    ["/dcp protect <n>", "Protect a message from compression"],
+    ["/dcp unprotect <n>", "Remove manual protection from a message"],
 ]
 
 const TOOL_COMMANDS: Record<string, [string, string]> = {

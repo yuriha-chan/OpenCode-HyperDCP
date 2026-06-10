@@ -233,6 +233,10 @@ function resolveMessage(
         throw new SoftIssue("protected", parsed.ref, "protected message")
     }
 
+    if (state.protectedRefs.has(parsed.ref)) {
+        throw new SoftIssue("protected", parsed.ref, "protected message")
+    }
+
     const pruneEntry = state.prune.messages.byMessageId.get(messageId)
     if (pruneEntry && pruneEntry.activeBlockIds.length > 0) {
         throw new SoftIssue("already-compressed", parsed.ref, "already compressed")
