@@ -298,3 +298,126 @@ test("isContextOverLimits does not extend the max threshold when summaryBuffer i
 
     assert.equal(overLimit.overMaxLimit, true)
 })
+
+test("isContextOverLimits returns overNonCompressedLimit false when config is undefined", () => {
+    const messages = buildCompactedMessages()
+    messages.push(buildPostCompactionAssistantMessage())
+
+    const state = createSessionState()
+    state.lastCompaction = 2
+
+    const config = buildConfig(100000, 1)
+
+    const result = isContextOverLimits(config, state, undefined, undefined, messages)
+
+    assert.equal(result.overNonCompressedLimit, false)
+})
+
+test("isContextOverLimits returns overNonCompressedLimit true when non-compressed tokens exceed absolute limit", () => {
+    const sessionID = "ses_ncl_absolute"
+    const messages: WithParts[] = [
+        {
+            info: { id: "msg-1", role: "user", sessionID, agent: "assistant", time: { created: 1 } } as WithParts["info"],
+            parts: [textPart("msg-1", sessionID, "p-1", repeatedWord("content", 100))],
+        },
+        {
+            info: { id: "msg-2", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 2 },
+                tokens: { input: 0, output: 500, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            } as WithParts["info"],
+            parts: [textPart("msg-2", sessionID, "p-2", repeatedWord("response", 100))],
+        },
+    ]
+
+    const state = createSessionState()
+    const config = buildConfig(100000, 50000)
+    config.compress.nonCompressedContextLimit = 100
+
+    const result = isContextOverLimits(config, state, undefined, undefined, messages)
+
+    assert.equal(result.overNonCompressedLimit, true)
+})
+
+test("isContextOverLimits returns overNonCompressedLimit false when under limit", () => {
+    const sessionID = "ses_ncl_under"
+    const messages: WithParts[] = [
+        {
+            info: { id: "msg-1", role: "user", sessionID, agent: "assistant", time: { created: 1 } } as WithParts["info"],
+            parts: [textPart("msg-1", sessionID, "p-1", "short message")],
+        },
+        {
+            info: { id: "msg-2", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 2 },
+                tokens: { input: 0, output: 5, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            } as WithParts["info"],
+            parts: [textPart("msg-2", sessionID, "p-2", "ok")],
+        },
+    ]
+
+    const state = createSessionState()
+    const config = buildConfig(100000, 50000)
+    config.compress.nonCompressedContextLimit = 100000
+
+    const result = isContextOverLimits(config, state, undefined, undefined, messages)
+
+    assert.equal(result.overNonCompressedLimit, false)
+})
+
+test("isContextOverLimits excludes synthetic summary messages from non-compressed count", () => {
+    const sessionID = "ses_ncl_exclude"
+    const messages: WithParts[] = [
+        {
+            info: { id: "msg-1", role: "user", sessionID, agent: "assistant", time: { created: 1 } } as WithParts["info"],
+            parts: [textPart("msg-1", sessionID, "p-1", "short message")],
+        },
+        {
+            info: { id: "msg_dcp_summary_a1b2c3d4e5f6g7h8", role: "user", sessionID, agent: "assistant",
+                time: { created: 2 },
+            } as WithParts["info"],
+            parts: [textPart("msg_dcp_summary_a1b2c3d4e5f6g7h8", sessionID, "p-s", repeatedWord("summary", 200))],
+        },
+        {
+            info: { id: "msg-3", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 3 },
+                tokens: { input: 0, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            } as WithParts["info"],
+            parts: [textPart("msg-3", sessionID, "p-3", "ok")],
+        },
+    ]
+
+    const state = createSessionState()
+    const config = buildConfig(100000, 50000)
+    config.compress.nonCompressedContextLimit = 100
+
+    const result = isContextOverLimits(config, state, undefined, undefined, messages)
+
+    assert.equal(result.overNonCompressedLimit, false,
+        "synthetic summary message should be excluded, so non-compressed count should be low")
+})
+
+test("isContextOverLimits supports percentage-based nonCompressedContextLimit", () => {
+    const sessionID = "ses_ncl_pct"
+    const messages: WithParts[] = [
+        {
+            info: { id: "msg-1", role: "user", sessionID, agent: "assistant", time: { created: 1 } } as WithParts["info"],
+            parts: [textPart("msg-1", sessionID, "p-1", repeatedWord("content", 50))],
+        },
+        {
+            info: { id: "msg-2", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 2 },
+                tokens: { input: 0, output: 100, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            } as WithParts["info"],
+            parts: [textPart("msg-2", sessionID, "p-2", repeatedWord("response", 50))],
+        },
+    ]
+
+    const state = createSessionState()
+    state.modelContextLimit = 100000
+    const config = buildConfig(100000, 50000)
+    config.compress.nonCompressedContextLimit = "0.1%"
+
+    const result = isContextOverLimits(config, state, undefined, undefined, messages)
+
+    assert.equal(result.overNonCompressedLimit, true,
+        "0.1% of 100000 = 100, non-compressed tokens (~200) should exceed this")
+})

@@ -28,6 +28,7 @@ export interface CompressConfig {
     protectTags: boolean
     protectUserMessages: boolean
     maxToolOutputChars: number
+    nonCompressedContextLimit?: number | `${number}%`
 }
 
 export interface Commands {
@@ -128,6 +129,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.protectTags",
     "compress.protectUserMessages",
     "compress.maxToolOutputChars",
+    "compress.nonCompressedContextLimit",
     "strategies",
     "strategies.deduplication",
     "strategies.deduplication.enabled",
@@ -457,6 +459,18 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
             }
 
             if (
+                compress.nonCompressedContextLimit !== undefined &&
+                typeof compress.nonCompressedContextLimit !== "number" &&
+                !(typeof compress.nonCompressedContextLimit === "string" && compress.nonCompressedContextLimit.endsWith("%"))
+            ) {
+                errors.push({
+                    key: "compress.nonCompressedContextLimit",
+                    expected: "number or percentage string",
+                    actual: typeof compress.nonCompressedContextLimit,
+                })
+            }
+
+            if (
                 typeof compress.iterationNudgeThreshold === "number" &&
                 compress.iterationNudgeThreshold < 1
             ) {
@@ -703,6 +717,7 @@ const defaultConfig: PluginConfig = {
         protectTags: false,
         protectUserMessages: false,
         maxToolOutputChars: 0,
+        nonCompressedContextLimit: undefined,
     },
     strategies: {
         deduplication: {
@@ -870,6 +885,7 @@ function mergeCompress(
         protectTags: override.protectTags ?? base.protectTags,
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
         maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,
+        nonCompressedContextLimit: override.nonCompressedContextLimit ?? base.nonCompressedContextLimit,
     }
 }
 

@@ -60,7 +60,7 @@ export const injectCompressNudges = (
     const { providerId, modelId } = getModelInfo(messages)
     let anchorsChanged = false
 
-    const { overMaxLimit, overMinLimit } = isContextOverLimits(
+    const { overMaxLimit, overMinLimit, overNonCompressedLimit } = isContextOverLimits(
         config,
         state,
         providerId,
@@ -68,7 +68,7 @@ export const injectCompressNudges = (
         messages,
     )
 
-    if (!overMinLimit) {
+    if (!overMinLimit && !overNonCompressedLimit) {
         const hadTurnAnchors = state.nudges.turnNudgeAnchors.size > 0
         const hadIterationAnchors = state.nudges.iterationNudgeAnchors.size > 0
 
@@ -93,7 +93,7 @@ export const injectCompressNudges = (
                 anchorsChanged = true
             }
         }
-    } else if (overMinLimit) {
+    } else if (overMinLimit || overNonCompressedLimit) {
         const isLastMessageUser = lastMessage?.message.info.role === "user"
 
         if (isLastMessageUser && lastAssistantMessage) {

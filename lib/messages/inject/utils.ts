@@ -19,7 +19,7 @@ import {
     hasContent,
 } from "../utils"
 import { getLastUserMessage, isIgnoredUserMessage } from "../query"
-import { getCurrentTokenUsage } from "../../token-utils"
+import { countAllMessageTokens, getCurrentTokenUsage } from "../../token-utils"
 import { getActiveSummaryTokenUsage } from "../../state/utils"
 
 const MESSAGE_MODE_NUDGE_PRIORITY: MessagePriority = "high"
@@ -129,6 +129,32 @@ function resolveContextTokenLimit(
     return parseLimitValue(globalLimit)
 }
 
+function resolveContextTokenLimitNonCompressed(
+    config: PluginConfig,
+    state: SessionState,
+): number | undefined {
+    const limit = config.compress.nonCompressedContextLimit
+    if (limit === undefined) return undefined
+
+    if (typeof limit === "number") return limit
+
+    if (!limit.endsWith("%") || state.modelContextLimit === undefined) return undefined
+    const parsedPercent = parseFloat(limit.slice(0, -1))
+    if (isNaN(parsedPercent)) return undefined
+
+    const clampedPercent = Math.max(0, Math.min(100, Math.round(parsedPercent)))
+    return Math.round((clampedPercent / 100) * state.modelContextLimit)
+}
+
+function countNonCompressedMessageTokens(messages: WithParts[]): number {
+    let total = 0
+    for (const msg of messages) {
+        if (msg.info.id.startsWith("msg_dcp_summary_")) continue
+        total += countAllMessageTokens(msg)
+    }
+    return total
+}
+
 export function isContextOverLimits(
     config: PluginConfig,
     state: SessionState,
@@ -153,12 +179,19 @@ export function isContextOverLimits(
     const minContextLimit = resolveContextTokenLimit(config, state, providerId, modelId, "min")
     const currentTokens = getCurrentTokenUsage(state, messages)
 
+    const nonCompressedContextLimit = resolveContextTokenLimitNonCompressed(config, state)
+    const nonCompressedTokens = nonCompressedContextLimit !== undefined
+        ? countNonCompressedMessageTokens(messages)
+        : 0
+
     const overMaxLimit = maxContextLimit === undefined ? false : currentTokens > maxContextLimit
     const overMinLimit = minContextLimit === undefined ? true : currentTokens >= minContextLimit
+    const overNonCompressedLimit = nonCompressedContextLimit !== undefined && nonCompressedTokens > nonCompressedContextLimit
 
     return {
         overMaxLimit,
         overMinLimit,
+        overNonCompressedLimit,
     }
 }
 
