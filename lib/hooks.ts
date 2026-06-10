@@ -15,6 +15,7 @@ import {
     syncCompressionBlocks,
     truncateToolOutputs,
 } from "./messages"
+import { getLastUserMessage } from "./messages/query"
 import { renderSystemPrompt, type PromptStore } from "./prompts"
 import { buildProtectedToolsExtension } from "./prompts/extensions/system"
 import {
@@ -185,10 +186,12 @@ export function createCommandExecuteHandler(
             })
             const messages = filterMessages(messagesResponse.data || messagesResponse)
 
+            const detectedSessionId = getLastUserMessage(messages)?.info.sessionID || input.sessionID
+
             await ensureSessionInitialized(
                 client,
                 state,
-                input.sessionID,
+                detectedSessionId,
                 logger,
                 messages,
                 config.manualMode.enabled,
