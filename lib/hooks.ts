@@ -13,6 +13,7 @@ import {
     stripHallucinationsFromString,
     stripStaleMetadata,
     syncCompressionBlocks,
+    truncateToolOutputs,
 } from "./messages"
 import { renderSystemPrompt, type PromptStore } from "./prompts"
 import { buildProtectedToolsExtension } from "./prompts/extensions/system"
@@ -128,6 +129,7 @@ export function createChatMessageTransformHandler(
         }
 
         stripHallucinations(output.messages)
+        truncateToolOutputs(config, output.messages)
         cacheSystemPromptTokens(state, output.messages)
         assignMessageRefs(state, output.messages)
         syncCompressionBlocks(state, logger, output.messages)

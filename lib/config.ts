@@ -27,6 +27,7 @@ export interface CompressConfig {
     protectedTools: string[]
     protectTags: boolean
     protectUserMessages: boolean
+    maxToolOutputChars: number
 }
 
 export interface Commands {
@@ -126,6 +127,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.protectedTools",
     "compress.protectTags",
     "compress.protectUserMessages",
+    "compress.maxToolOutputChars",
     "strategies",
     "strategies.deduplication",
     "strategies.deduplication.enabled",
@@ -444,6 +446,17 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
             }
 
             if (
+                compress.maxToolOutputChars !== undefined &&
+                typeof compress.maxToolOutputChars !== "number"
+            ) {
+                errors.push({
+                    key: "compress.maxToolOutputChars",
+                    expected: "number",
+                    actual: typeof compress.maxToolOutputChars,
+                })
+            }
+
+            if (
                 typeof compress.iterationNudgeThreshold === "number" &&
                 compress.iterationNudgeThreshold < 1
             ) {
@@ -689,6 +702,7 @@ const defaultConfig: PluginConfig = {
         protectedTools: [...COMPRESS_DEFAULT_PROTECTED_TOOLS],
         protectTags: false,
         protectUserMessages: false,
+        maxToolOutputChars: 0,
     },
     strategies: {
         deduplication: {
@@ -855,6 +869,7 @@ function mergeCompress(
         protectedTools: [...new Set([...base.protectedTools, ...(override.protectedTools ?? [])])],
         protectTags: override.protectTags ?? base.protectTags,
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
+        maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,
     }
 }
 

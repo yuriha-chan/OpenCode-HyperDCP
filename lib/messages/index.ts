@@ -1,5 +1,6 @@
 export { prune } from "./prune"
 export { syncCompressionBlocks } from "./sync"
+export { truncateToolOutputs } from "./truncate-tools"
 export { injectCompressNudges } from "./inject/inject"
 export { injectMessageIds } from "./inject/inject"
 export { injectExtendedSubAgentResults } from "./inject/subagent-results"
