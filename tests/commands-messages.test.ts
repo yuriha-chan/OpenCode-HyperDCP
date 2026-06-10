@@ -182,3 +182,57 @@ test("/dcp messages marks protected messages", async () => {
     const output = ignoredMessages.pop() || ""
     assert.match(output, /P assistant/, "should show P status for protected message")
 })
+
+test("/dcp messages shows filename for read/edit and command for bash", async () => {
+    const sessionID = `ses_msgs_toolpreview_${Date.now()}`
+    const rawMessages: WithParts[] = [
+        {
+            info: { id: "raw-1", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 1 } } as WithParts["info"],
+            parts: [{
+                id: "p-1", messageID: "raw-1", sessionID,
+                type: "tool" as const, tool: "read", callID: "c1",
+                state: { status: "completed" as const, input: { filePath: "/src/auth.ts" }, output: "..." },
+            }],
+        },
+        {
+            info: { id: "raw-2", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 2 } } as WithParts["info"],
+            parts: [{
+                id: "p-2", messageID: "raw-2", sessionID,
+                type: "tool" as const, tool: "bash", callID: "c2",
+                state: { status: "completed" as const, input: { command: "npm test" }, output: "..." },
+            }],
+        },
+        {
+            info: { id: "raw-3", role: "assistant", sessionID, agent: "assistant",
+                time: { created: 3 } } as WithParts["info"],
+            parts: [{
+                id: "p-3", messageID: "raw-3", sessionID,
+                type: "tool" as const, tool: "edit", callID: "c3",
+                state: { status: "completed" as const, input: { filePath: "/src/index.ts" }, output: "..." },
+            }],
+        },
+    ]
+    const state = setupState(rawMessages)
+    const logger = new Logger(false)
+    const ignoredMessages: string[] = []
+
+    const client = {
+        session: {
+            messages: async () => ({ data: rawMessages }),
+            prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
+                ignoredMessages.push(body.parts[0]?.text || "")
+            },
+        },
+    }
+
+    await handleMessagesCommand({
+        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+    })
+
+    const output = ignoredMessages.pop() || ""
+    assert.match(output, /\[read \/src\/auth\.ts\]/, "should show read filename")
+    assert.match(output, /\[bash npm test\]/, "should show bash command")
+    assert.match(output, /\[edit \/src\/index\.ts\]/, "should show edit filename")
+})

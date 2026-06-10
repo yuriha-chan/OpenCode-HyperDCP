@@ -1,6 +1,6 @@
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { parseMessageRef } from "../message-ids"
+import { assignMessageRefs, parseMessageRef } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/query"
 import { getCurrentParams } from "../token-utils"
 import { sendIgnoredMessage } from "../ui/notification"
@@ -16,6 +16,24 @@ export interface MessagesCommandContext {
 
 const TRUNCATE_LENGTH = 80
 
+function toolPreview(part: any): string {
+    const toolName = part.tool || "tool"
+    const input = part.state?.input
+
+    if (toolName === "read" && input?.filePath) {
+        return `[read ${input.filePath}]`
+    }
+    if ((toolName === "edit" || toolName === "write") && input?.filePath) {
+        return `[${toolName} ${input.filePath}]`
+    }
+    if (toolName === "bash" && input?.command) {
+        const cmd = String(input.command).replace(/\s+/g, " ").trim()
+        if (cmd.length > 50) return `[bash ${cmd.slice(0, 47)}...]`
+        return `[bash ${cmd}]`
+    }
+    return `[${toolName}]`
+}
+
 function extractPreview(message: WithParts): string {
     const parts = Array.isArray(message.parts) ? message.parts : []
     for (const part of parts) {
@@ -27,7 +45,7 @@ function extractPreview(message: WithParts): string {
             return text
         }
         if (part.type === "tool" && (part as any).tool) {
-            return `[tool:${(part as any).tool}]`
+            return toolPreview(part)
         }
     }
     return "(empty)"
@@ -41,6 +59,8 @@ function isCompressed(state: SessionState, rawId: string): boolean {
 export async function handleMessagesCommand(ctx: MessagesCommandContext): Promise<void> {
     const { client, state, logger, sessionId, messages, args } = ctx
     const params = getCurrentParams(state, messages, logger)
+
+    assignMessageRefs(state, messages)
 
     const visibleMessages = messages.filter((m) => !isIgnoredUserMessage(m))
 
