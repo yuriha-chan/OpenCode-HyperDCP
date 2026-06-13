@@ -4,6 +4,7 @@ import { assignMessageRefs, parseMessageRef } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/query"
 import { getCurrentParams } from "../token-utils"
 import { sendIgnoredMessage } from "../ui/notification"
+import { syncCompressionBlocks } from "../messages"
 
 export interface MessagesCommandContext {
     client: any
@@ -61,6 +62,7 @@ export async function handleMessagesCommand(ctx: MessagesCommandContext): Promis
     const params = getCurrentParams(state, messages, logger)
 
     assignMessageRefs(state, messages)
+    syncCompressionBlocks(state, logger, messages)
 
     const visibleMessages = messages.filter((m) => !isIgnoredUserMessage(m))
 
