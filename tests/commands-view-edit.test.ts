@@ -338,7 +338,7 @@ test("/dcp view with valid block ID shows full summary and metadata", async () =
     assert.match(output, /Detailed analysis of the auth module/, "should show summary text")
     assert.match(output, /Multiple findings documented/, "should show all summary content")
     assert.match(output, /1\.2K/, "should show compressed tokens")
-    assert.match(output, /45/, "should show summary tokens")
+    assert.match(output, /18/, "should show summary tokens")
     assert.match(output, /active/, "should show active status")
     assert.match(output, /range/, "should show mode")
 })

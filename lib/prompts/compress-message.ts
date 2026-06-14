@@ -10,6 +10,11 @@ Directly quote short user instructions when that best preserves exact meaning.
 Yet be LEAN. Strip away the noise: failed attempts that led nowhere, verbose tool output, and repetition. What remains should be pure signal - golden nuggets of detail that preserve full understanding with zero ambiguity.
 If a message contains no significant technical decisions, code changes, or user requirements, produce a minimal one-line summary rather than a detailed one.
 
+EXPANDING EXISTING BLOCKS
+When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary + save_summary instead of creating a new block. This keeps the topic in one coherent summary.
+
+When the conversation shifts to a NEW topic or task, create a separate block for that topic. Multiple independent topics -> multiple blocks.
+
 MESSAGE IDS
 You specify individual raw messages by ID using the injected IDs visible in the conversation:
 

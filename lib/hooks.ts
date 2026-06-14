@@ -36,11 +36,14 @@ import {
     handleMessagesCommand,
     handleProtectCommand,
     handleRecompressCommand,
+    handleRewriteCommand,
     handleStatsCommand,
     handleSweepCommand,
+    handleToggleCommand,
     handleUnprotectCommand,
     handleViewCommand,
 } from "./commands"
+import { autoSavePendingBuffers } from "./expand-block"
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
 import { checkSession, ensureSessionInitialized, saveSessionState, syncToolCache } from "./state"
@@ -137,6 +140,7 @@ export function createChatMessageTransformHandler(
         syncToolCache(state, config, logger, output.messages)
         buildToolIdList(state, output.messages)
         prune(state, logger, config, output.messages)
+        autoSavePendingBuffers(state, logger)
         await injectExtendedSubAgentResults(
             client,
             state,
@@ -316,6 +320,37 @@ export function createCommandExecuteHandler(
                     args: subArgs,
                 })
                 throw new Error("__DCP_UNPROTECT_HANDLED__")
+            }
+
+            if (subcommand === "rewrite") {
+                const prompt = await handleRewriteCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                if (!prompt) {
+                    throw new Error("__DCP_REWRITE_BLOCKED__")
+                }
+
+                state.manualMode = "compress-pending"
+                state.pendingManualTrigger = {
+                    sessionId: input.sessionID,
+                    prompt,
+                }
+                const rawArgs = (input.arguments || "").trim()
+                output.parts.length = 0
+                output.parts.push({
+                    type: "text",
+                    text: rawArgs ? `/dcp ${rawArgs}` : `/dcp ${subcommand}`,
+                })
+                return
+            }
+
+            if (subcommand === "toggle") {
+                await handleToggleCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                throw new Error("__DCP_TOGGLE_HANDLED__")
             }
 
             await handleHelpCommand(commandCtx)

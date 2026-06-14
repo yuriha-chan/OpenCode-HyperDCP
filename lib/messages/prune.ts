@@ -179,7 +179,22 @@ const filterCompressedRanges = (
         const summary =
             blockId !== undefined ? state.prune.messages.blocksById.get(blockId) : undefined
         if (summary) {
-            const rawSummaryContent = (summary as { summary?: unknown }).summary
+            const versionIndex =
+                typeof summary.activeVersionIndex === "number" ? summary.activeVersionIndex : 1
+            let rawSummaryContent: string
+
+            if (versionIndex === 0) {
+                rawSummaryContent = "" // disabled
+            } else if (
+                versionIndex >= 2 &&
+                Array.isArray(summary.summaryVersions) &&
+                versionIndex - 2 < summary.summaryVersions.length
+            ) {
+                rawSummaryContent = summary.summaryVersions[versionIndex - 2]
+            } else {
+                rawSummaryContent = (summary as { summary?: string }).summary ?? ""
+            }
+
             if (
                 summary.active !== true ||
                 typeof rawSummaryContent !== "string" ||

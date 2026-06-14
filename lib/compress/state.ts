@@ -67,6 +67,7 @@ export function applyCompressionState(
     blockId: number,
     summary: string,
     consumedBlockIds: number[],
+    preExistingActiveMessages?: Set<string>,
 ): AppliedCompressionResult {
     const messagesState = state.prune.messages
     const consumed = [...new Set(consumedBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
@@ -88,13 +89,18 @@ export function applyCompressionState(
         }
     }
 
-    const initiallyActiveMessages = new Set<string>()
-    for (const messageId of effectiveMessageIds) {
-        const entry = messagesState.byMessageId.get(messageId)
-        if (entry && entry.activeBlockIds.length > 0) {
-            initiallyActiveMessages.add(messageId)
-        }
-    }
+    const initiallyActiveMessages =
+        preExistingActiveMessages ??
+        (() => {
+            const s = new Set<string>()
+            for (const messageId of effectiveMessageIds) {
+                const entry = messagesState.byMessageId.get(messageId)
+                if (entry && entry.activeBlockIds.length > 0) {
+                    s.add(messageId)
+                }
+            }
+            return s
+        })()
 
     const initiallyActiveToolIds = new Set<string>()
     for (const activeBlockId of messagesState.activeBlockIds) {
@@ -134,6 +140,8 @@ export function applyCompressionState(
         effectiveToolIds: [...effectiveToolIds],
         createdAt,
         summary,
+        summaryVersions: [],
+        activeVersionIndex: 1,
     }
 
     messagesState.blocksById.set(blockId, block)
@@ -228,16 +236,13 @@ export function applyCompressionState(
 
     let compressedTokens = 0
     const newlyCompressedMessageIds: string[] = []
-    for (const messageId of effectiveMessageIds) {
+    for (const messageId of selection.messageIds) {
         const entry = messagesState.byMessageId.get(messageId)
         if (!entry) {
             continue
         }
 
-        const isNowActive = entry.activeBlockIds.length > 0
-        const wasActive = initiallyActiveMessages.has(messageId)
-
-        if (isNowActive && !wasActive) {
+        if (entry.activeBlockIds.length > 0) {
             compressedTokens += entry.tokenCount
             newlyCompressedMessageIds.push(messageId)
         }

@@ -243,6 +243,14 @@ export function loadPruneMessagesState(
                         ? block.deactivatedByBlockId
                         : undefined,
                 summary: typeof block.summary === "string" ? block.summary : "",
+                summaryVersions: Array.isArray(block.summaryVersions)
+                    ? block.summaryVersions.filter((v): v is string => typeof v === "string")
+                    : [],
+                activeVersionIndex:
+                    typeof block.activeVersionIndex === "number" &&
+                    Number.isInteger(block.activeVersionIndex)
+                        ? block.activeVersionIndex
+                        : 1,
             })
         }
     }

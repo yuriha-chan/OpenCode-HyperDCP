@@ -9,6 +9,11 @@ Directly quote user messages when they are short enough to include safely. Direc
 
 Yet be LEAN. Strip away the noise: failed attempts that led nowhere, verbose tool outputs, back-and-forth exploration. What remains should be pure signal - golden nuggets of detail that preserve full understanding with zero ambiguity.
 
+EXPANDING EXISTING BLOCKS
+When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary + save_summary instead of creating a new block. This keeps the topic in one coherent summary.
+
+When the conversation shifts to a NEW topic or task, create a separate block for that topic. Multiple independent topics -> multiple blocks.
+
 COMPRESSED BLOCK PLACEHOLDERS
 When the selected range includes previously compressed blocks, use this exact placeholder format when referencing one:
 
@@ -44,7 +49,7 @@ You specify boundaries by ID using the injected IDs visible in the conversation:
 - \`mNNNN\` IDs identify raw messages
 - \`bN\` IDs identify previously compressed blocks
 
-Each message has an ID inside XML metadata tags like \`<dcp-message-id>...</dcp-message-id>\`.
+Each message has an ID inside XML metadata tags like \`\`.
 The same ID tag appears in every tool output of the message it belongs to — each unique ID identifies one complete message.
 Treat these tags as boundary metadata only, not as tool result content.
 

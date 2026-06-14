@@ -4,7 +4,8 @@ import { syncCompressionBlocks } from "../messages"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
 import { sendIgnoredMessage } from "../ui/notification"
-import { formatTokenCount } from "../ui/utils"
+import { formatTokenCount, truncate } from "../ui/utils"
+import { countTokens } from "../token-utils"
 import {
     getActiveCompressionTargets,
     resolveCompressionTarget,
@@ -41,6 +42,19 @@ function statusLabel(block: CompressionBlock): string {
     return "inactive"
 }
 
+function activeSummaryTokens(block: CompressionBlock): number {
+    const idx = typeof block.activeVersionIndex === "number" ? block.activeVersionIndex : 1
+    if (idx === 0) return 0
+    if (
+        idx >= 2 &&
+        Array.isArray(block.summaryVersions) &&
+        idx - 2 < block.summaryVersions.length
+    ) {
+        return countTokens(block.summaryVersions[idx - 2])
+    }
+    return countTokens(block.summary)
+}
+
 function formatBlockDetail(block: CompressionBlock, index?: number): string {
     const lines: string[] = []
     const header = index !== undefined ? `Block #${block.blockId} (${index + 1})` : `Block #${block.blockId}`
@@ -52,7 +66,7 @@ function formatBlockDetail(block: CompressionBlock, index?: number): string {
     if (block.batchTopic) {
         lines.push(`  Batch:     ${block.batchTopic}`)
     }
-    lines.push(`  Tokens:    ${formatTokenCount(block.compressedTokens)} compressed, ${formatTokenCount(block.summaryTokens)} summary`)
+    lines.push(`  Tokens:    ${formatTokenCount(block.compressedTokens)} compressed, ${formatTokenCount(activeSummaryTokens(block))} summary`)
     lines.push(`  Duration:  ${block.durationMs}ms`)
     if (block.parentBlockIds.length > 0) {
         const parentLabels = block.parentBlockIds.map((id) => String(id)).join(", ")
@@ -112,8 +126,9 @@ function formatListView(targets: CompressionTarget[]): string {
 
         const status = statusLabel(block)
         const tokenLabel = formatTokenCount(target.compressedTokens)
-        lines.push(`  ${target.displayId} (${tokenLabel})  ${block.mode}  ${status}  ${target.topic}`)
-        lines.push(block.summary)
+        const summaryLabel = formatTokenCount(activeSummaryTokens(block))
+        lines.push(`  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`)
+        lines.push(`    ${truncate(block.summary, 160)}`)
         lines.push("")
     }
 

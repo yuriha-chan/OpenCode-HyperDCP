@@ -103,6 +103,12 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
             }
 
             const runId = allocateRunId(ctx.state)
+            const preExistingActiveMessages = new Set<string>()
+            for (const [msgId, entry] of ctx.state.prune.messages.byMessageId) {
+                if (entry.activeBlockIds.length > 0) {
+                    preExistingActiveMessages.add(msgId)
+                }
+            }
 
             for (const { plan, summaryWithTools } of preparedPlans) {
                 const blockId = allocateBlockId(ctx.state)
@@ -127,6 +133,7 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
                     blockId,
                     storedSummary,
                     [],
+                    preExistingActiveMessages,
                 )
 
                 notifications.push({

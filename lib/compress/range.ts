@@ -148,6 +148,12 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
             }
 
             const runId = allocateRunId(ctx.state)
+            const preExistingActiveMessages = new Set<string>()
+            for (const [msgId, entry] of ctx.state.prune.messages.byMessageId) {
+                if (entry.activeBlockIds.length > 0) {
+                    preExistingActiveMessages.add(msgId)
+                }
+            }
 
             for (const preparedPlan of preparedPlans) {
                 const blockId = allocateBlockId(ctx.state)
@@ -172,6 +178,7 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
                     blockId,
                     storedSummary,
                     preparedPlan.consumedBlockIds,
+                    preExistingActiveMessages,
                 )
 
                 totalCompressedMessages += applied.messageIds.length

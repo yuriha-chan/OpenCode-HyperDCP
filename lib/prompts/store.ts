@@ -6,6 +6,7 @@ import { SYSTEM as SYSTEM_PROMPT } from "./system"
 import { COMPRESS_RANGE as COMPRESS_RANGE_PROMPT } from "./compress-range"
 import { COMPRESS_MESSAGE as COMPRESS_MESSAGE_PROMPT } from "./compress-message"
 import { RECALL_COMPRESSED as RECALL_COMPRESSED_PROMPT } from "./recall"
+import { REWRITE_SUMMARY as REWRITE_SUMMARY_PROMPT } from "./rewrite-summary"
 import { CONTEXT_LIMIT_NUDGE } from "./context-limit-nudge"
 import { TURN_NUDGE } from "./turn-nudge"
 import { ITERATION_NUDGE } from "./iteration-nudge"
@@ -16,6 +17,7 @@ export type PromptKey =
     | "compress-range"
     | "compress-message"
     | "recall"
+    | "rewrite-summary"
     | "context-limit-nudge"
     | "turn-nudge"
     | "iteration-nudge"
@@ -25,6 +27,7 @@ type EditablePromptField =
     | "compressRange"
     | "compressMessage"
     | "recallCompressed"
+    | "rewriteSummary"
     | "contextLimitNudge"
     | "turnNudge"
     | "iterationNudge"
@@ -54,6 +57,7 @@ export interface RuntimePrompts {
     compressRange: string
     compressMessage: string
     recallCompressed: string
+    rewriteSummary: string
     contextLimitNudge: string
     turnNudge: string
     iterationNudge: string
@@ -93,6 +97,14 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
         description: "recall_compressed tool instructions for retrieving original messages",
         usage: "Registered as the recall_compressed tool description",
         runtimeField: "recallCompressed",
+    },
+    {
+        key: "rewrite-summary",
+        fileName: "rewrite-summary.md",
+        label: "Rewrite Summary",
+        description: "rewrite_summary tool instructions for saving a rewritten compression summary",
+        usage: "Registered as the rewrite_summary tool description",
+        runtimeField: "rewriteSummary",
     },
     {
         key: "context-limit-nudge",
@@ -140,6 +152,7 @@ const BUNDLED_EDITABLE_PROMPTS: Record<EditablePromptField, string> = {
     compressRange: COMPRESS_RANGE_PROMPT,
     compressMessage: COMPRESS_MESSAGE_PROMPT,
     recallCompressed: RECALL_COMPRESSED_PROMPT,
+    rewriteSummary: REWRITE_SUMMARY_PROMPT,
     contextLimitNudge: CONTEXT_LIMIT_NUDGE,
     turnNudge: TURN_NUDGE,
     iterationNudge: ITERATION_NUDGE,
@@ -156,6 +169,7 @@ function createBundledRuntimePrompts(): RuntimePrompts {
         compressRange: BUNDLED_EDITABLE_PROMPTS.compressRange,
         compressMessage: BUNDLED_EDITABLE_PROMPTS.compressMessage,
         recallCompressed: BUNDLED_EDITABLE_PROMPTS.recallCompressed,
+        rewriteSummary: BUNDLED_EDITABLE_PROMPTS.rewriteSummary,
         contextLimitNudge: BUNDLED_EDITABLE_PROMPTS.contextLimitNudge,
         turnNudge: BUNDLED_EDITABLE_PROMPTS.turnNudge,
         iterationNudge: BUNDLED_EDITABLE_PROMPTS.iterationNudge,

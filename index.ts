@@ -2,6 +2,14 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { getConfig } from "./lib/config"
 import { createCompressMessageTool, createCompressRangeTool } from "./lib/compress"
 import { createRecallCompressedTool } from "./lib/recall"
+import { createRewriteSummaryTool } from "./lib/rewrite-summary"
+import {
+    createExpandBlockTool,
+    createEditSummaryTool,
+    createAppendSummaryTool,
+    createSaveSummaryTool,
+    autoSavePendingBuffers,
+} from "./lib/expand-block"
 import {
     compressDisabledByOpencode,
     hasExplicitToolPermission,
@@ -86,6 +94,11 @@ const server: Plugin = (async (ctx) => {
                         ? createCompressMessageTool(compressToolContext)
                         : createCompressRangeTool(compressToolContext),
                 recall_compressed: createRecallCompressedTool(compressToolContext),
+                rewrite_summary: createRewriteSummaryTool(compressToolContext),
+                expand_block: createExpandBlockTool(compressToolContext),
+                edit_summary: createEditSummaryTool(compressToolContext),
+                append_summary: createAppendSummaryTool(compressToolContext),
+                save_summary: createSaveSummaryTool(compressToolContext),
             }),
         },
         config: async (opencodeConfig) => {
@@ -108,6 +121,11 @@ const server: Plugin = (async (ctx) => {
             if (config.compress.permission !== "deny" && !config.experimental.allowSubAgents) {
                 toolsToAdd.push("compress")
                 toolsToAdd.push("recall_compressed")
+                toolsToAdd.push("rewrite_summary")
+                toolsToAdd.push("expand_block")
+                toolsToAdd.push("edit_summary")
+                toolsToAdd.push("append_summary")
+                toolsToAdd.push("save_summary")
             }
 
             if (toolsToAdd.length > 0) {
@@ -132,6 +150,25 @@ const server: Plugin = (async (ctx) => {
                     ...permission,
                     recall_compressed: "allow",
                 } as typeof permission
+            }
+
+            if (!hasExplicitToolPermission(opencodeConfig.permission, "rewrite_summary")) {
+                const permission = opencodeConfig.permission ?? {}
+                opencodeConfig.permission = {
+                    ...permission,
+                    rewrite_summary: "allow",
+                } as typeof permission
+            }
+
+            const expandTools = ["expand_block", "edit_summary", "append_summary", "save_summary"]
+            for (const toolName of expandTools) {
+                if (!hasExplicitToolPermission(opencodeConfig.permission, toolName)) {
+                    const permission = opencodeConfig.permission ?? {}
+                    opencodeConfig.permission = {
+                        ...permission,
+                        [toolName]: "allow",
+                    } as typeof permission
+                }
             }
 
             hostPermissions.global = opencodeConfig.permission
