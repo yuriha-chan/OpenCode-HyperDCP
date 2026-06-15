@@ -178,7 +178,7 @@ export function createCommandExecuteHandler(
 ) {
     return async (
         input: { command: string; sessionID: string; arguments: string },
-        output: { parts: any[] },
+        output: { parts: any[]; handled?: boolean },
     ) => {
         if (!config.commands.enabled) {
             return
@@ -223,12 +223,14 @@ export function createCommandExecuteHandler(
 
             if (subcommand === "context") {
                 await handleContextCommand(commandCtx)
-                throw new Error("__DCP_CONTEXT_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "stats") {
                 await handleStatsCommand(commandCtx)
-                throw new Error("__DCP_STATS_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "sweep") {
@@ -237,12 +239,14 @@ export function createCommandExecuteHandler(
                     args: subArgs,
                     workingDirectory,
                 })
-                throw new Error("__DCP_SWEEP_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "manual") {
                 await handleManualToggleCommand(commandCtx, subArgs[0]?.toLowerCase())
-                throw new Error("__DCP_MANUAL_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "compress") {
@@ -271,7 +275,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_DECOMPRESS_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "recompress") {
@@ -279,7 +284,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_RECOMPRESS_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "view") {
@@ -287,7 +293,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_VIEW_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "edit") {
@@ -295,7 +302,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_EDIT_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "messages") {
@@ -303,7 +311,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_MESSAGES_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "protect") {
@@ -311,7 +320,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_PROTECT_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "unprotect") {
@@ -319,7 +329,8 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_UNPROTECT_HANDLED__")
+                output.handled = true
+                return
             }
 
             if (subcommand === "rewrite") {
@@ -350,11 +361,13 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
-                throw new Error("__DCP_TOGGLE_HANDLED__")
+                output.handled = true
+                return
             }
 
             await handleHelpCommand(commandCtx)
-            throw new Error("__DCP_HELP_HANDLED__")
+            output.handled = true
+            return
         }
     }
 }

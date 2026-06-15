@@ -12,6 +12,7 @@ import {
     messageHasCompress,
 } from "../query"
 import { saveSessionState } from "../../state/persistence"
+import { findUncoveredRanges, formatUncoveredRanges } from "../uncovered"
 import {
     appendToTextPart,
     appendToLastTextPart,
@@ -135,7 +136,16 @@ export const injectCompressNudges = (
         }
     }
 
-    applyAnchoredNudges(state, config, messages, prompts, compressionPriorities)
+    const uncoveredRanges = findUncoveredRanges(state, messages)
+    const uncoveredText = formatUncoveredRanges(uncoveredRanges)
+    const nudgedPrompts = { ...prompts }
+    if (uncoveredText) {
+        nudgedPrompts.contextLimitNudge += "\n\n" + uncoveredText
+        nudgedPrompts.turnNudge += "\n\n" + uncoveredText
+        nudgedPrompts.iterationNudge += "\n\n" + uncoveredText
+    }
+
+    applyAnchoredNudges(state, config, messages, nudgedPrompts, compressionPriorities)
 
     if (anchorsChanged) {
         void saveSessionState(state, logger)
