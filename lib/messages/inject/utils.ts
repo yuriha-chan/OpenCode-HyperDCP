@@ -180,13 +180,13 @@ export function isContextOverLimits(
     const currentTokens = getCurrentTokenUsage(state, messages)
 
     const nonCompressedContextLimit = resolveContextTokenLimitNonCompressed(config, state)
-    const nonCompressedTokens = nonCompressedContextLimit !== undefined
-        ? countNonCompressedMessageTokens(messages)
-        : 0
+    const nonCompressedTokens =
+        nonCompressedContextLimit !== undefined ? countNonCompressedMessageTokens(messages) : 0
 
     const overMaxLimit = maxContextLimit === undefined ? false : currentTokens > maxContextLimit
     const overMinLimit = minContextLimit === undefined ? true : currentTokens >= minContextLimit
-    const overNonCompressedLimit = nonCompressedContextLimit !== undefined && nonCompressedTokens > nonCompressedContextLimit
+    const overNonCompressedLimit =
+        nonCompressedContextLimit !== undefined && nonCompressedTokens > nonCompressedContextLimit
 
     return {
         overMaxLimit,

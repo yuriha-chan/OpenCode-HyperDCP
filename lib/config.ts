@@ -461,7 +461,10 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
             if (
                 compress.nonCompressedContextLimit !== undefined &&
                 typeof compress.nonCompressedContextLimit !== "number" &&
-                !(typeof compress.nonCompressedContextLimit === "string" && compress.nonCompressedContextLimit.endsWith("%"))
+                !(
+                    typeof compress.nonCompressedContextLimit === "string" &&
+                    compress.nonCompressedContextLimit.endsWith("%")
+                )
             ) {
                 errors.push({
                     key: "compress.nonCompressedContextLimit",
@@ -885,7 +888,8 @@ function mergeCompress(
         protectTags: override.protectTags ?? base.protectTags,
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
         maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,
-        nonCompressedContextLimit: override.nonCompressedContextLimit ?? base.nonCompressedContextLimit,
+        nonCompressedContextLimit:
+            override.nonCompressedContextLimit ?? base.nonCompressedContextLimit,
     }
 }
 

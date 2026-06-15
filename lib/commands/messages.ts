@@ -88,13 +88,17 @@ export async function handleMessagesCommand(ctx: MessagesCommandContext): Promis
     if (startRef && endRef) {
         const startRawId = state.messageIds.byRef.get(startRef)
         const endRawId = state.messageIds.byRef.get(endRef)
-        const startIndex = startRawId ? visibleMessages.findIndex((m) => m.info.id === startRawId) : -1
+        const startIndex = startRawId
+            ? visibleMessages.findIndex((m) => m.info.id === startRawId)
+            : -1
         const endIndex = endRawId ? visibleMessages.findIndex((m) => m.info.id === endRawId) : -1
         if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
             await sendIgnoredMessage(
-                client, sessionId,
+                client,
+                sessionId,
                 "Invalid message range. Use /dcp messages m0001 m0005 format.",
-                params, logger,
+                params,
+                logger,
             )
             return
         }

@@ -20,18 +20,27 @@ mkdirSync(testConfigHome, { recursive: true })
 
 function buildConfig(): PluginConfig {
     return {
-        enabled: true, debug: false,
-        pruneNotification: "off", pruneNotificationType: "chat",
+        enabled: true,
+        debug: false,
+        pruneNotification: "off",
+        pruneNotificationType: "chat",
         commands: { enabled: true, protectedTools: [] },
         manualMode: { enabled: false, automaticStrategies: true },
         turnProtection: { enabled: false, turns: 4 },
         experimental: { allowSubAgents: false, customPrompts: false },
         protectedFilePatterns: [],
         compress: {
-            mode: "message", permission: "allow", showCompression: false,
-            maxContextLimit: 150000, minContextLimit: 50000,
-            nudgeFrequency: 5, iterationNudgeThreshold: 15, nudgeForce: "soft",
-            protectedTools: ["task"], protectTags: false, protectUserMessages: false,
+            mode: "message",
+            permission: "allow",
+            showCompression: false,
+            maxContextLimit: 150000,
+            minContextLimit: 50000,
+            nudgeFrequency: 5,
+            iterationNudgeThreshold: 15,
+            nudgeForce: "soft",
+            protectedTools: ["task"],
+            protectTags: false,
+            protectUserMessages: false,
         },
         strategies: {
             deduplication: { enabled: true, protectedTools: [] },
@@ -47,20 +56,35 @@ function textPart(messageID: string, sessionID: string, id: string, text: string
 function buildMessages(sessionID: string): WithParts[] {
     return [
         {
-            info: { id: "raw-1", role: "user", sessionID, agent: "assistant",
+            info: {
+                id: "raw-1",
+                role: "user",
+                sessionID,
+                agent: "assistant",
                 model: { providerID: "anthropic", modelID: "claude-test" },
-                time: { created: 1 } } as WithParts["info"],
+                time: { created: 1 },
+            } as WithParts["info"],
             parts: [textPart("raw-1", sessionID, "p-1", "Implement feature X")],
         },
         {
-            info: { id: "raw-2", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 2 } } as WithParts["info"],
+            info: {
+                id: "raw-2",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 2 },
+            } as WithParts["info"],
             parts: [textPart("raw-2", sessionID, "p-2", "Working on it")],
         },
         {
-            info: { id: "raw-3", role: "user", sessionID, agent: "assistant",
+            info: {
+                id: "raw-3",
+                role: "user",
+                sessionID,
+                agent: "assistant",
                 model: { providerID: "anthropic", modelID: "claude-test" },
-                time: { created: 3 } } as WithParts["info"],
+                time: { created: 3 },
+            } as WithParts["info"],
             parts: [textPart("raw-3", sessionID, "p-3", "Also fix bug Y")],
         },
     ]
@@ -99,7 +123,12 @@ test("/dcp protect with no args lists protected messages", async () => {
     }
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -128,7 +157,12 @@ test("/dcp protect <n> adds message ref to protected set", async () => {
     assert.equal(state.protectedRefs.size, 0)
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0002"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0002"],
     })
 
     assert.ok(state.protectedRefs.has("m0002"))
@@ -155,7 +189,12 @@ test("/dcp protect numeric arg works", async () => {
     }
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["1"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["1"],
     })
 
     assert.ok(state.protectedRefs.has("m0001"))
@@ -180,7 +219,12 @@ test("/dcp protect already-protected message shows info", async () => {
     }
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0001"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0001"],
     })
 
     assert.ok(state.protectedRefs.has("m0001"))
@@ -205,7 +249,12 @@ test("/dcp protect invalid ref shows error", async () => {
     }
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["abc"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["abc"],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -229,7 +278,12 @@ test("/dcp protect non-existent ref shows error", async () => {
     }
 
     await handleProtectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0099"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0099"],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -256,7 +310,12 @@ test("/dcp unprotect with no args lists protected messages", async () => {
     }
 
     await handleUnprotectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -284,7 +343,12 @@ test("/dcp unprotect <n> removes message ref from protected set", async () => {
     assert.ok(state.protectedRefs.has("m0001"))
 
     await handleUnprotectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0001"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0001"],
     })
 
     assert.equal(state.protectedRefs.has("m0001"), false)
@@ -309,7 +373,12 @@ test("/dcp unprotect not-protected message shows info", async () => {
     }
 
     await handleUnprotectCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0001"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0001"],
     })
 
     const output = ignoredMessages.pop() || ""

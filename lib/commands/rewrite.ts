@@ -64,9 +64,7 @@ export async function handleRewriteCommand(ctx: RewriteCommandContext): Promise<
         return null
     }
 
-    const aspectClause = aspect
-        ? ` instruction: "${aspect}"`
-        : ""
+    const aspectClause = aspect ? ` instruction: "${aspect}"` : ""
 
     const prompt = [
         `Rewrite the summary for compression block #${blockId}.`,

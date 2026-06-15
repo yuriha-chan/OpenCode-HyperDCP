@@ -15,10 +15,7 @@ export interface UncoveredRange {
  * Finds contiguous gaps in the message list that are not covered by any active compression block.
  * Skips covered messages and returns the uncovered ranges with reference IDs and token estimates.
  */
-export function findUncoveredRanges(
-    state: SessionState,
-    messages: WithParts[],
-): UncoveredRange[] {
+export function findUncoveredRanges(state: SessionState, messages: WithParts[]): UncoveredRange[] {
     assignMessageRefs(state, messages)
 
     const coveredIds = new Set<string>()
@@ -41,8 +38,12 @@ export function findUncoveredRanges(
             // Covered message — flush any pending uncovered range
             if (currentStart) {
                 ranges.push({
-                    startId: state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id,
-                    endId: state.messageIds.byRawId.get(messages[messages.indexOf(msg) - 1]?.info.id || "") || "",
+                    startId:
+                        state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id,
+                    endId:
+                        state.messageIds.byRawId.get(
+                            messages[messages.indexOf(msg) - 1]?.info.id || "",
+                        ) || "",
                     messageCount: currentCount,
                     tokenEstimate: currentTokens,
                 })
@@ -65,7 +66,7 @@ export function findUncoveredRanges(
         const lastMsg = messages[messages.length - 1]
         ranges.push({
             startId: state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id,
-            endId: lastMsg ? (state.messageIds.byRawId.get(lastMsg.info.id) || lastMsg.info.id) : "",
+            endId: lastMsg ? state.messageIds.byRawId.get(lastMsg.info.id) || lastMsg.info.id : "",
             messageCount: currentCount,
             tokenEstimate: currentTokens,
         })

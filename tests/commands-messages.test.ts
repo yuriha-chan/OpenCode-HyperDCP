@@ -19,18 +19,27 @@ mkdirSync(testConfigHome, { recursive: true })
 
 function buildConfig(): PluginConfig {
     return {
-        enabled: true, debug: false,
-        pruneNotification: "off", pruneNotificationType: "chat",
+        enabled: true,
+        debug: false,
+        pruneNotification: "off",
+        pruneNotificationType: "chat",
         commands: { enabled: true, protectedTools: [] },
         manualMode: { enabled: false, automaticStrategies: true },
         turnProtection: { enabled: false, turns: 4 },
         experimental: { allowSubAgents: false, customPrompts: false },
         protectedFilePatterns: [],
         compress: {
-            mode: "message", permission: "allow", showCompression: false,
-            maxContextLimit: 150000, minContextLimit: 50000,
-            nudgeFrequency: 5, iterationNudgeThreshold: 15, nudgeForce: "soft",
-            protectedTools: ["task"], protectTags: false, protectUserMessages: false,
+            mode: "message",
+            permission: "allow",
+            showCompression: false,
+            maxContextLimit: 150000,
+            minContextLimit: 50000,
+            nudgeFrequency: 5,
+            iterationNudgeThreshold: 15,
+            nudgeForce: "soft",
+            protectedTools: ["task"],
+            protectTags: false,
+            protectUserMessages: false,
         },
         strategies: {
             deduplication: { enabled: true, protectedTools: [] },
@@ -49,10 +58,25 @@ function buildMessages(sessionID: string): WithParts[] {
         const id = `raw-${i}`
         const role = i % 2 === 1 ? "user" : "assistant"
         msgs.push({
-            info: { id, role, sessionID, agent: "assistant",
-                model: role === "user" ? { providerID: "anthropic", modelID: "claude-test" } : undefined,
-                time: { created: i } } as WithParts["info"],
-            parts: [textPart(id, sessionID, `p-${i}`, `Message ${i}: This is the content of message number ${i} in the conversation.`)],
+            info: {
+                id,
+                role,
+                sessionID,
+                agent: "assistant",
+                model:
+                    role === "user"
+                        ? { providerID: "anthropic", modelID: "claude-test" }
+                        : undefined,
+                time: { created: i },
+            } as WithParts["info"],
+            parts: [
+                textPart(
+                    id,
+                    sessionID,
+                    `p-${i}`,
+                    `Message ${i}: This is the content of message number ${i} in the conversation.`,
+                ),
+            ],
         })
     }
     return msgs
@@ -87,7 +111,12 @@ test("/dcp messages with no args shows recent 10 messages", async () => {
     }
 
     await handleMessagesCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -116,7 +145,12 @@ test("/dcp messages with message range shows only those messages", async () => {
     }
 
     await handleMessagesCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: ["m0001", "m0003"],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: ["m0001", "m0003"],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -128,12 +162,19 @@ test("/dcp messages with message range shows only those messages", async () => {
 
 test("/dcp messages shows truncation for long content", async () => {
     const sessionID = `ses_msgs_trunc_${Date.now()}`
-    const rawMessages: WithParts[] = [{
-        info: { id: "raw-1", role: "user", sessionID, agent: "assistant",
-            model: { providerID: "anthropic", modelID: "claude-test" },
-            time: { created: 1 } } as WithParts["info"],
-        parts: [textPart("raw-1", sessionID, "p-1", "A".repeat(200))],
-    }]
+    const rawMessages: WithParts[] = [
+        {
+            info: {
+                id: "raw-1",
+                role: "user",
+                sessionID,
+                agent: "assistant",
+                model: { providerID: "anthropic", modelID: "claude-test" },
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [textPart("raw-1", sessionID, "p-1", "A".repeat(200))],
+        },
+    ]
     const state = setupState(rawMessages)
     const logger = new Logger(false)
     const ignoredMessages: string[] = []
@@ -148,13 +189,18 @@ test("/dcp messages shows truncation for long content", async () => {
     }
 
     await handleMessagesCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""
     assert.match(output, /\.\.\.$/, "should have trailing ellipsis for truncated content")
     const lineCount = output.split("\n").length
-    const line = output.split("\n").filter(l => l.includes("A"))[0] || ""
+    const line = output.split("\n").filter((l) => l.includes("A"))[0] || ""
     assert.ok(line.length < 180, "truncated line should be under 180 chars")
 })
 
@@ -176,7 +222,12 @@ test("/dcp messages marks protected messages", async () => {
     }
 
     await handleMessagesCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""
@@ -187,31 +238,76 @@ test("/dcp messages shows filename for read/edit and command for bash", async ()
     const sessionID = `ses_msgs_toolpreview_${Date.now()}`
     const rawMessages: WithParts[] = [
         {
-            info: { id: "raw-1", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 1 } } as WithParts["info"],
-            parts: [{
-                id: "p-1", messageID: "raw-1", sessionID,
-                type: "tool" as const, tool: "read", callID: "c1",
-                state: { status: "completed" as const, input: { filePath: "/src/auth.ts" }, output: "..." },
-            }],
+            info: {
+                id: "raw-1",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "p-1",
+                    messageID: "raw-1",
+                    sessionID,
+                    type: "tool" as const,
+                    tool: "read",
+                    callID: "c1",
+                    state: {
+                        status: "completed" as const,
+                        input: { filePath: "/src/auth.ts" },
+                        output: "...",
+                    },
+                },
+            ],
         },
         {
-            info: { id: "raw-2", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 2 } } as WithParts["info"],
-            parts: [{
-                id: "p-2", messageID: "raw-2", sessionID,
-                type: "tool" as const, tool: "bash", callID: "c2",
-                state: { status: "completed" as const, input: { command: "npm test" }, output: "..." },
-            }],
+            info: {
+                id: "raw-2",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 2 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "p-2",
+                    messageID: "raw-2",
+                    sessionID,
+                    type: "tool" as const,
+                    tool: "bash",
+                    callID: "c2",
+                    state: {
+                        status: "completed" as const,
+                        input: { command: "npm test" },
+                        output: "...",
+                    },
+                },
+            ],
         },
         {
-            info: { id: "raw-3", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 3 } } as WithParts["info"],
-            parts: [{
-                id: "p-3", messageID: "raw-3", sessionID,
-                type: "tool" as const, tool: "edit", callID: "c3",
-                state: { status: "completed" as const, input: { filePath: "/src/index.ts" }, output: "..." },
-            }],
+            info: {
+                id: "raw-3",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 3 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "p-3",
+                    messageID: "raw-3",
+                    sessionID,
+                    type: "tool" as const,
+                    tool: "edit",
+                    callID: "c3",
+                    state: {
+                        status: "completed" as const,
+                        input: { filePath: "/src/index.ts" },
+                        output: "...",
+                    },
+                },
+            ],
         },
     ]
     const state = setupState(rawMessages)
@@ -228,7 +324,12 @@ test("/dcp messages shows filename for read/edit and command for bash", async ()
     }
 
     await handleMessagesCommand({
-        client, state, logger, sessionId: sessionID, messages: rawMessages, args: [],
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: rawMessages,
+        args: [],
     })
 
     const output = ignoredMessages.pop() || ""

@@ -29,7 +29,13 @@ export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Prom
         })
 
         if (refs.length === 0) {
-            await sendIgnoredMessage(client, sessionId, "No messages are protected.", params, logger)
+            await sendIgnoredMessage(
+                client,
+                sessionId,
+                "No messages are protected.",
+                params,
+                logger,
+            )
             return
         }
 
@@ -67,26 +73,32 @@ export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Prom
 
     if (!formattedRef) {
         await sendIgnoredMessage(
-            client, sessionId,
+            client,
+            sessionId,
             "Please provide a valid message ID. Example: /dcp unprotect m0005",
-            params, logger,
+            params,
+            logger,
         )
         return
     }
 
     if (!state.protectedRefs.has(formattedRef)) {
         await sendIgnoredMessage(
-            client, sessionId,
+            client,
+            sessionId,
             `Message ${formattedRef} is not protected.`,
-            params, logger,
+            params,
+            logger,
         )
         return
     }
 
     state.protectedRefs.delete(formattedRef)
     await sendIgnoredMessage(
-        client, sessionId,
+        client,
+        sessionId,
         `Unprotected message ${formattedRef}. It can now be compressed.`,
-        params, logger,
+        params,
+        logger,
     )
 }

@@ -54,12 +54,19 @@ function textPart(messageID: string, sessionID: string, id: string, text: string
 }
 
 function toolPart(
-    messageID: string, sessionID: string, callID: string,
-    toolName: string, output: string,
+    messageID: string,
+    sessionID: string,
+    callID: string,
+    toolName: string,
+    output: string,
 ) {
     return {
-        id: `${callID}-part`, messageID, sessionID,
-        type: "tool" as const, tool: toolName, callID,
+        id: `${callID}-part`,
+        messageID,
+        sessionID,
+        type: "tool" as const,
+        tool: toolName,
+        callID,
         state: { status: "completed" as const, input: { description: "demo" }, output },
     }
 }
@@ -67,31 +74,62 @@ function toolPart(
 function buildMessages(sessionID: string): WithParts[] {
     return [
         {
-            info: { id: "msg-1", role: "user", sessionID, agent: "assistant",
+            info: {
+                id: "msg-1",
+                role: "user",
+                sessionID,
+                agent: "assistant",
                 model: { providerID: "anthropic", modelID: "claude-test" },
-                time: { created: 1 } } as WithParts["info"],
-            parts: [textPart("msg-1", sessionID, "p-1", "Fix the auth bug: tokens expire too early")],
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [
+                textPart("msg-1", sessionID, "p-1", "Fix the auth bug: tokens expire too early"),
+            ],
         },
         {
-            info: { id: "msg-2", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 2 } } as WithParts["info"],
-            parts: [textPart("msg-2", sessionID, "p-2", "Found the issue in token.ts line 42."),
-                    toolPart("msg-2", sessionID, "call-1", "read", "export function validateToken...")],
+            info: {
+                id: "msg-2",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 2 },
+            } as WithParts["info"],
+            parts: [
+                textPart("msg-2", sessionID, "p-2", "Found the issue in token.ts line 42."),
+                toolPart("msg-2", sessionID, "call-1", "read", "export function validateToken..."),
+            ],
         },
         {
-            info: { id: "msg-3", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 3 } } as WithParts["info"],
-            parts: [textPart("msg-3", sessionID, "p-3", "Applied fix: changed expiry from 5m to 30m.")],
+            info: {
+                id: "msg-3",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 3 },
+            } as WithParts["info"],
+            parts: [
+                textPart("msg-3", sessionID, "p-3", "Applied fix: changed expiry from 5m to 30m."),
+            ],
         },
         {
-            info: { id: "msg-4", role: "user", sessionID, agent: "assistant",
+            info: {
+                id: "msg-4",
+                role: "user",
+                sessionID,
+                agent: "assistant",
                 model: { providerID: "anthropic", modelID: "claude-test" },
-                time: { created: 4 } } as WithParts["info"],
+                time: { created: 4 },
+            } as WithParts["info"],
             parts: [textPart("msg-4", sessionID, "p-4", "Also check the database connection pool")],
         },
         {
-            info: { id: "msg-5", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 5 } } as WithParts["info"],
+            info: {
+                id: "msg-5",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 5 },
+            } as WithParts["info"],
             parts: [textPart("msg-5", sessionID, "p-5", "Pool size is 10, configured in db.ts.")],
         },
     ]
@@ -105,8 +143,15 @@ function makeCompressTool(state: ReturnType<typeof createSessionState>, rawMessa
                 get: async () => ({ data: { parentID: null } }),
             },
         },
-        state, logger: new Logger(false), config: buildConfig(),
-        prompts: { reload() {}, getRuntimePrompts() { return { compressMessage: "", compressRange: "" } } },
+        state,
+        logger: new Logger(false),
+        config: buildConfig(),
+        prompts: {
+            reload() {},
+            getRuntimePrompts() {
+                return { compressMessage: "", compressRange: "" }
+            },
+        },
     } as any)
 }
 
@@ -118,8 +163,15 @@ function makeRecallTool(state: ReturnType<typeof createSessionState>, rawMessage
                 get: async () => ({ data: { parentID: null } }),
             },
         },
-        state, logger: new Logger(false), config: buildConfig(),
-        prompts: { reload() {}, getRuntimePrompts() { return { recallCompressed: "", compressMessage: "", compressRange: "" } } },
+        state,
+        logger: new Logger(false),
+        config: buildConfig(),
+        prompts: {
+            reload() {},
+            getRuntimePrompts() {
+                return { recallCompressed: "", compressMessage: "", compressRange: "" }
+            },
+        },
     } as any)
 }
 
@@ -136,10 +188,21 @@ test("recall get by messageId returns compressed message", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Auth fix", content: [
-            { messageId: "m0001", topic: "User request", summary: "User asked to fix auth token bug." },
-            { messageId: "m0002", topic: "Assistant finding", summary: "Found issue in token.ts line 42." },
-        ]},
+        {
+            topic: "Auth fix",
+            content: [
+                {
+                    messageId: "m0001",
+                    topic: "User request",
+                    summary: "User asked to fix auth token bug.",
+                },
+                {
+                    messageId: "m0002",
+                    topic: "Assistant finding",
+                    summary: "Found issue in token.ts line 42.",
+                },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -161,9 +224,16 @@ test("recall get by messageId returns single message", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Auth fix", content: [
-            { messageId: "m0001", topic: "User request", summary: "User asked to fix auth token bug." },
-        ]},
+        {
+            topic: "Auth fix",
+            content: [
+                {
+                    messageId: "m0001",
+                    topic: "User request",
+                    summary: "User asked to fix auth token bug.",
+                },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -185,11 +255,14 @@ test("recall get by messageId range returns messages in range", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Batch", content: [
-            { messageId: "m0001", topic: "Req", summary: "User request." },
-            { messageId: "m0002", topic: "Resp", summary: "Assistant response." },
-            { messageId: "m0003", topic: "More", summary: "More response." },
-        ]},
+        {
+            topic: "Batch",
+            content: [
+                { messageId: "m0001", topic: "Req", summary: "User request." },
+                { messageId: "m0002", topic: "Resp", summary: "Assistant response." },
+                { messageId: "m0003", topic: "More", summary: "More response." },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -226,12 +299,15 @@ test("recall search finds text across all blocks", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Batch", content: [
-            { messageId: "m0001", topic: "Req", summary: "User request about token." },
-            { messageId: "m0002", topic: "Resp", summary: "Assistant found token.ts line 42." },
-            { messageId: "m0004", topic: "DB", summary: "User asks about database pool." },
-            { messageId: "m0005", topic: "Pool", summary: "Pool size is 10." },
-        ]},
+        {
+            topic: "Batch",
+            content: [
+                { messageId: "m0001", topic: "Req", summary: "User request about token." },
+                { messageId: "m0002", topic: "Resp", summary: "Assistant found token.ts line 42." },
+                { messageId: "m0004", topic: "DB", summary: "User asks about database pool." },
+                { messageId: "m0005", topic: "Pool", summary: "Pool size is 10." },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -253,15 +329,17 @@ test("recall search scoped to single blockId", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Batch 1", content: [
-            { messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." },
-        ]},
+        {
+            topic: "Batch 1",
+            content: [{ messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." }],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
     await compressTool.execute(
-        { topic: "Batch 2", content: [
-            { messageId: "m0004", topic: "DB", summary: "Check database pool." },
-        ]},
+        {
+            topic: "Batch 2",
+            content: [{ messageId: "m0004", topic: "DB", summary: "Check database pool." }],
+        },
         toolCtx(sessionID, "msg-compress-2"),
     )
 
@@ -283,21 +361,26 @@ test("recall search scoped to blockId range", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Batch 1", content: [
-            { messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." },
-        ]},
+        {
+            topic: "Batch 1",
+            content: [{ messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." }],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
     await compressTool.execute(
-        { topic: "Batch 2", content: [
-            { messageId: "m0002", topic: "Resp", summary: "Found issue in token.ts line 42." },
-        ]},
+        {
+            topic: "Batch 2",
+            content: [
+                { messageId: "m0002", topic: "Resp", summary: "Found issue in token.ts line 42." },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-2"),
     )
     await compressTool.execute(
-        { topic: "Batch 3", content: [
-            { messageId: "m0004", topic: "DB", summary: "Check database pool." },
-        ]},
+        {
+            topic: "Batch 3",
+            content: [{ messageId: "m0004", topic: "DB", summary: "Check database pool." }],
+        },
         toolCtx(sessionID, "msg-compress-3"),
     )
 
@@ -321,9 +404,10 @@ test("recall search with no matches returns empty result", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Batch", content: [
-            { messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." },
-        ]},
+        {
+            topic: "Batch",
+            content: [{ messageId: "m0001", topic: "Req", summary: "Fix the auth token bug." }],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -358,9 +442,16 @@ test("recall get works regardless of block active state", async () => {
 
     const compressTool = makeCompressTool(state, rawMessages)
     await compressTool.execute(
-        { topic: "Auth fix", content: [
-            { messageId: "m0001", topic: "User request", summary: "User asked to fix auth token bug." },
-        ]},
+        {
+            topic: "Auth fix",
+            content: [
+                {
+                    messageId: "m0001",
+                    topic: "User request",
+                    summary: "User asked to fix auth token bug.",
+                },
+            ],
+        },
         toolCtx(sessionID, "msg-compress-1"),
     )
 
@@ -376,5 +467,9 @@ test("recall get works regardless of block active state", async () => {
     )
 
     const output = typeof result === "string" ? result : result.output
-    assert.match(output, /Fix the auth bug/, "should retrieve the message regardless of block state")
+    assert.match(
+        output,
+        /Fix the auth bug/,
+        "should retrieve the message regardless of block state",
+    )
 })

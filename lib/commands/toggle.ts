@@ -29,10 +29,18 @@ function formatVersionLabel(index: number): string {
     return `v${index}`
 }
 
-function activeSummaryFor(block: { summary: string; summaryVersions: string[]; activeVersionIndex: number }): string {
+function activeSummaryFor(block: {
+    summary: string
+    summaryVersions: string[]
+    activeVersionIndex: number
+}): string {
     const idx = block.activeVersionIndex
     if (idx === 0) return "(disabled)"
-    if (idx >= 2 && Array.isArray(block.summaryVersions) && idx - 2 < block.summaryVersions.length) {
+    if (
+        idx >= 2 &&
+        Array.isArray(block.summaryVersions) &&
+        idx - 2 < block.summaryVersions.length
+    ) {
         return block.summaryVersions[idx - 2]
     }
     return block.summary

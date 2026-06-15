@@ -168,7 +168,9 @@ function addCompressionBlock(
         createdAt: Date.now(),
         deactivatedAt: undefined,
         deactivatedByBlockId: undefined,
-        summary: overrides.summary ?? `[Compressed conversation section]\nSummary for block ${overrides.blockId}.\nDetails here.`,
+        summary:
+            overrides.summary ??
+            `[Compressed conversation section]\nSummary for block ${overrides.blockId}.\nDetails here.`,
     }
 
     state.prune.messages.blocksById.set(overrides.blockId, block)
@@ -187,7 +189,12 @@ function addCompressionBlock(
             time: { created: rawMessages.length + 1 },
         } as WithParts["info"],
         parts: [
-            textPart(block.compressMessageId, sessionID, `${block.compressMessageId}-part`, "compress tool output"),
+            textPart(
+                block.compressMessageId,
+                sessionID,
+                `${block.compressMessageId}-part`,
+                "compress tool output",
+            ),
         ],
     })
 
@@ -213,8 +220,18 @@ test("/dcp view with no args lists available compressions with summaries", async
         },
     }
 
-    addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1, topic: "Auth System", summary: "Summary of auth." })
-    addCompressionBlock(state, rawMessages, sessionID, { blockId: 2, runId: 2, topic: "Database Layer", summary: "Summary of db." })
+    addCompressionBlock(state, rawMessages, sessionID, {
+        blockId: 1,
+        runId: 1,
+        topic: "Auth System",
+        summary: "Summary of auth.",
+    })
+    addCompressionBlock(state, rawMessages, sessionID, {
+        blockId: 2,
+        runId: 2,
+        topic: "Database Layer",
+        summary: "Summary of db.",
+    })
 
     await handleViewCommand({
         client,
@@ -316,7 +333,8 @@ test("/dcp view with valid block ID shows full summary and metadata", async () =
         blockId: 1,
         runId: 1,
         topic: "Auth System Exploration",
-        summary: "[Compressed conversation section]\nDetailed analysis of the auth module.\nMultiple findings documented.",
+        summary:
+            "[Compressed conversation section]\nDetailed analysis of the auth module.\nMultiple findings documented.",
         compressedTokens: 1200,
         summaryTokens: 45,
         durationMs: 2500,
@@ -412,8 +430,18 @@ test("/dcp edit with no args lists available compressions", async () => {
         },
     }
 
-    addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1, topic: "Auth System", summary: "Summary of auth." })
-    addCompressionBlock(state, rawMessages, sessionID, { blockId: 2, runId: 2, topic: "Database Layer", summary: "Summary of db." })
+    addCompressionBlock(state, rawMessages, sessionID, {
+        blockId: 1,
+        runId: 1,
+        topic: "Auth System",
+        summary: "Summary of auth.",
+    })
+    addCompressionBlock(state, rawMessages, sessionID, {
+        blockId: 2,
+        runId: 2,
+        topic: "Database Layer",
+        summary: "Summary of db.",
+    })
 
     await handleEditCommand({
         client,
@@ -673,5 +701,3 @@ test("/dcp edit with -a flag and no text shows error", async () => {
     const output = ignoredMessages.pop() || ""
     assert.match(output, /provide.*text|replacement|edit/i)
 })
-
-

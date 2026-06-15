@@ -6,10 +6,7 @@ import { getCurrentParams } from "../token-utils"
 import { saveSessionState } from "../state/persistence"
 import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount } from "../ui/utils"
-import {
-    getActiveCompressionTargets,
-    resolveCompressionTarget,
-} from "./compression-targets"
+import { getActiveCompressionTargets, resolveCompressionTarget } from "./compression-targets"
 
 export interface EditCommandContext {
     client: any

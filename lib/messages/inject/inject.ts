@@ -172,7 +172,8 @@ export const injectMessageIds = (
             continue
         }
 
-        const isBlockedMessage = isProtectedUserMessage(config, message) || state.protectedRefs.has(messageRef)
+        const isBlockedMessage =
+            isProtectedUserMessage(config, message) || state.protectedRefs.has(messageRef)
         const priority =
             config.compress.mode === "message" && !isBlockedMessage
                 ? compressionPriorities?.get(message.info.id)?.priority

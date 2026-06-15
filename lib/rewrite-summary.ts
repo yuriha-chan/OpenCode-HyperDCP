@@ -10,9 +10,7 @@ interface RewriteSummaryArgs {
 
 function buildSchema() {
     return {
-        blockId: tool.schema
-            .number()
-            .describe("Block ID to rewrite (e.g. 1)"),
+        blockId: tool.schema.number().describe("Block ID to rewrite (e.g. 1)"),
         summary: tool.schema
             .string()
             .describe("The complete rewritten summary to save as a new version"),
@@ -31,7 +29,9 @@ export function createRewriteSummaryTool(ctx: ToolContext): ReturnType<typeof to
 
             const block = ctx.state.prune.messages.blocksById.get(input.blockId)
             if (!block) {
-                throw new Error(`Block ${input.blockId} not found. Use /dcp view to see available blocks.`)
+                throw new Error(
+                    `Block ${input.blockId} not found. Use /dcp view to see available blocks.`,
+                )
             }
 
             const trimmed = input.summary.trim()

@@ -220,7 +220,9 @@ describe("/dcp toggle command", () => {
         state.prune.messages.blocksById.set(blockId, block)
 
         const versionArg = 5
-        const valid = versionArg >= 0 && (versionArg === 0 || versionArg === 1 || versionArg - 2 < block.summaryVersions.length)
+        const valid =
+            versionArg >= 0 &&
+            (versionArg === 0 || versionArg === 1 || versionArg - 2 < block.summaryVersions.length)
         assert.equal(valid, false)
     })
 })

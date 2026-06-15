@@ -6,19 +6,29 @@ import type { WithParts } from "../lib/state"
 
 function buildConfig(maxToolOutputChars: number): PluginConfig {
     return {
-        enabled: true, debug: false,
-        pruneNotification: "off", pruneNotificationType: "chat",
+        enabled: true,
+        debug: false,
+        pruneNotification: "off",
+        pruneNotificationType: "chat",
         commands: { enabled: true, protectedTools: [] },
         manualMode: { enabled: false, automaticStrategies: true },
         turnProtection: { enabled: false, turns: 4 },
         experimental: { allowSubAgents: false, customPrompts: false },
         protectedFilePatterns: [],
         compress: {
-            mode: "range", permission: "allow", showCompression: false,
-            maxContextLimit: 150000, minContextLimit: 50000,
-            nudgeFrequency: 5, iterationNudgeThreshold: 15, nudgeForce: "soft",
-            protectedTools: [], protectTags: false, protectUserMessages: false,
-            maxToolOutputChars, summaryBuffer: false,
+            mode: "range",
+            permission: "allow",
+            showCompression: false,
+            maxContextLimit: 150000,
+            minContextLimit: 50000,
+            nudgeFrequency: 5,
+            iterationNudgeThreshold: 15,
+            nudgeForce: "soft",
+            protectedTools: [],
+            protectTags: false,
+            protectUserMessages: false,
+            maxToolOutputChars,
+            summaryBuffer: false,
         },
         strategies: {
             deduplication: { enabled: true, protectedTools: [] },
@@ -30,23 +40,52 @@ function buildConfig(maxToolOutputChars: number): PluginConfig {
 function buildMessages(sessionID: string): WithParts[] {
     return [
         {
-            info: { id: "msg-1", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 1 } } as WithParts["info"],
-            parts: [{
-                id: "part-1", messageID: "msg-1", sessionID,
-                type: "tool" as const, tool: "read", callID: "call-1",
-                state: { status: "completed" as const, input: { filePath: "/f" }, output: "short output" },
-            }],
+            info: {
+                id: "msg-1",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "part-1",
+                    messageID: "msg-1",
+                    sessionID,
+                    type: "tool" as const,
+                    tool: "read",
+                    callID: "call-1",
+                    state: {
+                        status: "completed" as const,
+                        input: { filePath: "/f" },
+                        output: "short output",
+                    },
+                },
+            ],
         },
         {
-            info: { id: "msg-2", role: "assistant", sessionID, agent: "assistant",
-                time: { created: 2 } } as WithParts["info"],
-            parts: [{
-                id: "part-2", messageID: "msg-2", sessionID,
-                type: "tool" as const, tool: "bash", callID: "call-2",
-                state: { status: "completed" as const, input: { command: "cat" },
-                    output: "A".repeat(200) + "\n" + "B".repeat(200) },
-            }],
+            info: {
+                id: "msg-2",
+                role: "assistant",
+                sessionID,
+                agent: "assistant",
+                time: { created: 2 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "part-2",
+                    messageID: "msg-2",
+                    sessionID,
+                    type: "tool" as const,
+                    tool: "bash",
+                    callID: "call-2",
+                    state: {
+                        status: "completed" as const,
+                        input: { command: "cat" },
+                        output: "A".repeat(200) + "\n" + "B".repeat(200),
+                    },
+                },
+            ],
         },
     ]
 }
@@ -78,16 +117,32 @@ test("truncateToolOutputs replaces output over threshold with summary", () => {
 
 test("truncateToolOutputs handles single long line", () => {
     const config = buildConfig(100)
-    const messages: WithParts[] = [{
-        info: { id: "msg-1", role: "assistant", sessionID: "s1", agent: "assistant",
-            time: { created: 1 } } as WithParts["info"],
-        parts: [{
-            id: "part-1", messageID: "msg-1", sessionID: "s1",
-            type: "tool" as const, tool: "bash", callID: "call-1",
-            state: { status: "completed" as const, input: { command: "cat" },
-                output: "X".repeat(600) },
-        }],
-    }]
+    const messages: WithParts[] = [
+        {
+            info: {
+                id: "msg-1",
+                role: "assistant",
+                sessionID: "s1",
+                agent: "assistant",
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "part-1",
+                    messageID: "msg-1",
+                    sessionID: "s1",
+                    type: "tool" as const,
+                    tool: "bash",
+                    callID: "call-1",
+                    state: {
+                        status: "completed" as const,
+                        input: { command: "cat" },
+                        output: "X".repeat(600),
+                    },
+                },
+            ],
+        },
+    ]
     const count = truncateToolOutputs(config, messages)
     assert.equal(count, 1)
 
@@ -97,16 +152,37 @@ test("truncateToolOutputs handles single long line", () => {
 
 test("truncateToolOutputs skips non-completed tools", () => {
     const config = buildConfig(100)
-    const messages: WithParts[] = [{
-        info: { id: "msg-1", role: "assistant", sessionID: "s1", agent: "assistant",
-            time: { created: 1 } } as WithParts["info"],
-        parts: [
-            { id: "p1", messageID: "msg-1", sessionID: "s1", type: "tool" as const, tool: "bash", callID: "call-1",
-                state: { status: "pending" as const, input: {} } },
-            { id: "p2", messageID: "msg-1", sessionID: "s1", type: "tool" as const, tool: "bash", callID: "call-2",
-                state: { status: "running" as const, input: {} } },
-        ],
-    }]
+    const messages: WithParts[] = [
+        {
+            info: {
+                id: "msg-1",
+                role: "assistant",
+                sessionID: "s1",
+                agent: "assistant",
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [
+                {
+                    id: "p1",
+                    messageID: "msg-1",
+                    sessionID: "s1",
+                    type: "tool" as const,
+                    tool: "bash",
+                    callID: "call-1",
+                    state: { status: "pending" as const, input: {} },
+                },
+                {
+                    id: "p2",
+                    messageID: "msg-1",
+                    sessionID: "s1",
+                    type: "tool" as const,
+                    tool: "bash",
+                    callID: "call-2",
+                    state: { status: "running" as const, input: {} },
+                },
+            ],
+        },
+    ]
     const count = truncateToolOutputs(config, messages)
     assert.equal(count, 0)
 })
@@ -114,7 +190,11 @@ test("truncateToolOutputs skips non-completed tools", () => {
 test("truncateToolOutputs disabled when maxToolOutputChars is 0", () => {
     const config = buildConfig(0)
     const messages = buildMessages("s1")
-    messages[1]!.parts[0]!.state = { status: "completed" as const, input: {}, output: "A".repeat(1000) }
+    messages[1]!.parts[0]!.state = {
+        status: "completed" as const,
+        input: {},
+        output: "A".repeat(1000),
+    }
     const count = truncateToolOutputs(config, messages)
     assert.equal(count, 0)
 })

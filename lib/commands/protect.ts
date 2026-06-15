@@ -29,7 +29,13 @@ export async function handleProtectCommand(ctx: ProtectCommandContext): Promise<
         })
 
         if (refs.length === 0) {
-            await sendIgnoredMessage(client, sessionId, "No messages are manually protected.", params, logger)
+            await sendIgnoredMessage(
+                client,
+                sessionId,
+                "No messages are manually protected.",
+                params,
+                logger,
+            )
             return
         }
 
@@ -67,35 +73,43 @@ export async function handleProtectCommand(ctx: ProtectCommandContext): Promise<
 
     if (!formattedRef) {
         await sendIgnoredMessage(
-            client, sessionId,
+            client,
+            sessionId,
             "Please provide a valid message ID. Example: /dcp protect m0005 or /dcp protect 5",
-            params, logger,
+            params,
+            logger,
         )
         return
     }
 
     if (!state.messageIds.byRef.has(formattedRef)) {
         await sendIgnoredMessage(
-            client, sessionId,
+            client,
+            sessionId,
             `Message ${formattedRef} is not in the current context.`,
-            params, logger,
+            params,
+            logger,
         )
         return
     }
 
     if (state.protectedRefs.has(formattedRef)) {
         await sendIgnoredMessage(
-            client, sessionId,
+            client,
+            sessionId,
             `Message ${formattedRef} is already protected.`,
-            params, logger,
+            params,
+            logger,
         )
         return
     }
 
     state.protectedRefs.add(formattedRef)
     await sendIgnoredMessage(
-        client, sessionId,
+        client,
+        sessionId,
         `Protected message ${formattedRef}. It will be excluded from compression.`,
-        params, logger,
+        params,
+        logger,
     )
 }

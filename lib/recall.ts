@@ -24,10 +24,7 @@ function buildSchema() {
         action: tool.schema
             .enum(["get", "search"])
             .describe("The action: 'get' to retrieve original messages, 'search' to find text"),
-        blockId: tool.schema
-            .number()
-            .optional()
-            .describe("Block ID to scope 'search' (e.g. 3)"),
+        blockId: tool.schema.number().optional().describe("Block ID to scope 'search' (e.g. 3)"),
         messageId: tool.schema
             .string()
             .optional()
@@ -65,9 +62,10 @@ function formatMessage(msg: WithParts): string {
             lines.push(part.text)
         } else if (part.type === "tool" && (part as any).state?.output) {
             const toolName = (part as any).tool || "tool"
-            const output = typeof (part as any).state.output === "string"
-                ? (part as any).state.output
-                : JSON.stringify((part as any).state.output)
+            const output =
+                typeof (part as any).state.output === "string"
+                    ? (part as any).state.output
+                    : JSON.stringify((part as any).state.output)
             lines.push(`[tool:${toolName}] ${output}`)
         }
     }
@@ -88,20 +86,13 @@ function findMessageIndex(messages: WithParts[], rawId: string | null): number {
     return -1
 }
 
-function collectMessageIdsForBlock(
-    ctx: ToolContext,
-    blockId: number,
-): string[] | null {
+function collectMessageIdsForBlock(ctx: ToolContext, blockId: number): string[] | null {
     const block = ctx.state.prune.messages.blocksById.get(blockId)
     if (!block) return null
     return [...block.effectiveMessageIds]
 }
 
-function collectMessageIdsForBlockRange(
-    ctx: ToolContext,
-    start: number,
-    end: number,
-): string[] {
+function collectMessageIdsForBlockRange(ctx: ToolContext, start: number, end: number): string[] {
     const ids = new Set<string>()
     for (const [id, block] of ctx.state.prune.messages.blocksById) {
         if (id >= start && id <= end) {
@@ -136,11 +127,7 @@ function collectMessageIdsForMessageRange(
     return ids
 }
 
-function searchMessages(
-    messages: WithParts[],
-    messageIds: Set<string>,
-    query: string,
-): string {
+function searchMessages(messages: WithParts[], messageIds: Set<string>, query: string): string {
     let pattern: RegExp
     try {
         pattern = new RegExp(query, "i")
@@ -156,9 +143,11 @@ function searchMessages(
         for (const part of Array.isArray(msg.parts) ? msg.parts : []) {
             if (part.type === "text" && part.text) textParts.push(part.text)
             else if (part.type === "tool" && (part as any).state?.output) {
-                textParts.push(typeof (part as any).state.output === "string"
-                    ? (part as any).state.output
-                    : JSON.stringify((part as any).state.output))
+                textParts.push(
+                    typeof (part as any).state.output === "string"
+                        ? (part as any).state.output
+                        : JSON.stringify((part as any).state.output),
+                )
             }
         }
         const fullText = textParts.join(" ")
@@ -229,7 +218,12 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
         targetIds = [rawId]
         label = `Message ${input.messageId}`
     } else if (input.messageIdStart && input.messageIdEnd) {
-        targetIds = collectMessageIdsForMessageRange(ctx, messages, input.messageIdStart, input.messageIdEnd)
+        targetIds = collectMessageIdsForMessageRange(
+            ctx,
+            messages,
+            input.messageIdStart,
+            input.messageIdEnd,
+        )
         label = `Messages ${input.messageIdStart} → ${input.messageIdEnd}`
     } else {
         throw new Error("Provide a messageId or messageIdStart/messageIdEnd to retrieve messages.")
@@ -248,7 +242,9 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
 
     const totalTokens = matchingMessages.reduce((sum, m) => sum + countAllMessageTokens(m), 0)
     const lines: string[] = []
-    lines.push(`${label} — ${matchingMessages.length} message(s), ~${formatTokenCount(totalTokens)}`)
+    lines.push(
+        `${label} — ${matchingMessages.length} message(s), ~${formatTokenCount(totalTokens)}`,
+    )
     lines.push("")
 
     for (const msg of matchingMessages) {
@@ -275,7 +271,12 @@ function handleSearch(ctx: ToolContext, messages: WithParts[], input: RecallArgs
     } else if (input.blockIdStart !== undefined && input.blockIdEnd !== undefined) {
         targetIds = collectMessageIdsForBlockRange(ctx, input.blockIdStart, input.blockIdEnd)
     } else if (input.messageIdStart && input.messageIdEnd) {
-        targetIds = collectMessageIdsForMessageRange(ctx, messages, input.messageIdStart, input.messageIdEnd)
+        targetIds = collectMessageIdsForMessageRange(
+            ctx,
+            messages,
+            input.messageIdStart,
+            input.messageIdEnd,
+        )
     } else {
         targetIds = []
         for (const block of ctx.state.prune.messages.blocksById.values()) {

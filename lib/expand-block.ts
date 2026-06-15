@@ -40,7 +40,9 @@ THE FORMAT
 
             const parsed = parseBoundaryId(input.endId)
             if (!parsed || parsed.kind !== "message") {
-                throw new Error(`Invalid boundary reference: ${input.endId}. Use message refs like m0100.`)
+                throw new Error(
+                    `Invalid boundary reference: ${input.endId}. Use message refs like m0100.`,
+                )
             }
 
             const rawId = ctx.state.messageIds.byRef.get(parsed.ref)
@@ -53,7 +55,7 @@ THE FORMAT
                     if (msgId === rawId) {
                         throw new Error(
                             `End boundary ${input.endId} overlaps with active block ${id}. ` +
-                            `Expand block ${id} instead, or decompress it first.`
+                                `Expand block ${id} instead, or decompress it first.`,
                         )
                     }
                 }
@@ -94,7 +96,12 @@ THE FORMAT
             replaceAll: tool.schema.boolean().describe("Replace all occurrences (default false)"),
         },
         async execute(args, toolCtx) {
-            const input = args as { blockId: number; oldString: string; newString: string; replaceAll?: boolean }
+            const input = args as {
+                blockId: number
+                oldString: string
+                newString: string
+                replaceAll?: boolean
+            }
             const block = ctx.state.prune.messages.blocksById.get(input.blockId)
             if (!block) throw new Error(`Block ${input.blockId} not found.`)
 
@@ -112,7 +119,10 @@ THE FORMAT
             } else {
                 const idx = current.indexOf(input.oldString)
                 if (idx === -1) throw new Error(`Old string not found in buffer.`)
-                replaced = current.slice(0, idx) + input.newString + current.slice(idx + input.oldString.length)
+                replaced =
+                    current.slice(0, idx) +
+                    input.newString +
+                    current.slice(idx + input.oldString.length)
             }
 
             block.pendingEditBuffer = replaced
@@ -169,7 +179,9 @@ THE FORMAT
             if (!block) throw new Error(`Block ${input.blockId} not found.`)
 
             if (block.pendingEditBuffer === undefined) {
-                throw new Error(`No pending edit buffer for block ${input.blockId}. Use edit_summary or append_summary first.`)
+                throw new Error(
+                    `No pending edit buffer for block ${input.blockId}. Use edit_summary or append_summary first.`,
+                )
             }
 
             const trimmed = block.pendingEditBuffer.trim()

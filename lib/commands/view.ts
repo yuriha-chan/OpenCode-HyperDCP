@@ -57,7 +57,8 @@ function activeSummaryTokens(block: CompressionBlock): number {
 
 function formatBlockDetail(block: CompressionBlock, index?: number): string {
     const lines: string[] = []
-    const header = index !== undefined ? `Block #${block.blockId} (${index + 1})` : `Block #${block.blockId}`
+    const header =
+        index !== undefined ? `Block #${block.blockId} (${index + 1})` : `Block #${block.blockId}`
 
     lines.push(header)
     lines.push(`  Mode:      ${block.mode}`)
@@ -66,7 +67,9 @@ function formatBlockDetail(block: CompressionBlock, index?: number): string {
     if (block.batchTopic) {
         lines.push(`  Batch:     ${block.batchTopic}`)
     }
-    lines.push(`  Tokens:    ${formatTokenCount(block.compressedTokens)} compressed, ${formatTokenCount(activeSummaryTokens(block))} summary`)
+    lines.push(
+        `  Tokens:    ${formatTokenCount(block.compressedTokens)} compressed, ${formatTokenCount(activeSummaryTokens(block))} summary`,
+    )
     lines.push(`  Duration:  ${block.durationMs}ms`)
     if (block.parentBlockIds.length > 0) {
         const parentLabels = block.parentBlockIds.map((id) => String(id)).join(", ")
@@ -127,7 +130,9 @@ function formatListView(targets: CompressionTarget[]): string {
         const status = statusLabel(block)
         const tokenLabel = formatTokenCount(target.compressedTokens)
         const summaryLabel = formatTokenCount(activeSummaryTokens(block))
-        lines.push(`  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`)
+        lines.push(
+            `  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`,
+        )
         lines.push(`    ${truncate(block.summary, 160)}`)
         lines.push("")
     }

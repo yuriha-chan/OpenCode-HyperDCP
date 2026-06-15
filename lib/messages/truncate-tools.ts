@@ -44,7 +44,9 @@ export function truncateToolOutputs(config: PluginConfig, messages: WithParts[])
             const tail = output.slice(-TAIL_CHARS)
 
             const parts_: string[] = []
-            parts_.push(`[Tool output truncated: ${totalBytes.toLocaleString()} bytes, ${lines.length.toLocaleString()} lines, ${output.length.toLocaleString()} chars]\n`)
+            parts_.push(
+                `[Tool output truncated: ${totalBytes.toLocaleString()} bytes, ${lines.length.toLocaleString()} lines, ${output.length.toLocaleString()} chars]\n`,
+            )
             parts_.push(head)
 
             const singleLineNote = truncateSingleLongLine(output)
