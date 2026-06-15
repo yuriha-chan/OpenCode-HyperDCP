@@ -54,7 +54,6 @@ export interface SelectionResolution {
     messageIds: string[]
     messageTokenById: Map<string, number>
     toolIds: string[]
-    requiredBlockIds: number[]
 }
 
 export interface ResolvedMessageCompression {
@@ -74,18 +73,6 @@ export interface ResolvedMessageCompressionsResult {
     plans: ResolvedMessageCompression[]
     skippedIssues: string[]
     skippedCount: number
-}
-
-export interface ParsedBlockPlaceholder {
-    raw: string
-    blockId: number
-    startIndex: number
-    endIndex: number
-}
-
-export interface InjectedSummaryResult {
-    expandedSummary: string
-    consumedBlockIds: number[]
 }
 
 export interface AppliedCompressionResult {

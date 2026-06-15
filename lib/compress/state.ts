@@ -148,53 +148,6 @@ export function applyCompressionState(
     messagesState.activeBlockIds.add(blockId)
     messagesState.activeByAnchorMessageId.set(anchorMessageId, blockId)
 
-    const deactivatedAt = Date.now()
-    for (const consumedBlockId of consumed) {
-        const consumedBlock = messagesState.blocksById.get(consumedBlockId)
-        if (!consumedBlock || !consumedBlock.active) {
-            continue
-        }
-
-        consumedBlock.active = false
-        consumedBlock.deactivatedAt = deactivatedAt
-        consumedBlock.deactivatedByBlockId = blockId
-        if (!consumedBlock.parentBlockIds.includes(blockId)) {
-            consumedBlock.parentBlockIds.push(blockId)
-        }
-
-        messagesState.activeBlockIds.delete(consumedBlockId)
-        const mappedBlockId = messagesState.activeByAnchorMessageId.get(
-            consumedBlock.anchorMessageId,
-        )
-        if (mappedBlockId === consumedBlockId) {
-            messagesState.activeByAnchorMessageId.delete(consumedBlock.anchorMessageId)
-        }
-    }
-
-    const removeActiveBlockId = (
-        entry: { activeBlockIds: number[] },
-        blockIdToRemove: number,
-    ): void => {
-        if (entry.activeBlockIds.length === 0) {
-            return
-        }
-        entry.activeBlockIds = entry.activeBlockIds.filter((id) => id !== blockIdToRemove)
-    }
-
-    for (const consumedBlockId of consumed) {
-        const consumedBlock = messagesState.blocksById.get(consumedBlockId)
-        if (!consumedBlock) {
-            continue
-        }
-        for (const messageId of consumedBlock.effectiveMessageIds) {
-            const entry = messagesState.byMessageId.get(messageId)
-            if (!entry) {
-                continue
-            }
-            removeActiveBlockId(entry, consumedBlockId)
-        }
-    }
-
     for (const messageId of selection.messageIds) {
         const tokenCount = selection.messageTokenById.get(messageId) || 0
         const existing = messagesState.byMessageId.get(messageId)

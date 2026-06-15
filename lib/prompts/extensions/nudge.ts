@@ -11,7 +11,6 @@ export function buildCompressedBlockGuidance(state: SessionState): string {
     return [
         "Compressed block context:",
         `- Active compressed blocks in this session: ${blockCount} (${blockList})`,
-        "- If your selected compression range includes any listed block, include each required placeholder exactly once in the summary using `(bN)`.",
     ].join("\n")
 }
 

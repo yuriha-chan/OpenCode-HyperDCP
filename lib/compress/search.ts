@@ -117,8 +117,6 @@ export function resolveSelection(
     const messageSeen = new Set<string>()
     const toolIds: string[] = []
     const toolSeen = new Set<string>()
-    const requiredBlockIds: number[] = []
-    const requiredBlockSeen = new Set<number>()
     const messageTokenById = new Map<string, number>()
 
     for (let index = startRawIndex; index <= endRawIndex; index++) {
@@ -153,33 +151,6 @@ export function resolveSelection(
         }
     }
 
-    const selectedMessageIds = new Set(messageIds)
-    const summariesInSelection: Array<{ blockId: number; rawIndex: number }> = []
-    for (const summary of context.summaryByBlockId.values()) {
-        if (!selectedMessageIds.has(summary.anchorMessageId)) {
-            continue
-        }
-
-        const anchorIndex = context.rawIndexById.get(summary.anchorMessageId)
-        if (anchorIndex === undefined) {
-            continue
-        }
-
-        summariesInSelection.push({
-            blockId: summary.blockId,
-            rawIndex: anchorIndex,
-        })
-    }
-
-    summariesInSelection.sort((a, b) => a.rawIndex - b.rawIndex || a.blockId - b.blockId)
-    for (const summary of summariesInSelection) {
-        if (requiredBlockSeen.has(summary.blockId)) {
-            continue
-        }
-        requiredBlockSeen.add(summary.blockId)
-        requiredBlockIds.push(summary.blockId)
-    }
-
     if (messageIds.length === 0) {
         throw new Error(
             "Failed to map boundary matches back to raw messages. Choose boundaries that include original conversation messages.",
@@ -192,7 +163,6 @@ export function resolveSelection(
         messageIds,
         messageTokenById,
         toolIds,
-        requiredBlockIds,
     }
 }
 

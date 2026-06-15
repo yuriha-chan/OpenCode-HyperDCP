@@ -55,30 +55,7 @@ export const syncCompressionBlocks = (
             if (block.deactivatedAt === undefined) {
                 block.deactivatedAt = now
             }
-            block.deactivatedByBlockId = undefined
             continue
-        }
-
-        for (const consumedBlockId of block.consumedBlockIds) {
-            if (!messagesState.activeBlockIds.has(consumedBlockId)) {
-                continue
-            }
-
-            const consumedBlock = messagesState.blocksById.get(consumedBlockId)
-            if (consumedBlock) {
-                consumedBlock.active = false
-                consumedBlock.deactivatedAt = now
-                consumedBlock.deactivatedByBlockId = block.blockId
-
-                const mappedBlockId = messagesState.activeByAnchorMessageId.get(
-                    consumedBlock.anchorMessageId,
-                )
-                if (mappedBlockId === consumedBlock.blockId) {
-                    messagesState.activeByAnchorMessageId.delete(consumedBlock.anchorMessageId)
-                }
-            }
-
-            messagesState.activeBlockIds.delete(consumedBlockId)
         }
 
         block.active = true
