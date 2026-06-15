@@ -61,6 +61,7 @@ function formatBlockDetail(block: CompressionBlock, index?: number): string {
         index !== undefined ? `Block #${block.blockId} (${index + 1})` : `Block #${block.blockId}`
 
     lines.push(header)
+    lines.push(`  Range:     ${block.startId} → ${block.endId}`)
     lines.push(`  Mode:      ${block.mode}`)
     lines.push(`  Status:    ${statusLabel(block)}`)
     lines.push(`  Topic:     ${block.topic}`)
@@ -132,7 +133,7 @@ function formatListView(targets: CompressionTarget[], memo: string | null): stri
             const tokenLabel = formatTokenCount(target.compressedTokens)
             const summaryLabel = formatTokenCount(activeSummaryTokens(block))
             lines.push(
-                `  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`,
+                `  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${block.startId}→${block.endId}  ${target.topic}`,
             )
             lines.push(`    ${truncate(block.summary, 160)}`)
             lines.push("")
