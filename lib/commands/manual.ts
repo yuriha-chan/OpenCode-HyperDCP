@@ -22,8 +22,11 @@ const MANUAL_MODE_OFF = "Manual mode is now OFF."
 
 const COMPRESS_TRIGGER_PROMPT = [
     "<compress triggered manually>",
-    "Manual mode trigger received. You must now use the compress tool.",
-    "Find the most significant completed conversation content that can be compressed into a high-fidelity technical summary.",
+    "Manual mode trigger received. You must now start the COMPRESS FLOW.",
+    "COMPRESS FLOW",
+    "1. Use 'edit_memo' or 'set_memo' tool to update short memo on working command and/or current task execution. You must prioritize edit_memo over set_memo.",
+    "2. Select the completed conversation ranges to compress. Divide a range into multiple ranges if the range includes multiple topics.",
+    "3. For each range, use 'compress' tool to compress the selected message range. You must provide a high-fidelity technical summary. If the selected range is the continuation of the previous block about the same topic, you can call 'expand_block', 'edit_summary' / 'append_summary' and 'save_summary' for the existing block instead of creating new summary block.",
     "Follow the active compress mode, preserve all critical implementation details, and choose safe targets.",
     "Return after compress with a brief explanation of what content was compressed.",
 ].join("\n\n")

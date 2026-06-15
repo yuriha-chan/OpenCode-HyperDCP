@@ -109,31 +109,43 @@ function formatSingleTargetView(target: CompressionTarget): string {
     return lines.join("\n")
 }
 
-function formatListView(targets: CompressionTarget[]): string {
+function formatListView(targets: CompressionTarget[], memo: string | null): string {
     const lines: string[] = []
 
     lines.push("Usage: /dcp view <n>")
     lines.push("")
 
-    if (targets.length === 0) {
-        lines.push("No active compressions to view.")
+    if (targets.length === 0 && !memo) {
+        lines.push("No active compressions or memo to view.")
         return lines.join("\n")
     }
 
-    lines.push("Available compressions:")
-    lines.push("")
+    if (targets.length > 0) {
+        lines.push("Available compressions:")
+        lines.push("")
 
-    for (const target of targets) {
-        const block = target.blocks[0]
-        if (!block) continue
+        for (const target of targets) {
+            const block = target.blocks[0]
+            if (!block) continue
 
-        const status = statusLabel(block)
-        const tokenLabel = formatTokenCount(target.compressedTokens)
-        const summaryLabel = formatTokenCount(activeSummaryTokens(block))
-        lines.push(
-            `  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`,
-        )
-        lines.push(`    ${truncate(block.summary, 160)}`)
+            const status = statusLabel(block)
+            const tokenLabel = formatTokenCount(target.compressedTokens)
+            const summaryLabel = formatTokenCount(activeSummaryTokens(block))
+            lines.push(
+                `  ${target.displayId} (${tokenLabel}→${summaryLabel} tok)  ${block.mode}  ${status}  ${target.topic}`,
+            )
+            lines.push(`    ${truncate(block.summary, 160)}`)
+            lines.push("")
+        }
+    }
+
+    if (memo) {
+        if (targets.length > 0) {
+            lines.push("")
+        }
+        lines.push("Memo:")
+        lines.push(`  ${memo.length} chars`)
+        lines.push(`  ${truncate(memo, 240)}`)
         lines.push("")
     }
 
@@ -162,7 +174,7 @@ export async function handleViewCommand(ctx: ViewCommandContext): Promise<void> 
 
     if (!targetArg) {
         const availableTargets = getActiveCompressionTargets(messagesState)
-        const message = formatListView(availableTargets)
+        const message = formatListView(availableTargets, state.memo)
         await sendIgnoredMessage(client, sessionId, message, params, logger)
         return
     }
