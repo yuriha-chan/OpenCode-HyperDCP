@@ -170,6 +170,7 @@ const filterCompressedRanges = (
     }
 
     const result: WithParts[] = []
+    let lastBlockIndex = -1
 
     for (const msg of messages) {
         const msgId = msg.info.id
@@ -219,6 +220,7 @@ const filterCompressedRanges = (
                     result.push(
                         createSyntheticUserMessage(userMessage, summaryContent, summarySeed),
                     )
+                    lastBlockIndex = result.length - 1
 
                     logger.info("Injected compress summary", {
                         anchorMessageId: msgId,
@@ -240,6 +242,23 @@ const filterCompressedRanges = (
 
         // Normal message, include it
         result.push(msg)
+    }
+
+    // Inject memo after the last block summary
+    if (state.memo && state.memo.length > 0) {
+        const userMessage = getLastUserMessage(messages)
+        if (userMessage) {
+            const memoMsg = createSyntheticUserMessage(
+                userMessage,
+                `[Memo]\n${state.memo}`,
+                "dcp_memo",
+            )
+            if (lastBlockIndex >= 0) {
+                result.splice(lastBlockIndex + 1, 0, memoMsg)
+            } else {
+                result.unshift(memoMsg)
+            }
+        }
     }
 
     // Replace messages array contents

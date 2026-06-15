@@ -39,6 +39,7 @@ export interface PersistedSessionState {
     nudges: PersistedNudges
     stats: SessionStats
     protectedRefs?: string[]
+    memo?: string | null
     lastUpdated: string
 }
 
@@ -99,6 +100,7 @@ export async function saveSessionState(
                 iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
             },
             protectedRefs: Array.from(sessionState.protectedRefs),
+            memo: sessionState.memo,
             stats: sessionState.stats,
             lastUpdated: new Date().toISOString(),
         }

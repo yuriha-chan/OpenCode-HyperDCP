@@ -33,6 +33,7 @@ import {
     handleHelpCommand,
     handleManualToggleCommand,
     handleManualTriggerCommand,
+    handleMemoCommand,
     handleMessagesCommand,
     handleProtectCommand,
     handleRecompressCommand,
@@ -190,7 +191,8 @@ export function createCommandExecuteHandler(
             })
             const messages = filterMessages(messagesResponse.data || messagesResponse)
 
-            const detectedSessionId = getLastUserMessage(messages)?.info.sessionID || input.sessionID
+            const detectedSessionId =
+                getLastUserMessage(messages)?.info.sessionID || input.sessionID
 
             await ensureSessionInitialized(
                 client,
@@ -361,6 +363,17 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                 })
+                output.handled = true
+                return
+            }
+
+            if (subcommand === "memo") {
+                await handleMemoCommand(
+                    {
+                        ...commandCtx,
+                    },
+                    subArgs,
+                )
                 output.handled = true
                 return
             }

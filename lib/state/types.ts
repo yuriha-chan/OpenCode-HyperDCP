@@ -58,7 +58,7 @@ export interface CompressionBlock {
     deactivatedByBlockId?: number
     summary: string
     summaryVersions: string[]
-    activeVersionIndex: number  // 0=disabled, 1=original, 2+=rewrites
+    activeVersionIndex: number // 0=disabled, 1=original, 2+=rewrites
     pendingEditBuffer?: string
     pendingExpandedMessageIds?: string[]
 }
@@ -113,4 +113,5 @@ export interface SessionState {
     modelContextLimit: number | undefined
     systemPromptTokens: number | undefined
     protectedRefs: Set<string>
+    memo: string | null
 }

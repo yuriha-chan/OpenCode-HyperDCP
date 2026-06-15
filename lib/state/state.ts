@@ -99,6 +99,7 @@ export function createSessionState(): SessionState {
         modelContextLimit: undefined,
         systemPromptTokens: undefined,
         protectedRefs: new Set<string>(),
+        memo: null,
     }
 }
 
@@ -134,6 +135,7 @@ export function resetSessionState(state: SessionState): void {
     state.modelContextLimit = undefined
     state.systemPromptTokens = undefined
     state.protectedRefs = new Set<string>()
+    state.memo = null
 }
 
 export async function ensureSessionInitialized(
@@ -183,6 +185,7 @@ export async function ensureSessionInitialized(
         totalPruneTokens: persisted.stats?.totalPruneTokens || 0,
     }
     state.protectedRefs = new Set(persisted.protectedRefs || [])
+    state.memo = persisted.memo ?? null
 
     const applied = applyPendingCompressionDurations(state)
     if (applied > 0) {

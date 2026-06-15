@@ -7,6 +7,7 @@ export {
     handleManualToggleCommand,
     handleManualTriggerCommand,
 } from "./manual"
+export { handleMemoCommand } from "./memo"
 export { handleMessagesCommand } from "./messages"
 export { handleProtectCommand } from "./protect"
 export { handleRecompressCommand } from "./recompress"
