@@ -20,6 +20,7 @@ export interface PersistedPruneMessagesState {
     activeByAnchorMessageId: Record<string, number>
     nextBlockId: number
     nextRunId: number
+    lastSeenUserMessageId?: string
 }
 
 export interface PersistedPrune {

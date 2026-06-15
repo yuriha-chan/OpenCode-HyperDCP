@@ -57,6 +57,16 @@ const INTERNAL_AGENT_SIGNATURES = [
     "Summarize what was done in this conversation",
 ]
 
+function findLatestUserMessage(state: SessionState, messages: WithParts[]): string | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]
+        if (msg.info.role === "user") {
+            return msg.info.id
+        }
+    }
+    return null
+}
+
 export function createSystemPromptHandler(
     state: SessionState,
     logger: Logger,
@@ -140,8 +150,14 @@ export function createChatMessageTransformHandler(
         syncCompressionBlocks(state, logger, output.messages)
         syncToolCache(state, config, logger, output.messages)
         buildToolIdList(state, output.messages)
+        const latestUser = findLatestUserMessage(state, output.messages)
+        if (latestUser !== null && latestUser !== state.prune.messages.lastSeenUserMessageId) {
+            autoSavePendingBuffers(state, logger)
+        }
+        if (latestUser !== null) {
+            state.prune.messages.lastSeenUserMessageId = latestUser
+        }
         prune(state, logger, config, output.messages)
-        autoSavePendingBuffers(state, logger)
         await injectExtendedSubAgentResults(
             client,
             state,

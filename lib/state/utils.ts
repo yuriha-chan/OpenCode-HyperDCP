@@ -31,6 +31,7 @@ interface PersistedPruneMessagesState {
     activeByAnchorMessageId: Record<string, number>
     nextBlockId: number
     nextRunId: number
+    lastSeenUserMessageId?: string
 }
 
 export function serializePruneMessagesState(
@@ -48,6 +49,7 @@ export function serializePruneMessagesState(
         activeByAnchorMessageId: Object.fromEntries(messagesState.activeByAnchorMessageId),
         nextBlockId: messagesState.nextBlockId,
         nextRunId: messagesState.nextRunId,
+        lastSeenUserMessageId: messagesState.lastSeenUserMessageId,
     }
 }
 
@@ -112,6 +114,7 @@ export function createPruneMessagesState(): PruneMessagesState {
         activeByAnchorMessageId: new Map<string, number>(),
         nextBlockId: 1,
         nextRunId: 1,
+        lastSeenUserMessageId: "",
     }
 }
 
@@ -276,6 +279,12 @@ export function loadPruneMessagesState(
             }
             state.activeByAnchorMessageId.set(anchorMessageId, blockId)
         }
+    }
+
+    if (
+        typeof persisted.lastSeenUserMessageId === "string"
+    ) {
+        state.lastSeenUserMessageId = persisted.lastSeenUserMessageId
     }
 
     for (const [blockId, block] of state.blocksById) {

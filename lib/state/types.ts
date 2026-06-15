@@ -70,6 +70,7 @@ export interface PruneMessagesState {
     activeByAnchorMessageId: Map<string, number>
     nextBlockId: number
     nextRunId: number
+    lastSeenUserMessageId: string
 }
 
 export interface Prune {
