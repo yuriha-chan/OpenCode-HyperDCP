@@ -67,6 +67,7 @@ export function createSessionState(): SessionState {
         sessionId: null,
         isSubAgent: false,
         manualMode: false,
+        preCompressManualMode: false,
         compressPermission: undefined,
         pendingManualTrigger: null,
         prune: {
@@ -107,6 +108,7 @@ export function resetSessionState(state: SessionState): void {
     state.sessionId = null
     state.isSubAgent = false
     state.manualMode = false
+    state.preCompressManualMode = false
     state.compressPermission = undefined
     state.pendingManualTrigger = null
     state.prune = {

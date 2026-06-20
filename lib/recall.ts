@@ -127,7 +127,7 @@ function collectMessageIdsForMessageRange(
     return ids
 }
 
-function searchMessages(messages: WithParts[], messageIds: Set<string>, query: string): string {
+function searchMessages(messages: WithParts[], messageIds: Set<string>, query: string, byRawId: Map<string, string>): string {
     let pattern: RegExp
     try {
         pattern = new RegExp(query, "i")
@@ -173,7 +173,8 @@ function searchMessages(messages: WithParts[], messageIds: Set<string>, query: s
 
     for (const { msg, matchText } of matchingMessages) {
         const tokenCount = countAllMessageTokens(msg)
-        lines.push(`  ${msg.info.id} (${msg.info.role}, ~${formatTokenCount(tokenCount)})`)
+        const displayId = byRawId.get(msg.info.id) ?? msg.info.id
+        lines.push(`  ${displayId} (${msg.info.role}, ~${formatTokenCount(tokenCount)})`)
         lines.push(`  ${matchText}`)
         lines.push("")
     }
@@ -290,5 +291,5 @@ function handleSearch(ctx: ToolContext, messages: WithParts[], input: RecallArgs
         return "No messages to search."
     }
 
-    return searchMessages(messages, new Set(targetIds), input.query)
+    return searchMessages(messages, new Set(targetIds), input.query, ctx.state.messageIds.byRawId)
 }

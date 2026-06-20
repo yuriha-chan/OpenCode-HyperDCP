@@ -151,11 +151,15 @@ export function createChatMessageTransformHandler(
         syncToolCache(state, config, logger, output.messages)
         buildToolIdList(state, output.messages)
         const latestUser = findLatestUserMessage(state, output.messages)
-        if (latestUser !== null && latestUser !== state.prune.messages.lastSeenUserMessageId) {
+        const isNewUserMessage = latestUser !== null && latestUser !== state.prune.messages.lastSeenUserMessageId
+        if (isNewUserMessage) {
             autoSavePendingBuffers(state, logger)
         }
         if (latestUser !== null) {
             state.prune.messages.lastSeenUserMessageId = latestUser
+        }
+        if (isNewUserMessage && state.manualMode === "compress-pending" && !state.pendingManualTrigger) {
+            state.manualMode = state.preCompressManualMode
         }
         prune(state, logger, config, output.messages)
         await injectExtendedSubAgentResults(
@@ -274,6 +278,9 @@ export function createCommandExecuteHandler(
                     throw new Error("__DCP_MANUAL_TRIGGER_BLOCKED__")
                 }
 
+                if (state.manualMode !== "compress-pending") {
+                    state.preCompressManualMode = state.manualMode
+                }
                 state.manualMode = "compress-pending"
                 state.pendingManualTrigger = {
                     sessionId: input.sessionID,
@@ -360,6 +367,9 @@ export function createCommandExecuteHandler(
                     throw new Error("__DCP_REWRITE_BLOCKED__")
                 }
 
+                if (state.manualMode !== "compress-pending") {
+                    state.preCompressManualMode = state.manualMode
+                }
                 state.manualMode = "compress-pending"
                 state.pendingManualTrigger = {
                     sessionId: input.sessionID,

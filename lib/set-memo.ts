@@ -24,7 +24,10 @@ export function createSetMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
 
 export function createEditMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description: `Edit the persistent memo block. The memo stores working commands, user constraints, task tracking, and durable state that persists across compressions. Use set_memo to replace the entire memo.
+        description: `Edit the persistent memo block with surgical string replacement.
+Provide only the text to replace as oldString — not the entire memo.
+Use set_memo to replace the entire memo.
+The memo stores working commands, user constraints, task tracking, and durable state that persists across compressions.
 
 THE FORMAT
 {
