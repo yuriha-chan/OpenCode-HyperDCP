@@ -6,10 +6,10 @@
 
 import * as fs from "fs/promises"
 import { existsSync } from "fs"
-import { homedir } from "os"
 import { join } from "path"
 import type { CompressionBlock, PrunedMessageEntry, SessionState, SessionStats } from "./types"
 import type { Logger } from "../logger"
+import { STORAGE_DIR, getSessionFilePath } from "../paths"
 import { serializePruneMessagesState } from "./utils"
 
 /** Prune state as stored on disk */
@@ -44,22 +44,10 @@ export interface PersistedSessionState {
     lastUpdated: string
 }
 
-const STORAGE_DIR = join(
-    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
-    "opencode",
-    "storage",
-    "plugin",
-    "dcp",
-)
-
 async function ensureStorageDir(): Promise<void> {
     if (!existsSync(STORAGE_DIR)) {
         await fs.mkdir(STORAGE_DIR, { recursive: true })
     }
-}
-
-function getSessionFilePath(sessionId: string): string {
-    return join(STORAGE_DIR, `${sessionId}.json`)
 }
 
 async function writePersistedSessionState(

@@ -14,6 +14,9 @@
         "./server": {
             "types": "./dist/index.d.ts",
             "import": "./dist/index.js"
+        },
+        "./tui": {
+            "import": "./dist/tui.js"
         }
     },
     "scripts": {
@@ -27,7 +30,8 @@
         "test": "node --import tsx --test tests/*.test.ts",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "dcp": "tsx scripts/print.ts"
+        "dcp": "tsx scripts/print.ts",
+	"check:tui": "npm run build && bun --eval \"import('./dist/tui.js').then(m => console.log('Loaded:', m), e => console.error('Error:', e))\""
     },
     "keywords": [
         "opencode",
@@ -49,7 +53,10 @@
     "author": "tarquinen",
     "license": "AGPL-3.0-or-later",
     "peerDependencies": {
-        "@opencode-ai/plugin": ">=1.4.3"
+        "@opencode-ai/plugin": ">=1.4.3",
+        "@opentui/core": "^0.4.1",
+        "@opentui/keymap": "^0.4.1",
+        "@opentui/solid": "^0.4.1"
     },
     "dependencies": {
         "@anthropic-ai/tokenizer": "^0.0.4",
@@ -59,6 +66,9 @@
     },
     "devDependencies": {
         "@opencode-ai/plugin": "^1.4.3",
+        "@opentui/core": "^0.4.1",
+        "@opentui/keymap": "^0.4.1",
+        "@opentui/solid": "^0.4.1",
         "@types/node": "^25.5.0",
         "prettier": "^3.8.1",
         "tsup": "^8.5.1",
