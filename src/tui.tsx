@@ -7,12 +7,17 @@ import { getSessionFilePath } from "../lib/paths"
 interface BlockInfo {
     blockId: number
     active: boolean
+    activeVersionIndex: number
     topic: string
     mode?: string
     compressedTokens: number
     summaryTokens: number
     startId: string
     endId: string
+}
+
+function estimateTokens(text: string): number {
+    return Math.round(text.length / 4)
 }
 
 function readBlocks(sessionId: string): BlockInfo[] {
@@ -22,16 +27,28 @@ function readBlocks(sessionId: string): BlockInfo[] {
         const state = JSON.parse(content)
         const blocks = state?.prune?.messages?.blocksById
         if (!blocks || typeof blocks !== "object") return []
-        return Object.values(blocks).map((block: any) => ({
-            blockId: block.blockId ?? 0,
-            active: block.active ?? false,
-            topic: block.topic ?? "",
-            mode: block.mode,
-            compressedTokens: block.compressedTokens ?? 0,
-            summaryTokens: block.summaryTokens ?? 0,
-            startId: block.startId ?? "",
-            endId: block.endId ?? "",
-        }))
+        return Object.values(blocks).map((block: any) => {
+            const activeVersionIndex = block.activeVersionIndex ?? 1
+            const summaryVersions: string[] = Array.isArray(block.summaryVersions) ? block.summaryVersions : []
+            let summaryTokens = block.summaryTokens ?? 0
+            if (activeVersionIndex === 0) {
+                summaryTokens = 0
+            } else if (activeVersionIndex > 1) {
+                const versionText = summaryVersions[activeVersionIndex - 2]
+                summaryTokens = typeof versionText === "string" ? estimateTokens(versionText) : 0
+            }
+            return {
+                blockId: block.blockId ?? 0,
+                active: block.active ?? false,
+                activeVersionIndex,
+                topic: block.topic ?? "",
+                mode: block.mode,
+                compressedTokens: block.compressedTokens ?? 0,
+                summaryTokens,
+                startId: block.startId ?? "",
+                endId: block.endId ?? "",
+            }
+        })
     } catch {
         return []
     }
