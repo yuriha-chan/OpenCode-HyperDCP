@@ -25,9 +25,10 @@ export function createSetMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
 export function createEditMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
         description: `Edit the persistent memo block with surgical string replacement.
-Provide only the text to replace as oldString — not the entire memo.
+Keep oldString short (typically 2-3 lines). Match only the surgical fragment to replace — not the entire memo.
 Use set_memo to replace the entire memo.
 The memo stores working commands, user constraints, task tracking, and durable state that persists across compressions.
+Entire memo size should be kept around <1.5K tokens. Keep references & guardrails.
 
 THE FORMAT
 {
