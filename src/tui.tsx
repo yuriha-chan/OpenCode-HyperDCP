@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import { createSignal, Show, For } from "solid-js"
 import { readFileSync } from "node:fs"
 import { getSessionFilePath } from "../lib/paths"
 
@@ -70,43 +71,62 @@ function look(map: Record<string, unknown>) {
         panel: ink(map, "backgroundPanel", "#1d1d1d"),
         border: ink(map, "border", "#4a4a4a"),
         text: ink(map, "text", "#f0f0f0"),
-        muted: ink(map, "textMuted", "#a5a5a5"),
-        accent: ink(map, "primary", "#5f87ff"),
+        muted: ink(map, "textMuted", "#999999"),
+        pruned: ink(map, "textMuted", "#999999"),
+        compressed: ink(map, "primary", "#47ff3d"),
+        decompressed: ink(map, "secondary", "#cf5a42"),
     }
 }
 
-const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
-    const blocks = readBlocks(props.session_id)
+function log(api, message) {
+    return api.client.app.log({
+         service: "dcp-blocks",
+         level: "info",
+         message,
+         extra: {}
+   });
+}
+
+const BlockList = (props: { api: TuiPluginApi; session_id: string; }) => {
+    log(props.api, "BlockList called");
+    // XXX: The TUI does NOT trigger re-render when setBlocks is called, because solid-js instance in the non-builtin plugin differs from the OpenCode client
+    const [blocks, setBlocks] = createSignal(readBlocks(props.session_id));
     const skin = look(props.api.theme.current)
-    const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
-    const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
+    const totalRaw = blocks().reduce((s, b) => s + b.compressedTokens, 0)
+    const totalSummary = blocks().reduce((s, b) => s + b.summaryTokens, 0)
+    // compress is enabled, summary is disabled (the entire block is pruned from the conversation history)
+    const isEmpty = (block) => (block.summaryTokens === 0);
 
     return (
-        <box backgroundColor={skin.panel} flexDirection="column" gap={0}>
+        <box flexDirection="column" gap={0}>
             <text>
                 <b>DCP Blocks</b>
             </text>
             <text fg={skin.muted}>
-                {blocks.length} block{blocks.length !== 1 ? "s" : ""}
-                {blocks.length > 0 ? ` — ${tokenLabel(totalRaw)} → ${tokenLabel(totalSummary)}` : ""}
+                <b fg={skin.text}>{blocks().length}</b> block{blocks().length !== 1 ? "s" : ""}
+                {blocks().length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
             </text>
-            {blocks.length === 0 ? (
+            <Show when={blocks().length === 0}>
                 <text fg={skin.muted}>No compression blocks yet</text>
-            ) : blocks.map((block) => {
-                const mode = block.mode ?? "range"
-                return (
-                    <box flexDirection="row" gap={1} justifyContent="space-between">
+            </Show>
+            <Show when={blocks().length > 0}>
+                <For each={blocks()}>
+                    {(block) => {
+                      const mode = block.mode ?? "range"
+                      return (
+                       <box flexDirection="row" gap={1} justifyContent="space-between">
                         <box flexDirection="row" gap={1}>
-                            <text fg={block.active ? skin.accent : skin.muted}>
-                                b{block.blockId}
+                            <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
+                                { isEmpty(block) ? `b${block.blockId}` : (<b>b{block.blockId}</b>) }
                             </text>
                             <text fg={skin.muted}>
                                 ({tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} tok) {mode[0]}:{block.startId}-{block.endId}
                             </text>
                         </box>
-                    </box>
-                )
-            })}
+                       </box> );
+                       }}
+                </For>
+            </Show>
         </box>
     )
 }
