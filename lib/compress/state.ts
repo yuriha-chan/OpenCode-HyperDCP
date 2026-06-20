@@ -70,6 +70,19 @@ export function applyCompressionState(
     preExistingActiveMessages?: Set<string>,
 ): AppliedCompressionResult {
     const messagesState = state.prune.messages
+
+    for (const block of messagesState.blocksById.values()) {
+        if (!block.active) continue
+        for (const msgId of selection.messageIds) {
+            if (block.effectiveMessageIds.includes(msgId)) {
+                throw new Error(
+                    `Overlap with existing block b${block.blockId} (${block.startId} → ${block.endId}). ` +
+                        `Use expand_block + edit_summary to update the existing block instead of creating a new one.`,
+                )
+            }
+        }
+    }
+
     const consumed = [...new Set(consumedBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
     const included = [...consumed]
 

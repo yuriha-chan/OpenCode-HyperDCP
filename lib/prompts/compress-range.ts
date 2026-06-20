@@ -31,8 +31,11 @@ Rules:
 - \`startId\` must appear before \`endId\`.
 - Do not invent IDs. Use only IDs that are present in context.
 
+NO OVERLAP
+Ranges must not overlap with any existing active compression block. Every message can belong to at most one active block. If a range would overlap with block bN, use expand_block + edit_summary/append_summary + save_summary to update that block instead.
+
 BATCHING
-When multiple independent ranges are ready and their boundaries do not overlap, include all of them as separate entries in the \`content\` array of a single tool call. Each entry should have its own \`startId\`, \`endId\`, and \`summary\`.
+When multiple independent ranges are ready and their boundaries do not overlap with each other or existing blocks, include all of them as separate entries in the \`content\` array of a single tool call. Each entry should have its own \`startId\`, \`endId\`, and \`summary\`.
 
 MEMO
 Call set_memo or edit_memo to update the persistent memo block before or after compressing. See the tool descriptions for what the memo stores and how to edit it.

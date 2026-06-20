@@ -34,6 +34,9 @@ Rules:
 - Ignore XML attributes such as \`priority\` when copying the ID; use only the inner \`mNNNN\` value.
 - Do not invent IDs. Use only IDs that are present in context.
 
+NO OVERLAP
+Messages must not overlap with any existing active compression block. Every message can belong to at most one active block. If a message is already in block bN, use expand_block + edit_summary/append_summary + save_summary to update that block instead.
+
 BATCHING
 Select MANY messages in a single tool call when they are safe to compress.
 Each entry should summarize exactly one message, and the tool can receive as many entries as needed in one batch.
