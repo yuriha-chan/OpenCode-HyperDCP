@@ -64,49 +64,47 @@ export function findUncoveredRanges(state: SessionState, messages: WithParts[]):
 
     const ranges: UncoveredRange[] = []
     let currentStart: WithParts | null = null
+    let currentEnd: WithParts | null = null
     let currentCount = 0
     let currentTokens = 0
+
+    function flushRange() {
+        if (!currentStart) return
+        const startRef =
+            state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id
+        const endRef = currentEnd
+            ? state.messageIds.byRawId.get(currentEnd.info.id) || currentEnd.info.id
+            : startRef
+        ranges.push({
+            startId: startRef,
+            endId: endRef,
+            messageCount: currentCount,
+            tokenEstimate: currentTokens,
+        })
+        currentStart = null
+        currentEnd = null
+        currentCount = 0
+        currentTokens = 0
+    }
 
     for (const msg of messages) {
         if (isIgnoredUserMessage(msg)) continue
 
         if (coveredIds.has(msg.info.id)) {
-            // Covered message — flush any pending uncovered range
-            if (currentStart) {
-                ranges.push({
-                    startId:
-                        state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id,
-                    endId:
-                        state.messageIds.byRawId.get(
-                            messages[messages.indexOf(msg) - 1]?.info.id || "",
-                        ) || "",
-                    messageCount: currentCount,
-                    tokenEstimate: currentTokens,
-                })
-                currentStart = null
-                currentCount = 0
-                currentTokens = 0
-            }
+            flushRange()
             continue
         }
 
         if (!currentStart) {
             currentStart = msg
         }
+        currentEnd = msg
         currentCount++
         currentTokens += countAllMessageTokens(msg)
     }
 
     // Flush trailing uncovered range
-    if (currentStart && currentCount > 0) {
-        const lastMsg = messages[messages.length - 1]
-        ranges.push({
-            startId: state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id,
-            endId: lastMsg ? state.messageIds.byRawId.get(lastMsg.info.id) || lastMsg.info.id : "",
-            messageCount: currentCount,
-            tokenEstimate: currentTokens,
-        })
-    }
+    flushRange()
 
     return ranges
 }

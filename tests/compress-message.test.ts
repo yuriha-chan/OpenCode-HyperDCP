@@ -558,7 +558,7 @@ test("compress message mode skips protected user message references", async () =
     assert.equal(state.prune.messages.blocksById.size, 1)
     assert.match(result, /^Compressed 1 message into \[Compressed conversation section\]\./)
     assert.match(result, /Skipped 2 issues:/)
-    assert.match(result, /messageId BLOCKED refers to a protected message/)
+    assert.match(result, /tagged with `BLOCKED` are protected/)
     assert.match(result, /messageId m0001 refers to a protected message/)
 })
 
