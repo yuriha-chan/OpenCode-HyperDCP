@@ -49,9 +49,20 @@ export function attachCompressionDuration(
     return updates
 }
 
-export function wrapCompressedSummary(blockId: number, summary: string): string {
+export function wrapCompressedSummary(
+    blockId: number,
+    summary: string,
+    meta?: { startId: string; endId: string; topic: string; mode: string },
+): string {
     const header = COMPRESSED_BLOCK_HEADER
-    const footer = formatMessageIdTag(formatBlockRef(blockId))
+    const attrs: Record<string, string | undefined> = {}
+    if (meta) {
+        attrs.startId = meta.startId
+        attrs.endId = meta.endId
+        attrs.topic = meta.topic
+        attrs.mode = meta.mode
+    }
+    const footer = formatMessageIdTag(formatBlockRef(blockId), attrs)
     const body = summary.trim()
     if (body.length === 0) {
         return `${header}\n${footer}`
