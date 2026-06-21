@@ -7,7 +7,7 @@ THE FORMAT OF COMPRESS
 
 \`\`\`
 {
-  topic: string,           // Short label (3-5 words) representing actual conversation content, not a procedural label like "remaining fixes"
+  topic: string,           // Short label (3-5 words) - e.g., "Auth System Exploration"
   content: [               // One or more ranges to compress
     {
       startId: string,     // Boundary ID at range start: mNNNN or bN
@@ -23,11 +23,11 @@ THE FORMAT OF COMPRESS
 
 \`\`\`
 {
-  topic: string,           // Short label (3-5 words) representing actual conversation content, not a procedural label like "remaining fixes"
+  topic: string,           // Short label (3-5 words) for the overall batch
   content: [               // One or more messages to compress independently
     {
       messageId: string,   // Raw message ID only: mNNNN (ignore metadata attributes like priority)
-      topic: string,       // Short label (3-5 words) representing actual conversation content
+      topic: string,       // Short label (3-5 words) for this one message summary
       summary: string      // Complete technical summary replacing that one message
     }
   ]
