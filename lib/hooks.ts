@@ -25,6 +25,7 @@ import {
     resolveCompressionDuration,
 } from "./compress/timing"
 import { filterMessages, filterMessagesInPlace } from "./messages/shape"
+import { sendIgnoredMessage } from "./ui/notification"
 import {
     applyPendingManualTrigger,
     handleContextCommand,
@@ -405,6 +406,16 @@ export function createCommandExecuteHandler(
             }
 
             await handleHelpCommand(commandCtx)
+            output.handled = true
+            return
+        }
+
+        if (input.command === "dcp-tui") {
+            const args = (input.arguments || "").trim()
+            const text = args
+                ? `Use the command palette (Ctrl+P) and type /dcp-tui ${args}`
+                : "Use the command palette (Ctrl+P) and type /dcp-tui blocks|messages|memo"
+            await sendIgnoredMessage(client, input.sessionID, text, {}, logger)
             output.handled = true
             return
         }

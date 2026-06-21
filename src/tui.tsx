@@ -1,24 +1,48 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createSignal, Show, For } from "solid-js"
+import { Show, For, onCleanup } from "solid-js"
 import { readFileSync } from "node:fs"
 import { getSessionFilePath } from "../lib/paths"
+
+const DCP_MODE = "dcp-routes"
 
 interface BlockInfo {
     blockId: number
     active: boolean
     activeVersionIndex: number
     topic: string
+    batchTopic?: string
     mode?: string
     compressedTokens: number
     summaryTokens: number
     startId: string
     endId: string
+    durationMs: number
+    deactivatedByUser: boolean
+    parentBlockIds: number[]
+    includedBlockIds: number[]
+    summary: string
+}
+
+interface MessageEntry {
+    rawId: string
+    ref: string
+    tokenCount: number
+    activeBlockIds: number[]
 }
 
 function estimateTokens(text: string): number {
     return Math.round(text.length / 4)
+}
+
+function activeSummaryText(block: any): string {
+    const idx = typeof block.activeVersionIndex === "number" ? block.activeVersionIndex : 1
+    if (idx === 0) return ""
+    if (idx >= 2 && Array.isArray(block.summaryVersions) && idx - 2 < block.summaryVersions.length) {
+        return block.summaryVersions[idx - 2]
+    }
+    return block.summary ?? ""
 }
 
 function readBlocks(sessionId: string): BlockInfo[] {
@@ -43,15 +67,74 @@ function readBlocks(sessionId: string): BlockInfo[] {
                 active: block.active ?? false,
                 activeVersionIndex,
                 topic: block.topic ?? "",
+                batchTopic: block.batchTopic,
                 mode: block.mode,
                 compressedTokens: block.compressedTokens ?? 0,
                 summaryTokens,
                 startId: block.startId ?? "",
                 endId: block.endId ?? "",
+                durationMs: block.durationMs ?? 0,
+                deactivatedByUser: block.deactivatedByUser ?? false,
+                parentBlockIds: Array.isArray(block.parentBlockIds) ? block.parentBlockIds : [],
+                includedBlockIds: Array.isArray(block.includedBlockIds) ? block.includedBlockIds : [],
+                summary: activeSummaryText(block),
             }
         })
     } catch {
         return []
+    }
+}
+
+function readSingleBlock(sessionId: string, blockId: number): BlockInfo | null {
+    const blocks = readBlocks(sessionId)
+    return blocks.find((b) => b.blockId === blockId) ?? null
+}
+
+function readMessages(sessionId: string): MessageEntry[] {
+    try {
+        const path = getSessionFilePath(sessionId)
+        const content = readFileSync(path, "utf-8")
+        const state = JSON.parse(content)
+        const byMessageId = state?.prune?.messages?.byMessageId
+        if (!byMessageId || typeof byMessageId !== "object") return []
+        const entries = Object.entries(byMessageId)
+        return entries.map(([rawId, entry]: [string, any], i) => ({
+            rawId,
+            ref: `m${String(i + 1).padStart(4, "0")}`,
+            tokenCount: entry.tokenCount ?? 0,
+            activeBlockIds: Array.isArray(entry.activeBlockIds) ? entry.activeBlockIds : [],
+        }))
+    } catch {
+        return []
+    }
+}
+
+function readMemo(sessionId: string): string | null {
+    try {
+        const path = getSessionFilePath(sessionId)
+        const content = readFileSync(path, "utf-8")
+        const state = JSON.parse(content)
+        return typeof state?.memo === "string" ? state.memo : null
+    } catch {
+        return null
+    }
+}
+
+function readStats(sessionId: string): { totalPruneTokens: number; totalMessagesPruned: number; totalToolsPruned: number; compressionRatio: number } | null {
+    try {
+        const path = getSessionFilePath(sessionId)
+        const content = readFileSync(path, "utf-8")
+        const state = JSON.parse(content)
+        const stats = state?.stats
+        if (!stats) return null
+        return {
+            totalPruneTokens: stats.totalPruneTokens ?? 0,
+            totalMessagesPruned: stats.totalMessagesPruned ?? 0,
+            totalToolsPruned: stats.totalToolsPruned ?? 0,
+            compressionRatio: stats.compressionRatio ?? 0,
+        }
+    } catch {
+        return null
     }
 }
 
@@ -60,10 +143,15 @@ function tokenLabel(tokens: number): string {
     return String(tokens)
 }
 
-function ink(map: Record<string, unknown>, name: string, fallback: string): string {
-    const value = map[name]
-    if (typeof value === "string") return value
-    return fallback
+function tokenLabelPrecise(tokens: number): string {
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`
+    return `${tokens} tok`
+}
+
+function statusLabel(block: BlockInfo): string {
+    if (block.active) return "active"
+    if (block.deactivatedByUser) return "decompressed by user"
+    return "inactive"
 }
 
 function look(map: Record<string, unknown>) {
@@ -78,24 +166,51 @@ function look(map: Record<string, unknown>) {
     }
 }
 
-function log(api, message) {
-    return api.client.app.log({
-         service: "dcp-blocks",
-         level: "info",
-         message,
-         extra: {}
-   });
+function ink(map: Record<string, unknown>, name: string, fallback: string): string {
+    const value = map[name]
+    if (typeof value === "string") return value
+    return fallback
 }
 
-const BlockList = (props: { api: TuiPluginApi; session_id: string; }) => {
-    log(props.api, "BlockList called");
-    // XXX: The TUI does NOT trigger re-render when setBlocks is called, because solid-js instance in the non-builtin plugin differs from the OpenCode client
-    const [blocks, setBlocks] = createSignal(readBlocks(props.session_id));
+function log(api: TuiPluginApi, message: string) {
+    return api.client.app.log({
+        service: "dcp-blocks",
+        level: "info",
+        message,
+        extra: {},
+    })
+}
+
+function goHome(api: TuiPluginApi) {
+    const sessionID = api.route.current.params?.sessionID as string | undefined
+    if (sessionID) {
+        api.route.navigate("session", { sessionID })
+    } else {
+        api.route.navigate("home")
+    }
+}
+
+function goBack(api: TuiPluginApi, target: string, params?: Record<string, unknown>) {
+    if (target === "home") {
+        goHome(api)
+    } else {
+        api.route.navigate(target, params)
+    }
+}
+
+// --- Sidebar component ---
+
+const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
     const skin = look(props.api.theme.current)
-    const totalRaw = blocks().reduce((s, b) => s + b.compressedTokens, 0)
-    const totalSummary = blocks().reduce((s, b) => s + b.summaryTokens, 0)
-    // compress is enabled, summary is disabled (the entire block is pruned from the conversation history)
-    const isEmpty = (block) => (block.summaryTokens === 0);
+    const blocks = readBlocks(props.session_id)
+    const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
+    const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
+    const isEmpty = (block: BlockInfo) => block.summaryTokens === 0
+
+    // Eagerly start SDK message fetch so cache is warm for messages page
+    if (!sdkMessagesCache.has(props.session_id)) {
+        fetchAllSdkMessages(props.api, props.session_id)
+    }
 
     return (
         <box flexDirection="column" gap={0}>
@@ -103,33 +218,387 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string; }) => {
                 <b>DCP Blocks</b>
             </text>
             <text fg={skin.muted}>
-                <b fg={skin.text}>{blocks().length}</b> block{blocks().length !== 1 ? "s" : ""}
-                {blocks().length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
+                <b fg={skin.text}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
+                {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
             </text>
-            <Show when={blocks().length === 0}>
+            <Show when={blocks.length === 0}>
                 <text fg={skin.muted}>No compression blocks yet</text>
             </Show>
-            <Show when={blocks().length > 0}>
-                <For each={blocks()}>
+            <Show when={blocks.length > 0}>
+                <For each={blocks}>
                     {(block) => {
-                      const mode = block.mode ?? "range"
-                      return (
-                       <box flexDirection="row" gap={1} justifyContent="space-between">
-                        <box flexDirection="row" gap={1}>
-                            <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
-                                { isEmpty(block) ? `b${block.blockId}` : (<b>b{block.blockId}</b>) }
-                            </text>
-                            <text fg={skin.muted}>
-                                ({tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} tok) {mode[0]}:{block.startId}-{block.endId}
-                            </text>
-                        </box>
-                       </box> );
-                       }}
+                        const mode = block.mode ?? "range"
+                        return (
+                            <box flexDirection="row" gap={1} justifyContent="space-between">
+                                <box flexDirection="row" gap={1}>
+                                    <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
+                                        { isEmpty(block) ? `b${block.blockId}` : (<b>b{block.blockId}</b>) }
+                                    </text>
+                                    <text fg={skin.muted}>
+                                        ({tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} tok) {mode[0]}:{block.startId}-{block.endId}
+                                    </text>
+                                </box>
+                            </box>)
+                    }}
                 </For>
             </Show>
+            <box flexDirection="row" gap={1}>
+                <text bold inverse onMouseDown={async () => {
+                    await fetchAllSdkMessages(props.api, props.session_id)
+                    api.route.navigate("dcp-messages", { sessionID: props.session_id })
+                }} onDblClick={async () => {
+                    await fetchAllSdkMessages(props.api, props.session_id)
+                    api.route.navigate("dcp-messages", { sessionID: props.session_id })
+                }}> Messages </text>
+            </box>
         </box>
     )
 }
+
+// --- Basic page wrapper ---
+
+function PageHeader(props: { api: TuiPluginApi; title: string; backTarget?: string; backParams?: Record<string, unknown> }) {
+    const skin = look(props.api.theme.current)
+    const backLabel = !props.backTarget || props.backTarget === "home" ? "Session" : props.backTarget === "dcp-blocks" ? "Blocks" : "Back"
+
+    return (
+        <box flexDirection="row" gap={1}>
+            <box onMouseDown={() => goBack(props.api, props.backTarget ?? "home", props.backParams)}>
+                <text fg={skin.text} bold inverse> ← {backLabel} </text>
+            </box>
+            <text>
+                <b>{props.title}</b>
+            </text>
+        </box>
+    )
+}
+
+function PageShell(props: { api: TuiPluginApi; title: string; children: any; backTarget?: string; backParams?: Record<string, unknown> }) {
+    const skin = look(props.api.theme.current)
+
+    return (
+        <box flexDirection="column" gap={1} padding={1}>
+            <PageHeader api={props.api} title={props.title} backTarget={props.backTarget} backParams={props.backParams} />
+            <text fg={skin.muted}>{"─".repeat(40)}</text>
+            {props.children}
+        </box>
+    )
+}
+
+// --- Blocks list detail page ---
+
+const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
+    const popMode = props.api.mode.push(DCP_MODE)
+    onCleanup(popMode)
+    const sessionID = props.params?.sessionID as string | undefined
+    const skin = look(props.api.theme.current)
+    const blocks = sessionID ? readBlocks(sessionID) : []
+    const stats = sessionID ? readStats(sessionID) : null
+    const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
+    const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
+    const isEmpty = (block: BlockInfo) => block.summaryTokens === 0
+
+    if (!sessionID) {
+        return (
+            <PageShell api={props.api} title="DCP Blocks">
+                <text fg={skin.muted}>No active session</text>
+            </PageShell>
+        )
+    }
+
+    if (blocks.length === 0) {
+        return (
+            <PageShell api={props.api} title="DCP Blocks">
+                <text fg={skin.muted}>No compression blocks yet</text>
+                {stats && (
+                    <text fg={skin.muted}>All time: saved {tokenLabelPrecise(stats.totalPruneTokens)} across {stats.totalMessagesPruned} messages / {stats.totalToolsPruned} tools</text>
+                )}
+            </PageShell>
+        )
+    }
+
+    return (
+        <PageShell api={props.api} title="DCP Blocks">
+            <box flexDirection="row" gap={1}>
+                <text fg={skin.muted}>
+                    {blocks.length} block{blocks.length !== 1 ? "s" : ""} — {tokenLabelPrecise(totalRaw)} raw → {tokenLabelPrecise(totalSummary)} summary
+                </text>
+                {stats ? <text fg={skin.muted}> | saved {tokenLabelPrecise(stats.totalPruneTokens)}</text> : null}
+            </box>
+            <text fg={skin.muted}>{"─".repeat(40)}</text>
+            {blocks.map((block) => {
+                const mode = block.mode ?? "range"
+                const topic = block.topic || null
+                const clr = block.active && !isEmpty(block) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed
+                return (
+                    <box key={block.blockId} flexDirection="row" gap={1} onMouseDown={() => {
+                        log(props.api, `blocks: navigate to dcp-block blockId=${block.blockId}`)
+                        props.api.route.navigate("dcp-block", { sessionID, blockId: block.blockId })
+                    }}>
+                        <text fg={clr} bold>b{String(block.blockId).padEnd(3)}</text>
+                        <text fg={skin.muted}>
+                            ({tokenLabelPrecise(block.compressedTokens).padStart(5)}→{tokenLabelPrecise(block.summaryTokens).padStart(5)}) {mode.padEnd(7)} {statusLabel(block).padEnd(12)} {block.startId}→{block.endId}
+                            {topic ? <b> | {topic}</b> : ""}
+                        </text>
+                    </box>
+                )
+            })}
+        </PageShell>
+    )
+}
+
+// --- Individual block detail page ---
+
+const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
+    const popMode = props.api.mode.push(DCP_MODE)
+    onCleanup(popMode)
+    const sessionID = props.params?.sessionID as string | undefined
+    const blockId = props.params?.blockId as number | undefined
+    const skin = look(props.api.theme.current)
+    const block = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
+    const isEmpty = (b: BlockInfo) => b.summaryTokens === 0
+
+    if (!sessionID) {
+        return (
+            <PageShell api={props.api} title="Block Detail">
+                <text fg={skin.muted}>No active session</text>
+            </PageShell>
+        )
+    }
+
+    if (!block) {
+        return (
+            <PageShell api={props.api} title="Block Detail" backTarget="dcp-blocks" backParams={{ sessionID }}>
+                <text fg={skin.muted}>Block b{blockId} not found</text>
+            </PageShell>
+        )
+    }
+
+    const mode = block.mode ?? "range"
+
+    return (
+        <PageShell api={props.api} title="Block Detail" backTarget="dcp-blocks" backParams={{ sessionID }}>
+            <text fg={skin.text}><b>b{block.blockId} — {block.topic || "(no topic)"}</b></text>
+            <text fg={skin.muted}>
+                {block.startId}→{block.endId} | {mode} | {statusLabel(block)} | {tokenLabelPrecise(block.compressedTokens)}→{tokenLabelPrecise(block.summaryTokens)}
+                {block.durationMs ? ` | ${block.durationMs}ms` : ""}
+                {block.parentBlockIds.length > 0 ? ` | parents: b${block.parentBlockIds.join(" b")}` : ""}
+                {block.includedBlockIds.length > 0 ? ` | includes: b${block.includedBlockIds.join(" b")}` : ""}
+                {block.batchTopic ? ` | batch: ${block.batchTopic}` : ""}
+            </text>
+            <text fg={skin.muted}>{"─".repeat(40)}</text>
+            <text fg={skin.text}>{block.summary || "(empty)"}</text>
+        </PageShell>
+    )
+}
+
+// --- Messages detail page ---
+
+const TRUNCATE_LENGTH = 80
+
+function toolPreview(part: any): string {
+    const toolName = part.tool || part.name || "tool"
+    const input = part.state?.input || part.input
+
+    if ((toolName === "read" || toolName === "edit" || toolName === "write") && input?.filePath) {
+        return `[${toolName} ${input.filePath}]`
+    }
+    if (toolName === "bash" && input?.command) {
+        const cmd = String(input.command).replace(/\s+/g, " ").trim()
+        if (cmd.length > 50) return `[bash ${cmd.slice(0, 47)}...]`
+        return `[bash ${cmd}]`
+    }
+    return `[${toolName}]`
+}
+
+// Module-level cache for SDK messages fetched via v1 API (all messages, not just v2 projected context)
+const sdkMessagesCache = new Map<string, Array<any>>()
+
+async function fetchAllSdkMessages(api: TuiPluginApi, sessionID: string): Promise<void> {
+    if (sdkMessagesCache.has(sessionID)) return
+    try {
+        const response = await (api.client as any).session.messages({ sessionID })
+        const msgs = response?.data
+        if (Array.isArray(msgs)) {
+            const all = msgs.map((m: any) => ({
+                id: m.info?.id,
+                type: m.info?.role,
+                content: m.parts,
+            }))
+            sdkMessagesCache.set(sessionID, all)
+        }
+    } catch {
+        // Cache stays empty; component shows DCP-only entries
+    }
+}
+
+function extractSdkMessagePreview(msg: any): string {
+    if (msg.text && typeof msg.text === "string") {
+        const t = msg.text.replace(/\s+/g, " ").trim()
+        if (t.length > TRUNCATE_LENGTH) return t.slice(0, TRUNCATE_LENGTH) + "..."
+        return t
+    }
+    if (msg.content && Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+            if (part.type === "text" && part.text) {
+                const t = part.text.replace(/\s+/g, " ").trim()
+                if (t.length > TRUNCATE_LENGTH) return t.slice(0, TRUNCATE_LENGTH) + "..."
+                return t
+            }
+            if (part.type === "tool") {
+                return toolPreview(part)
+            }
+        }
+    }
+    if (msg.output && typeof msg.output === "string") {
+        const t = msg.output.replace(/\s+/g, " ").trim()
+        if (t.length > TRUNCATE_LENGTH) return t.slice(0, TRUNCATE_LENGTH) + "..."
+        return t
+    }
+    return "(empty)"
+}
+
+const PAGE_SIZE = 20
+
+const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
+    const popMode = props.api.mode.push(DCP_MODE)
+    onCleanup(popMode)
+    const sessionID = props.params?.sessionID as string | undefined
+    const skin = look(props.api.theme.current)
+    const page = (props.params?.page as number) ?? 0
+
+    // Module-level cache: SDK messages (populated before navigation)
+    const sdkMessages = sessionID ? sdkMessagesCache.get(sessionID) : undefined
+
+    // If cache miss (direct navigation), start the fetch as fallback
+    if (sessionID && !sdkMessages) {
+        fetchAllSdkMessages(props.api, sessionID)
+    }
+
+    // DCP byMessageId as compression status lookup
+    const dcpMessages = sessionID ? readMessages(sessionID) : []
+    const dcpByRawId = new Map(dcpMessages.map((m) => [m.rawId, m]))
+
+    // Build merged display entries (newest first)
+    const allEntries: Array<{
+        rawId: string; ref: string; tokenCount: number; activeBlockIds: number[]; role: string; preview: string
+    }> = sdkMessages && sdkMessages.length > 0
+        ? [...sdkMessages].reverse().map((msg: any, i: number) => {
+            const dcpEntry = dcpByRawId.get(msg.id)
+            return {
+                rawId: msg.id,
+                ref: dcpEntry?.ref ?? "?",
+                tokenCount: dcpEntry?.tokenCount ?? 0,
+                activeBlockIds: dcpEntry?.activeBlockIds ?? [],
+                role: msg.type || "?",
+                preview: extractSdkMessagePreview(msg),
+            }
+        })
+        : [...dcpMessages].reverse().map((entry) => ({
+            ...entry,
+            role: "?" as string,
+            preview: "(empty)" as string,
+        }))
+
+    const totalMessages = allEntries.length
+    const totalPages = Math.max(1, Math.ceil(totalMessages / PAGE_SIZE))
+    const pageEntries = allEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+    const navTo = (newPage: number) => {
+        log(props.api, `messages: navigate to page=${newPage}`)
+        const currentName = props.api.route.current.name
+        const nextName = currentName === "dcp-messages" ? "dcp-messages-alt" : "dcp-messages"
+        props.api.route.navigate(nextName, { sessionID, page: newPage })
+    }
+
+    if (!sessionID) {
+        return (
+            <PageShell api={props.api} title="DCP Messages">
+                <text fg={skin.muted}>No active session</text>
+            </PageShell>
+        )
+    }
+
+    return (
+        <PageShell api={props.api} title="DCP Messages">
+            <box flexDirection="row" gap={1}>
+                <text fg={skin.muted}>
+                    {totalMessages} messages — page {page + 1}/{totalPages}
+                    {dcpMessages.length > totalMessages ? ` (${dcpMessages.length} tracked)` : ""}
+                </text>
+            </box>
+            <text fg={skin.muted}>{"─".repeat(40)}</text>
+            {allEntries.length === 0 ? (
+                <text fg={skin.muted}>No messages in this session.</text>
+            ) : pageEntries.length === 0 ? (
+                <text fg={skin.muted}>Page {page + 1} is empty.</text>
+            ) : (
+                pageEntries.map((entry) => {
+                    const isCompressed = entry.activeBlockIds.length > 0
+                    return (
+                        <box key={entry.rawId} flexDirection="row" gap={1}>
+                            <text fg={isCompressed ? skin.compressed : skin.text}>
+                                {entry.ref} {isCompressed ? "C" : "-"} {String(entry.role).padStart(4)} {tokenLabel(entry.tokenCount).padStart(6)} {entry.preview}
+                            </text>
+                        </box>
+                    )
+                })
+            )}
+            {totalMessages > PAGE_SIZE ? (
+                <>
+                    <text fg={skin.muted}>{"─".repeat(40)}</text>
+                    <box flexDirection="row" gap={1} alignItems="center">
+                        {page > 0 ? (
+                                <box onMouseDown={() => navTo(page - 1)}>
+                                    <text bold inverse onMouseDown={() => navTo(page - 1)} onDblClick={() => navTo(page - 1)}> ← Newer </text>
+                                </box>
+                            ) : null}
+                            <text fg={skin.muted}>Page {page + 1} of {totalPages}</text>
+                            {page < totalPages - 1 ? (
+                                <box onMouseDown={() => navTo(page + 1)}>
+                                    <text bold inverse onMouseDown={() => navTo(page + 1)} onDblClick={() => navTo(page + 1)}> Older → </text>
+                                </box>
+                        ) : null}
+                    </box>
+                </>
+            ) : null}
+        </PageShell>
+    )
+}
+
+// --- Memo detail page ---
+
+const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
+    const popMode = props.api.mode.push(DCP_MODE)
+    onCleanup(popMode)
+    const sessionID = props.params?.sessionID as string | undefined
+    const skin = look(props.api.theme.current)
+    const memo = sessionID ? readMemo(sessionID) : null
+
+    if (!sessionID) {
+        return (
+            <PageShell api={props.api} title="DCP Memo">
+                <text fg={skin.muted}>No active session</text>
+            </PageShell>
+        )
+    }
+
+    return (
+        <PageShell api={props.api} title="DCP Memo">
+            {memo === null ? (
+                <text fg={skin.muted}>No memo set</text>
+            ) : (
+                <>
+                    <text fg={skin.muted}>{memo.length} chars</text>
+                    <text fg={skin.muted}>{"─".repeat(40)}</text>
+                    <text fg={skin.text}>{memo}</text>
+                </>
+            )}
+        </PageShell>
+    )
+}
+
+// --- Plugin entry ---
 
 const tui: TuiPlugin = async (api, options, meta) => {
     api.slots.register({
@@ -139,7 +608,106 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 return <BlockList api={api} session_id={value.session_id} />
             },
         },
-    });
+    })
+
+    api.route.register([
+        {
+            name: "dcp-blocks",
+            render: ({ params }) => <BlocksDetail api={api} params={params} />,
+        },
+        {
+            name: "dcp-block",
+            render: ({ params }) => <BlockDetail api={api} params={params} />,
+        },
+        {
+            name: "dcp-messages",
+            render: ({ params }) => <MessagesDetail api={api} params={params} />,
+        },
+        {
+            name: "dcp-messages-alt",
+            render: ({ params }) => <MessagesDetail api={api} params={params} />,
+        },
+        {
+            name: "dcp-memo",
+            render: ({ params }) => <MemoDetail api={api} params={params} />,
+        },
+    ])
+
+    // Escape handler for DCP routes
+    api.keymap.registerLayer({
+        commands: [
+            {
+                name: "dcp-tui.blocks",
+                title: "DCP Blocks",
+                category: "Plugin",
+                namespace: "palette",
+                slashName: "dcp-tui-blocks",
+                run() {
+                    const sessionID = api.route.current.params?.sessionID as string | undefined
+                    if (sessionID) {
+                        api.route.navigate("dcp-blocks", { sessionID })
+                    } else {
+                        api.route.navigate("dcp-blocks")
+                    }
+                },
+            },
+            {
+                name: "dcp-tui.messages",
+                title: "DCP Messages",
+                category: "Plugin",
+                namespace: "palette",
+                slashName: "dcp-tui-messages",
+                async run() {
+                    const sessionID = api.route.current.params?.sessionID as string | undefined
+                    if (sessionID) {
+                        await fetchAllSdkMessages(api, sessionID)
+                        api.route.navigate("dcp-messages", { sessionID })
+                    } else {
+                        api.route.navigate("dcp-messages")
+                    }
+                },
+            },
+            {
+                name: "dcp-tui.memo",
+                title: "DCP Memo",
+                category: "Plugin",
+                namespace: "palette",
+                slashName: "dcp-tui-memo",
+                run() {
+                    const sessionID = api.route.current.params?.sessionID as string | undefined
+                    if (sessionID) {
+                        api.route.navigate("dcp-memo", { sessionID })
+                    } else {
+                        api.route.navigate("dcp-memo")
+                    }
+                },
+            },
+        ],
+    })
+
+    // Global Escape binding for DCP routes — always registered, navigates to session
+    api.keymap.registerLayer({
+        commands: [
+            {
+                name: "dcp-tui.back",
+                title: "Go back to session",
+                category: "Plugin",
+                hidden: true,
+                run() {
+                    const name = api.route.current.name
+                    const sessionID = api.route.current.params?.sessionID as string | undefined
+                    if (name === "dcp-block" && sessionID) {
+                        api.route.navigate("dcp-blocks", { sessionID })
+                    } else if (sessionID) {
+                        api.route.navigate("session", { sessionID })
+                    } else {
+                        api.route.navigate("home")
+                    }
+                },
+            },
+        ],
+        bindings: [{ key: "escape", cmd: "dcp-tui.back", desc: "Back" }],
+    })
 }
 
 const plugin: TuiPluginModule & { id: string } = {
