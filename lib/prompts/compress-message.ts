@@ -14,6 +14,7 @@ EXPANDING EXISTING BLOCKS
 When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary + save_summary instead of creating a new block. This keeps the topic in one coherent summary.
 
 When the conversation shifts to a NEW topic or task, create a separate block for that topic. Multiple independent topics -> multiple blocks.
+The topic name must describe the conversation content, not the compression action (e.g., avoid "remaining fixes").
 
 MESSAGE IDS
 You specify individual raw messages by ID using the injected IDs visible in the conversation:
