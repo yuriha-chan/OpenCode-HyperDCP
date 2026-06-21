@@ -1,6 +1,6 @@
 # OpenCode-HyperDCP
 
-**OpenCode-HyperDCP** is a context management plugin for the OpenCode AI coding agent framework, forked from **opencode-dynamic-context-pruning plugin**[https://github.com/Opencode-DCP/opencode-dynamic-context-pruning] (version 3.1.12: [https://github.com/yuriha-chan/OpenCode-HyperDCP/tree/0657cd2fd50e9891cd69eae3787bcf280fabc2ba])
+**OpenCode-HyperDCP** is a context management plugin for the OpenCode AI coding agent framework, forked from [**opencode-dynamic-context-pruning plugin**](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning) (of version 3.1.12: [this commit](https://github.com/yuriha-chan/OpenCode-HyperDCP/tree/0657cd2fd50e9891cd69eae3787bcf280fabc2ba))
 
 The plugin aims to offer 100% control of the context window and achieve 'lossless' experience:
 
