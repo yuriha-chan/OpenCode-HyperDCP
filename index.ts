@@ -27,6 +27,7 @@ import {
 } from "./lib/hooks"
 import { configureClientAuth, isSecureMode } from "./lib/auth"
 import { createEditMemoTool } from "./lib/set-memo"
+import { createReadMemoTool } from "./lib/read-memo"
 import { createFetchSummaryVersionsTool } from "./lib/fetch-summary-versions"
 import { startAutoUpdate } from "./lib/update"
 
@@ -103,6 +104,7 @@ const server: Plugin = (async (ctx) => {
                 save_summary: createSaveSummaryTool(compressToolContext),
                 fetch_summary_versions: createFetchSummaryVersionsTool(compressToolContext),
                 edit_memo: createEditMemoTool(compressToolContext),
+                read_memo: createReadMemoTool(compressToolContext),
             }),
         },
         config: async (opencodeConfig) => {
@@ -132,6 +134,7 @@ const server: Plugin = (async (ctx) => {
                 toolsToAdd.push("save_summary")
                 toolsToAdd.push("fetch_summary_versions")
                 toolsToAdd.push("edit_memo")
+                toolsToAdd.push("read_memo")
             }
 
             if (toolsToAdd.length > 0) {
@@ -182,6 +185,14 @@ const server: Plugin = (async (ctx) => {
                 opencodeConfig.permission = {
                     ...permission,
                     edit_memo: "allow",
+                } as typeof permission
+            }
+
+            if (!hasExplicitToolPermission(opencodeConfig.permission, "read_memo")) {
+                const permission = opencodeConfig.permission ?? {}
+                opencodeConfig.permission = {
+                    ...permission,
+                    read_memo: "allow",
                 } as typeof permission
             }
 
