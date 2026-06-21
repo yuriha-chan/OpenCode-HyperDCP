@@ -34,8 +34,8 @@ THE FORMAT
                     throw new Error(
                         `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
                         `Match oldString exactly — watch for leading/trailing whitespace, ` +
-                        `line breaks, and indentation. Call read_memo to see the current ` +
-                        `authoritative content.`,
+                        `line breaks, and indentation. If you are confused about which ` +
+                        `version you are looking at, call read_memo to see the current content.`,
                     )
                 }
                 ctx.state.memo = current.split(input.oldString).join(input.newString)
@@ -45,8 +45,8 @@ THE FORMAT
                     throw new Error(
                         `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
                         `Match oldString exactly — watch for leading/trailing whitespace, ` +
-                        `line breaks, and indentation. Call read_memo to see the current ` +
-                        `authoritative content.`,
+                        `line breaks, and indentation. If you are confused about which ` +
+                        `version you are looking at, call read_memo to see the current content.`,
                     )
                 }
                 ctx.state.memo =
