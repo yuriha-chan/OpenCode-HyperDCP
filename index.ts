@@ -27,6 +27,7 @@ import {
 } from "./lib/hooks"
 import { configureClientAuth, isSecureMode } from "./lib/auth"
 import { createEditMemoTool } from "./lib/set-memo"
+import { createFetchSummaryVersionsTool } from "./lib/fetch-summary-versions"
 import { startAutoUpdate } from "./lib/update"
 
 const server: Plugin = (async (ctx) => {
@@ -100,6 +101,7 @@ const server: Plugin = (async (ctx) => {
                 edit_summary: createEditSummaryTool(compressToolContext),
                 append_summary: createAppendSummaryTool(compressToolContext),
                 save_summary: createSaveSummaryTool(compressToolContext),
+                fetch_summary_versions: createFetchSummaryVersionsTool(compressToolContext),
                 edit_memo: createEditMemoTool(compressToolContext),
             }),
         },
@@ -128,6 +130,7 @@ const server: Plugin = (async (ctx) => {
                 toolsToAdd.push("edit_summary")
                 toolsToAdd.push("append_summary")
                 toolsToAdd.push("save_summary")
+                toolsToAdd.push("fetch_summary_versions")
                 toolsToAdd.push("edit_memo")
             }
 
@@ -163,7 +166,7 @@ const server: Plugin = (async (ctx) => {
                 } as typeof permission
             }
 
-            const expandTools = ["expand_block", "edit_summary", "append_summary", "save_summary"]
+            const expandTools = ["expand_block", "edit_summary", "append_summary", "save_summary", "fetch_summary_versions"]
             for (const toolName of expandTools) {
                 if (!hasExplicitToolPermission(opencodeConfig.permission, toolName)) {
                     const permission = opencodeConfig.permission ?? {}
