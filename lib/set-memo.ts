@@ -11,8 +11,6 @@ The memo stores working commands, user constraints, and temporary states — reu
 Entire memo size should be kept around <1.5K tokens. Keep references & guardrails.
 
 THE FORMAT
-
-THE FORMAT
 {
   oldString: string,        // Text to find and replace
   newString: string,        // Replacement text (must differ from old)
@@ -26,17 +24,31 @@ THE FORMAT
         async execute(args) {
             const input = args as { oldString: string; newString: string; replaceAll?: boolean }
             if (input.oldString === input.newString) {
-                throw new Error("oldString and newString must differ")
+                throw new Error(
+                    `oldString and newString must differ (both are ${JSON.stringify(input.oldString)})`,
+                )
             }
             const current = ctx.state.memo ?? ""
             if (input.replaceAll) {
                 if (!current.includes(input.oldString)) {
-                    throw new Error("Old string not found in memo.")
+                    throw new Error(
+                        `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
+                        `Match oldString exactly — watch for leading/trailing whitespace, ` +
+                        `line breaks, and indentation. The memo content is visible in your ` +
+                        `conversation context above.`,
+                    )
                 }
                 ctx.state.memo = current.split(input.oldString).join(input.newString)
             } else {
                 const idx = current.indexOf(input.oldString)
-                if (idx === -1) throw new Error("Old string not found in memo.")
+                if (idx === -1) {
+                    throw new Error(
+                        `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
+                        `Match oldString exactly — watch for leading/trailing whitespace, ` +
+                        `line breaks, and indentation. The memo content is visible in your ` +
+                        `conversation context above.`,
+                    )
+                }
                 ctx.state.memo =
                     current.slice(0, idx) +
                     input.newString +
