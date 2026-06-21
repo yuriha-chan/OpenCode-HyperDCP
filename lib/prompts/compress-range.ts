@@ -38,5 +38,5 @@ BATCHING
 When multiple independent ranges are ready and their boundaries do not overlap with each other or existing blocks, include all of them as separate entries in the \`content\` array of a single tool call. Each entry should have its own \`startId\`, \`endId\`, and \`summary\`.
 
 MEMO
-Call set_memo or edit_memo to update the persistent memo block before or after compressing. See the tool descriptions for what the memo stores and how to edit it.
+Call edit_memo to update the persistent memo block before or after compressing. Extract command patterns, workflow patterns, user instructions/hints, discovered constraints, tooling preferences, and any surface-form knowledge that would evaporate between sessions.
 `
