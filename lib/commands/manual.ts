@@ -24,7 +24,7 @@ const COMPRESS_TRIGGER_PROMPT = [
     "<compress triggered manually>",
     "Manual mode trigger received. You must now start the COMPRESS FLOW.",
     "COMPRESS FLOW",
-    "1. Use 'edit_memo' to update the memo. Extract command patterns, workflow patterns, user instructions/hints, discovered constraints, tooling preferences, and any surface-form knowledge that would evaporate between sessions. If nothing worth extracting, skip this step.",
+    "1. Use 'edit_memo' to update the memo. Review user requests on procedures and your command execution formats and extract anything other than content — command patterns, user constraints, tooling preferences. If not applicable, skip.",
     "2. Select the completed conversation ranges to compress. Divide a range into multiple ranges if the range includes multiple topics.",
     "3. For each range, use 'compress' tool to compress the selected message range. You must provide a high-fidelity technical summary. If the selected range is the continuation of the previous block about the same topic, you can call 'expand_block', 'edit_summary' / 'append_summary' and 'save_summary' for the existing block instead of creating new summary block.",
     "Follow the active compress mode, preserve all critical implementation details, and choose safe targets.",

@@ -50,5 +50,5 @@ Prioritize the earliest messages in the context as they will be the least releva
 General cleanup should be done periodically between other normal compression tool passes, not as the primary form of compression.
 
 MEMO
-Call edit_memo to update the persistent memo block before or after compressing. Extract command patterns, workflow patterns, user instructions/hints, discovered constraints, tooling preferences, and any surface-form knowledge that would evaporate between sessions. If nothing worth extracting, skip this step.
+Call edit_memo to update the persistent memo block before or after compressing. Review user requests on procedures and your command execution formats and extract anything other than content — command patterns, user constraints, tooling preferences. If not applicable, skip.
 `
