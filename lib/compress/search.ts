@@ -69,7 +69,10 @@ export function resolveBoundaryIds(
     }
 
     if (!parsedStartId || !parsedEndId) {
-        throw new Error("Invalid boundary ID(s)")
+        throw new Error(
+            `Invalid boundary ID(s): startId="${startId}", endId="${endId}". ` +
+                "Use an injected message ID (mNNNN) or block ID (bN).",
+        )
     }
 
     const startReference = lookup.get(parsedStartId.ref)
@@ -94,7 +97,14 @@ export function resolveBoundaryIds(
     }
 
     if (!startReference || !endReference) {
-        throw new Error("Failed to resolve boundary IDs")
+        const missing = !startReference && !endReference
+            ? `both "${parsedStartId.ref}" and "${parsedEndId.ref}"`
+            : !startReference
+                ? `startId "${parsedStartId.ref}"`
+                : `endId "${parsedEndId.ref}"`
+        throw new Error(
+            `Failed to resolve ${missing}. Ensure the IDs are injected and visible in the current conversation context.`,
+        )
     }
 
     if (startReference.rawIndex > endReference.rawIndex) {
@@ -152,8 +162,14 @@ export function resolveSelection(
     }
 
     if (messageIds.length === 0) {
+        const startLabel = startReference.messageId
+            ?? (startReference.blockId !== undefined ? `b${startReference.blockId}` : "?")
+        const endLabel = endReference.messageId
+            ?? (endReference.blockId !== undefined ? `b${endReference.blockId}` : "?")
         throw new Error(
-            "Failed to map boundary matches back to raw messages. Choose boundaries that include original conversation messages.",
+            `No compressible messages found between ${startLabel} and ${endLabel}. ` +
+                "This range may contain only ignored system messages or already-compressed content. " +
+                "Choose boundaries that include original conversation messages (mNNNN).",
         )
     }
 
@@ -169,13 +185,20 @@ export function resolveSelection(
 export function resolveAnchorMessageId(startReference: BoundaryReference): string {
     if (startReference.kind === "compressed-block") {
         if (!startReference.anchorMessageId) {
-            throw new Error("Failed to map boundary matches back to raw messages")
+            const label = startReference.blockId !== undefined
+                ? `b${startReference.blockId}`
+                : "compressed-block"
+            throw new Error(
+                `Cannot resolve anchor message for ${label}: block has no anchor message.`,
+            )
         }
         return startReference.anchorMessageId
     }
 
     if (!startReference.messageId) {
-        throw new Error("Failed to map boundary matches back to raw messages")
+        throw new Error(
+            `Cannot resolve messageId for reference (${startReference.kind}): reference has no messageId.`,
+        )
     }
     return startReference.messageId
 }

@@ -117,6 +117,13 @@ const ISSUE_TEMPLATES: Record<string, [singular: string, plural: string]> = {
 
 function formatSkippedGroup(kind: string, messageIds: string[]): string {
     const templates = ISSUE_TEMPLATES[kind]
+
+    // BLOCKED is a sentinel — the actual messageId was replaced at inject time.
+    // Don't show the literal sentinel value in error output.
+    if (kind === "blocked") {
+        return "Messages tagged with `BLOCKED` are protected and cannot be compressed."
+    }
+
     const ids = messageIds.join(", ")
     const single = messageIds.length === 1
     const prefix = single ? "messageId" : "messageIds"
