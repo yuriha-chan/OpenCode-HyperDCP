@@ -50,5 +50,5 @@ Prioritize the earliest messages in the context as they will be the least releva
 General cleanup should be done periodically between other normal compression tool passes, not as the primary form of compression.
 
 MEMO
-Call edit_memo to update the persistent memo block before or after compressing. Review user requests on procedures and your command execution formats and extract anything other than content — command patterns, user constraints, tooling preferences. If not applicable, skip.
+Call edit_memo to update the persistent memo block before or after compressing. Review user requests on procedures and your command execution formats and extract anything other than content — working commands (concrete shell invocations that work technically in this environment — both on-demand and in agentic loops), user constraints, tooling preferences. If not applicable, skip.
 `
