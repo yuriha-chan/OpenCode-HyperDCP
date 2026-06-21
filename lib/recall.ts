@@ -226,8 +226,18 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
             input.messageIdEnd,
         )
         label = `Messages ${input.messageIdStart} → ${input.messageIdEnd}`
+    } else if (input.blockId !== undefined) {
+        throw new Error(
+            `Cannot use blockId with action "get". ` +
+            `Use fetch_summary_versions to inspect a block's summary, ` +
+            `or provide a messageId (e.g. "m0100") to retrieve raw messages.`,
+        )
     } else {
-        throw new Error("Provide a messageId or messageIdStart/messageIdEnd to retrieve messages.")
+        throw new Error(
+            `Provide a messageId (e.g. "m0100") or ` +
+            `messageIdStart/messageIdEnd to retrieve raw messages. ` +
+            `To inspect a block summary use fetch_summary_versions.`,
+        )
     }
 
     if (!targetIds || targetIds.length === 0) {
