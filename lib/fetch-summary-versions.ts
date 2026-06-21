@@ -9,6 +9,15 @@ function versionLabel(block: CompressionBlock, idx: number): string {
     return `v${idx} (rewrite)`
 }
 
+function getVersionContent(block: CompressionBlock, idx: number): string | null {
+    if (idx < 0) return null
+    if (idx === 0) return null
+    if (idx === 1) return block.summary
+    const vIdx = idx - 2
+    if (vIdx < block.summaryVersions.length) return block.summaryVersions[vIdx]
+    return null
+}
+
 function describeVersion(block: CompressionBlock, idx: number): string {
     const label = versionLabel(block, idx)
     if (idx === 0) return `${label}: not displayed`
@@ -38,15 +47,27 @@ Use this to inspect available versions before deciding to edit, revert, or rewri
 
 THE FORMAT
 {
-  blockId: number
+  blockId: number,
+  version?: number    // Optional: return full text of this version (e.g. 1 for original, 2+ for rewrites)
 }`,
         args: {
             blockId: tool.schema.number().describe("Block ID to inspect (e.g. 3)"),
+            version: tool.schema.number().optional().describe("Optional: return full text of this version (1=original, 2+=rewrite)"),
         },
         async execute(args) {
-            const input = args as { blockId: number }
+            const input = args as { blockId: number; version?: number }
             const block = ctx.state.prune.messages.blocksById.get(input.blockId)
             if (!block) throw new Error(`Block ${input.blockId} not found.`)
+
+            // If version specified, return full text of that version
+            if (input.version !== undefined) {
+                const content = getVersionContent(block, input.version)
+                if (content === null) {
+                    throw new Error(`Version ${input.version} not found for block ${input.blockId}.`)
+                }
+                const label = versionLabel(block, input.version)
+                return `Block #${block.blockId} — ${block.topic}\n${label}:\n\n${content}`
+            }
 
             const lines: string[] = []
             lines.push(`Block #${block.blockId} — ${block.topic}`)
