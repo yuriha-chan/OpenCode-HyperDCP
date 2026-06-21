@@ -183,6 +183,11 @@ function tokenLabelPrecise(tokens: number): string {
     return `${tokens} tok`
 }
 
+function truncateText(text: string, maxLen: number): string {
+    if (!text || text.length <= maxLen) return text
+    return text.slice(0, maxLen) + "…"
+}
+
 function statusLabel(block: BlockInfo): string {
     if (block.active) return "active"
     if (block.deactivatedByUser) return "decompressed by user"
@@ -267,12 +272,13 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
                             <box flexDirection="row" gap={1} justifyContent="space-between">
                                 <box flexDirection="row" gap={1}>
                                     <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
-                                        { isEmpty(block) ? `b${block.blockId}` : (<b>b{block.blockId}</b>) }
+                                        { isEmpty(block) ? `b${String(block.blockId).padEnd(3)}` : (<b>b{String(block.blockId).padEnd(3)}</b>) }
                                     </text>
                                     <text fg={skin.muted}>
-                                        ({tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} tok) {mode[0]}:{block.startId}-{block.endId}
+                                        {tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} {mode !== "range" ? `${mode[0]}:` : ""}{block.startId}-{block.endId}
                                     </text>
                                 </box>
+                                {block.topic ? <text fg={skin.muted}>{truncateText(block.topic, 10)}</text> : null}
                             </box>)
                     }}
                 </For>
