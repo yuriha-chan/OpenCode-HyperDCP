@@ -137,7 +137,7 @@ export const injectCompressNudges = (
     }
 
     const uncoveredRanges = findUncoveredRanges(state, messages)
-    const uncoveredText = formatUncoveredRanges(uncoveredRanges)
+    const uncoveredText = formatUncoveredRanges(uncoveredRanges, state.prune.messages.blocksById)
     const nudgedPrompts = { ...prompts }
     if (uncoveredText) {
         nudgedPrompts.contextLimitNudge += "\n\n" + uncoveredText

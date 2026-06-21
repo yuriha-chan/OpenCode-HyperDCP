@@ -45,7 +45,7 @@ function getTriggerPrompt(
     const sections = [base, compressedBlockGuidance]
 
     const uncoveredRanges = findUncoveredRanges(state, messages)
-    const uncoveredText = formatUncoveredRanges(uncoveredRanges)
+    const uncoveredText = formatUncoveredRanges(uncoveredRanges, state.prune.messages.blocksById)
     if (uncoveredText) {
         sections.push(uncoveredText)
     }
