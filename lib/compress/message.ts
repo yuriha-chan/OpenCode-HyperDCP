@@ -112,12 +112,11 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
 
             for (const { plan, summaryWithTools } of preparedPlans) {
                 const blockId = allocateBlockId(ctx.state)
-                const storedSummary = wrapCompressedSummary(blockId, summaryWithTools, {
-                    startId: plan.entry.messageId,
-                    endId: plan.entry.messageId,
-                    topic: plan.entry.topic || input.topic,
-                    mode: "message",
-                })
+                const storedSummary = wrapCompressedSummary(
+                    blockId,
+                    summaryWithTools,
+                    plan.entry.messageId,
+                )
                 const summaryTokens = countTokens(storedSummary)
 
                 applyCompressionState(
