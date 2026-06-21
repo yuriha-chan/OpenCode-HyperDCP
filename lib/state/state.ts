@@ -189,6 +189,14 @@ export async function ensureSessionInitialized(
     state.protectedRefs = new Set(persisted.protectedRefs || [])
     state.memo = persisted.memo ?? null
 
+    if (persisted.messageIds) {
+        state.messageIds.byRawId = new Map(Object.entries(persisted.messageIds.byRawId))
+        state.messageIds.nextRef = persisted.messageIds.nextRef
+        state.messageIds.byRef = new Map<string, string>(
+            Array.from(state.messageIds.byRawId.entries()).map(([rawId, ref]) => [ref, rawId]),
+        )
+    }
+
     const applied = applyPendingCompressionDurations(state)
     if (applied > 0) {
         await saveSessionState(state, logger)

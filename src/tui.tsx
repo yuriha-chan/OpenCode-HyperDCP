@@ -95,15 +95,50 @@ function readMessages(sessionId: string): MessageEntry[] {
         const path = getSessionFilePath(sessionId)
         const content = readFileSync(path, "utf-8")
         const state = JSON.parse(content)
-        const byMessageId = state?.prune?.messages?.byMessageId
-        if (!byMessageId || typeof byMessageId !== "object") return []
-        const entries = Object.entries(byMessageId)
-        return entries.map(([rawId, entry]: [string, any], i) => ({
-            rawId,
-            ref: `m${String(i + 1).padStart(4, "0")}`,
-            tokenCount: entry.tokenCount ?? 0,
-            activeBlockIds: Array.isArray(entry.activeBlockIds) ? entry.activeBlockIds : [],
-        }))
+
+        // Build ref map from messageIds.byRawId (ALL messages known to DCP)
+        const byRawId: Record<string, string> =
+            state?.messageIds?.byRawId && typeof state.messageIds.byRawId === "object"
+                ? state.messageIds.byRawId
+                : {}
+
+        // Build compression info from byMessageId (compressed messages only)
+        const byMessageId: Record<string, any> =
+            state?.prune?.messages?.byMessageId && typeof state.prune.messages.byMessageId === "object"
+                ? state.prune.messages.byMessageId
+                : {}
+
+        // Collect all unique rawIds from both sources, preserving byRawId order (DCP ref order)
+        const seen = new Set<string>()
+        const allRawIds: string[] = []
+        for (const rawId of Object.keys(byRawId)) {
+            if (!seen.has(rawId)) { seen.add(rawId); allRawIds.push(rawId) }
+        }
+        // Also include compressed-only messages (edge case if byRawId is somehow missing them)
+        for (const rawId of Object.keys(byMessageId)) {
+            if (!seen.has(rawId)) { seen.add(rawId); allRawIds.push(rawId) }
+        }
+
+        const seenRefs = new Set<string>()
+        return allRawIds.map((rawId) => {
+            const entry = byMessageId[rawId]
+            let ref = byRawId[rawId]
+            if (!ref) {
+                ref = `m${String(allRawIds.indexOf(rawId) + 1).padStart(4, "0")}`
+            }
+            // Guard against duplicate refs from wraparound edge cases
+            if (seenRefs.has(ref)) {
+                ref = `${ref}_dup`
+            } else {
+                seenRefs.add(ref)
+            }
+            return {
+                rawId,
+                ref,
+                tokenCount: entry?.tokenCount ?? 0,
+                activeBlockIds: Array.isArray(entry?.activeBlockIds) ? entry.activeBlockIds : [],
+            }
+        })
     } catch {
         return []
     }

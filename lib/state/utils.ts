@@ -346,17 +346,11 @@ export function getActiveSummaryTokenUsage(state: SessionState): number {
 }
 
 export function resetOnCompaction(state: SessionState): void {
-    state.toolParameters.clear()
-    state.prune.tools = new Map<string, number>()
-    state.prune.messages = createPruneMessagesState()
-    state.messageIds = {
-        byRawId: new Map<string, string>(),
-        byRef: new Map<string, string>(),
-        nextRef: 1,
-    }
-    state.nudges = {
-        contextLimitAnchors: new Set<string>(),
-        turnNudgeAnchors: new Set<string>(),
-        iterationNudgeAnchors: new Set<string>(),
+    // System compress clears all context (summaries + messages) into one text.
+    // DCP responds by disabling all block summaries so they're not in context.
+    // Everything else (block active flags, byMessageId tracking, messageIds, etc.)
+    // stays intact — the "forgotten messages" will be compressed in the next cycle.
+    for (const block of state.prune.messages.blocksById.values()) {
+        block.activeVersionIndex = 0
     }
 }

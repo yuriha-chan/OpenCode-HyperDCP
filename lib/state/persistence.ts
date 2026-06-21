@@ -34,6 +34,11 @@ export interface PersistedNudges {
     iterationNudgeAnchors?: string[]
 }
 
+export interface PersistedMessageIds {
+    byRawId: Record<string, string>
+    nextRef: number
+}
+
 export interface PersistedSessionState {
     sessionName?: string
     prune: PersistedPrune
@@ -41,6 +46,7 @@ export interface PersistedSessionState {
     stats: SessionStats
     protectedRefs?: string[]
     memo?: string | null
+    messageIds?: PersistedMessageIds
     lastUpdated: string
 }
 
@@ -90,6 +96,10 @@ export async function saveSessionState(
             },
             protectedRefs: Array.from(sessionState.protectedRefs),
             memo: sessionState.memo,
+            messageIds: {
+                byRawId: Object.fromEntries(sessionState.messageIds.byRawId),
+                nextRef: sessionState.messageIds.nextRef,
+            },
             stats: sessionState.stats,
             lastUpdated: new Date().toISOString(),
         }
