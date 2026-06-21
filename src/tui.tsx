@@ -119,19 +119,9 @@ function readMessages(sessionId: string): MessageEntry[] {
             if (!seen.has(rawId)) { seen.add(rawId); allRawIds.push(rawId) }
         }
 
-        const seenRefs = new Set<string>()
         return allRawIds.map((rawId) => {
             const entry = byMessageId[rawId]
-            let ref = byRawId[rawId]
-            if (!ref) {
-                ref = `m${String(allRawIds.indexOf(rawId) + 1).padStart(4, "0")}`
-            }
-            // Guard against duplicate refs from wraparound edge cases
-            if (seenRefs.has(ref)) {
-                ref = `${ref}_dup`
-            } else {
-                seenRefs.add(ref)
-            }
+            const ref = byRawId[rawId] ?? "?"
             return {
                 rawId,
                 ref,
