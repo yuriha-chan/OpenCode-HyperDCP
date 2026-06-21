@@ -2,33 +2,15 @@ import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import { saveSessionState } from "./state/persistence"
 
-export function createSetMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
-    return tool({
-        description: `Write or clear the persistent memo block that appears before all messages in every turn. Use this for durable task tracking, context notes, or any information that should persist across compressions and turns. Provide an empty string to clear the memo.`,
-        args: {
-            content: tool.schema
-                .string()
-                .describe("Memo content (plain text). Empty string clears the memo."),
-        },
-        async execute(args) {
-            const input = args as { content: string }
-            const trimmed = input.content.trim()
-            ctx.state.memo = trimmed.length > 0 ? trimmed : null
-            await saveSessionState(ctx.state, ctx.logger)
-            return ctx.state.memo
-                ? `Memo updated (${ctx.state.memo.length} chars).`
-                : "Memo cleared."
-        },
-    })
-}
-
 export function createEditMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
         description: `Edit the persistent memo block with surgical string replacement.
-Keep oldString short (typically 2-3 lines). Match only the surgical fragment to replace — not the entire memo.
-Use set_memo to replace the entire memo.
-The memo stores working commands, user constraints, task tracking, and durable state that persists across compressions.
+This is the only way to update the memo — no bulk-set equivalent exists.
+Keep oldString short (typically 2-3 lines). Match only the surgical fragment to replace.
+The memo stores working commands, user constraints, and temporary states — reusable short memories that would otherwise evaporate. It is NOT a history record (that is what compression blocks are for).
 Entire memo size should be kept around <1.5K tokens. Keep references & guardrails.
+
+THE FORMAT
 
 THE FORMAT
 {

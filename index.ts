@@ -26,7 +26,7 @@ import {
     createTextCompleteHandler,
 } from "./lib/hooks"
 import { configureClientAuth, isSecureMode } from "./lib/auth"
-import { createSetMemoTool, createEditMemoTool } from "./lib/set-memo"
+import { createEditMemoTool } from "./lib/set-memo"
 import { startAutoUpdate } from "./lib/update"
 
 const server: Plugin = (async (ctx) => {
@@ -100,7 +100,6 @@ const server: Plugin = (async (ctx) => {
                 edit_summary: createEditSummaryTool(compressToolContext),
                 append_summary: createAppendSummaryTool(compressToolContext),
                 save_summary: createSaveSummaryTool(compressToolContext),
-                set_memo: createSetMemoTool(compressToolContext),
                 edit_memo: createEditMemoTool(compressToolContext),
             }),
         },
@@ -129,7 +128,6 @@ const server: Plugin = (async (ctx) => {
                 toolsToAdd.push("edit_summary")
                 toolsToAdd.push("append_summary")
                 toolsToAdd.push("save_summary")
-                toolsToAdd.push("set_memo")
                 toolsToAdd.push("edit_memo")
             }
 
@@ -174,14 +172,6 @@ const server: Plugin = (async (ctx) => {
                         [toolName]: "allow",
                     } as typeof permission
                 }
-            }
-
-            if (!hasExplicitToolPermission(opencodeConfig.permission, "set_memo")) {
-                const permission = opencodeConfig.permission ?? {}
-                opencodeConfig.permission = {
-                    ...permission,
-                    set_memo: "allow",
-                } as typeof permission
             }
 
             if (!hasExplicitToolPermission(opencodeConfig.permission, "edit_memo")) {
