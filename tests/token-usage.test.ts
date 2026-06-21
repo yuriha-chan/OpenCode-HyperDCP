@@ -43,6 +43,7 @@ function buildConfig(maxContextLimit: number, minContextLimit = 1): PluginConfig
             protectedTools: ["task"],
             protectTags: false,
             protectUserMessages: false,
+            minCompressTokens: 0,
         },
         strategies: {
             deduplication: {

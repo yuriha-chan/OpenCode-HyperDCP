@@ -68,6 +68,24 @@ export function createCompressRangeTool(ctx: ToolContext): ReturnType<typeof too
             const resolvedPlans = resolveRanges(input, searchContext, ctx.state)
             validateNonOverlapping(resolvedPlans)
 
+            // Reject small ranges — compressing under minCompressTokens is not worth the overhead
+            const minTokens = ctx.config.compress.minCompressTokens
+            if (minTokens > 0) {
+                for (const plan of resolvedPlans) {
+                    let totalTokens = 0
+                    for (const count of plan.selection.messageTokenById.values()) {
+                        totalTokens += count
+                    }
+                    if (totalTokens < minTokens) {
+                        throw new Error(
+                            `Range is only ${totalTokens} tokens. Compressing a small fragment ` +
+                                `does not help save context. Organize with meaningful granularity — ` +
+                                `keep as is or expand adjacent blocks.`,
+                        )
+                    }
+                }
+            }
+
             const notifications: NotificationEntry[] = []
             const preparedPlans: Array<{
                 entry: (typeof resolvedPlans)[number]["entry"]

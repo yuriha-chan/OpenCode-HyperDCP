@@ -46,6 +46,7 @@ function buildConfig(mode: "message" | "range" = "message"): PluginConfig {
             protectedTools: ["task"],
             protectTags: false,
             protectUserMessages: false,
+            minCompressTokens: 0,
         },
         strategies: {
             deduplication: {

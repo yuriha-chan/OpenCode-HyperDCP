@@ -27,6 +27,7 @@ function buildConfig(maxToolOutputChars: number): PluginConfig {
             protectedTools: [],
             protectTags: false,
             protectUserMessages: false,
+            minCompressTokens: 0,
             maxToolOutputChars,
             summaryBuffer: false,
         },

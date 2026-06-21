@@ -81,6 +81,7 @@ export function createEditSummaryTool(ctx: ToolContext): ReturnType<typeof tool>
         description: `Replace text in a block's summary editing buffer.
 
 If no buffer is active, the current summary version is loaded as the starting buffer. After editing, use save_summary to commit, or the buffer will be auto-saved at turn end.
+Keep oldString short (typically 2-3 lines). Match only the surgical fragment to replace.
 
 THE FORMAT
 {
@@ -91,7 +92,7 @@ THE FORMAT
 }`,
         args: {
             blockId: tool.schema.number().describe("Block ID to edit (e.g. 1)"),
-            oldString: tool.schema.string().describe("Text to find and replace"),
+            oldString: tool.schema.string().describe("Text to find and replace (typically 2-3 lines)"),
             newString: tool.schema.string().describe("Replacement text"),
             replaceAll: tool.schema.boolean().describe("Replace all occurrences (default false)"),
         },

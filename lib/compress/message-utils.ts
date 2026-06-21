@@ -109,6 +109,10 @@ const ISSUE_TEMPLATES: Record<string, [singular: string, plural: string]> = {
         "was selected more than once in this batch.",
         "were each selected more than once in this batch.",
     ],
+    "too-small": [
+        "is too small to compress individually. Compressing a small fragment does not help save context. Keep as is or expand adjacent blocks.",
+        "are too small to compress individually. Compressing small fragments does not help save context. Keep as is or expand adjacent blocks.",
+    ],
 }
 
 function formatSkippedGroup(kind: string, messageIds: string[]): string {
@@ -228,6 +232,18 @@ function resolveMessage(
         parsed.ref,
     )
     const selection = resolveSelection(searchContext, startReference, endReference)
+
+    // Reject small messages — compressing under minCompressTokens is not worth the overhead
+    const minTokens = config.compress.minCompressTokens
+    if (minTokens > 0) {
+        let totalTokens = 0
+        for (const count of selection.messageTokenById.values()) {
+            totalTokens += count
+        }
+        if (totalTokens < minTokens) {
+            throw new SoftIssue("too-small", parsed.ref, "too small to compress")
+        }
+    }
 
     if (isProtectedUserMessage(config, rawMessage)) {
         throw new SoftIssue("protected", parsed.ref, "protected message")

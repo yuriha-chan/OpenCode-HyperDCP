@@ -51,6 +51,7 @@ function buildConfig(permission: "allow" | "ask" | "deny" = "allow"): PluginConf
             protectedTools: ["task"],
             protectTags: false,
             protectUserMessages: false,
+            minCompressTokens: 0,
         },
         strategies: {
             deduplication: {

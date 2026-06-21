@@ -29,6 +29,7 @@ export interface CompressConfig {
     protectUserMessages: boolean
     maxToolOutputChars: number
     nonCompressedContextLimit?: number | `${number}%`
+    minCompressTokens: number
 }
 
 export interface Commands {
@@ -130,6 +131,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.protectUserMessages",
     "compress.maxToolOutputChars",
     "compress.nonCompressedContextLimit",
+    "compress.minCompressTokens",
     "strategies",
     "strategies.deduplication",
     "strategies.deduplication.enabled",
@@ -721,6 +723,7 @@ const defaultConfig: PluginConfig = {
         protectUserMessages: false,
         maxToolOutputChars: 0,
         nonCompressedContextLimit: undefined,
+        minCompressTokens: 2000,
     },
     strategies: {
         deduplication: {
@@ -890,6 +893,7 @@ function mergeCompress(
         maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,
         nonCompressedContextLimit:
             override.nonCompressedContextLimit ?? base.nonCompressedContextLimit,
+        minCompressTokens: override.minCompressTokens ?? base.minCompressTokens,
     }
 }
 
