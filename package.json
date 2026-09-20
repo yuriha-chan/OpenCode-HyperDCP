@@ -1,6 +1,6 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
-    "name": "@tarquinen/opencode-dcp",
+    "name": "@yuriha-chan/opencode-hyperdcp",
     "version": "3.1.13",
     "type": "module",
     "description": "OpenCode plugin that optimizes token usage by pruning obsolete tool outputs from conversation context",
@@ -44,13 +44,13 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/Tarquinen/opencode-dynamic-context-pruning.git"
+        "url": "git+https://github.com/yuriha-chan/OpenCode-HyperDCP.git"
     },
     "bugs": {
-        "url": "https://github.com/Tarquinen/opencode-dynamic-context-pruning/issues"
+        "url": "https://github.com/yuriha-chan/OpenCode-HyperDCP/issues"
     },
-    "homepage": "https://github.com/Tarquinen/opencode-dynamic-context-pruning#readme",
-    "author": "tarquinen",
+    "homepage": "https://github.com/yuriha-chan/OpenCode-HyperDCP/",
+    "author": "yuriha-chan",
     "license": "AGPL-3.0-or-later",
     "peerDependencies": {
         "@opencode-ai/plugin": ">=1.4.3",
