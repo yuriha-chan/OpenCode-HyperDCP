@@ -1,5 +1,6 @@
 import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
+import { countAllMessageTokens } from "../token-utils"
 
 function sortBlocksByCreation(
     a: { createdAt: number; blockId: number },
@@ -74,6 +75,33 @@ export const syncCompressionBlocks = (
 
         entry.allBlockIds = allBlockIds
         entry.activeBlockIds = allBlockIds.filter((id) => messagesState.activeBlockIds.has(id))
+    }
+
+    const messageById = new Map(messages.map((message) => [message.info.id, message]))
+    for (const blockId of messagesState.activeBlockIds) {
+        const block = messagesState.blocksById.get(blockId)
+        if (!block) continue
+        for (const messageId of block.effectiveMessageIds) {
+            const message = messageById.get(messageId)
+            if (!message) continue
+
+            const entry = messagesState.byMessageId.get(messageId)
+            if (entry) {
+                if (!entry.allBlockIds.includes(blockId)) {
+                    entry.allBlockIds.push(blockId)
+                }
+                if (!entry.activeBlockIds.includes(blockId)) {
+                    entry.activeBlockIds.push(blockId)
+                }
+                continue
+            }
+
+            messagesState.byMessageId.set(messageId, {
+                tokenCount: countAllMessageTokens(message),
+                allBlockIds: [blockId],
+                activeBlockIds: [blockId],
+            })
+        }
     }
 
     const nextActiveBlockIds = messagesState.activeBlockIds

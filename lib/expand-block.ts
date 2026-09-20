@@ -3,7 +3,7 @@ import type { ToolContext } from "./compress/types"
 import type { Logger } from "./logger"
 import type { SessionState } from "./state"
 import { saveSessionState } from "./state/persistence"
-import { parseBoundaryId } from "./message-ids"
+import { formatMessageRef, parseBoundaryId } from "./message-ids"
 
 function activeSummaryText(block: {
     summary: string
@@ -48,13 +48,34 @@ THE FORMAT
             const rawId = ctx.state.messageIds.byRef.get(parsed.ref)
             if (!rawId) throw new Error(`Message ${parsed.ref} not found in current context.`)
 
+            const previousParsed =
+                typeof block.endId === "string" ? parseBoundaryId(block.endId) : null
+            const lowerBound =
+                previousParsed && previousParsed.kind === "message"
+                    ? previousParsed.index
+                    : parsed.index
+            const coveredRawIds: string[] = []
+            for (let index = lowerBound; index <= parsed.index; index++) {
+                const messageId = ctx.state.messageIds.byRef.get(formatMessageRef(index))
+                if (messageId && !coveredRawIds.includes(messageId)) {
+                    coveredRawIds.push(messageId)
+                }
+            }
+            if (!coveredRawIds.includes(rawId)) {
+                coveredRawIds.push(rawId)
+            }
+
+            const newlyCoveredRawIds = coveredRawIds.filter(
+                (messageId) => !block.effectiveMessageIds.includes(messageId),
+            )
+
             // Check overlap with other active blocks
             for (const [id, other] of ctx.state.prune.messages.blocksById) {
                 if (id === input.blockId || !other.active) continue
-                for (const msgId of other.effectiveMessageIds) {
-                    if (msgId === rawId) {
+                for (const msgId of newlyCoveredRawIds) {
+                    if (other.effectiveMessageIds.includes(msgId)) {
                         throw new Error(
-                            `End boundary ${input.endId} overlaps with active block ${id}. ` +
+                            `Expanded range ${block.startId} → ${input.endId} overlaps with active block ${id}. ` +
                                 `Expand block ${id} instead, or decompress it first.`,
                         )
                     }
@@ -62,12 +83,14 @@ THE FORMAT
             }
 
             block.endId = parsed.ref
-            if (!block.effectiveMessageIds.includes(rawId)) {
-                block.effectiveMessageIds.push(rawId)
-            }
             if (!block.pendingExpandedMessageIds) block.pendingExpandedMessageIds = []
-            if (!block.pendingExpandedMessageIds.includes(rawId)) {
-                block.pendingExpandedMessageIds.push(rawId)
+            for (const messageId of newlyCoveredRawIds) {
+                if (!block.effectiveMessageIds.includes(messageId)) {
+                    block.effectiveMessageIds.push(messageId)
+                }
+                if (!block.pendingExpandedMessageIds.includes(messageId)) {
+                    block.pendingExpandedMessageIds.push(messageId)
+                }
             }
 
             await saveSessionState(ctx.state, ctx.logger)
@@ -92,7 +115,9 @@ THE FORMAT
 }`,
         args: {
             blockId: tool.schema.number().describe("Block ID to edit (e.g. 1)"),
-            oldString: tool.schema.string().describe("Text to find and replace (typically 2-3 lines)"),
+            oldString: tool.schema
+                .string()
+                .describe("Text to find and replace (typically 2-3 lines)"),
             newString: tool.schema.string().describe("Replacement text"),
             replaceAll: tool.schema.boolean().describe("Replace all occurrences (default false)"),
         },
