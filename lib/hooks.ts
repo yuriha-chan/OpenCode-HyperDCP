@@ -26,9 +26,11 @@ import {
 } from "./compress/timing"
 import { filterMessages, filterMessagesInPlace } from "./messages/shape"
 import { sendIgnoredMessage } from "./ui/notification"
+import { dumpTransformedMessages } from "./debug-dump"
 import {
     applyPendingManualTrigger,
     handleContextCommand,
+    handleDebugCommand,
     handleDecompressCommand,
     handleEditCommand,
     handleHelpCommand,
@@ -186,6 +188,8 @@ export function createChatMessageTransformHandler(
         injectMessageIds(state, config, output.messages, compressionPriorities)
         applyPendingManualTrigger(state, output.messages, logger)
         stripStaleMetadata(output.messages)
+
+        await dumpTransformedMessages(state.debug, output.messages)
 
         if (state.sessionId) {
             await logger.saveContext(state.sessionId, output.messages)
@@ -404,6 +408,16 @@ export function createCommandExecuteHandler(
                     },
                     subArgs,
                 )
+                output.handled = true
+                return
+            }
+
+            if (subcommand === "debug") {
+                await handleDebugCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                    workingDirectory,
+                })
                 output.handled = true
                 return
             }

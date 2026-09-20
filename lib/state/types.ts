@@ -95,6 +95,11 @@ export interface Nudges {
     iterationNudgeAnchors: Set<string>
 }
 
+export interface DebugState {
+    enabled: boolean
+    directory: string | null
+}
+
 export interface SessionState {
     sessionId: string | null
     isSubAgent: boolean
@@ -116,4 +121,5 @@ export interface SessionState {
     systemPromptTokens: number | undefined
     protectedRefs: Set<string>
     memo: string | null
+    debug: DebugState
 }

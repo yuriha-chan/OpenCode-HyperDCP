@@ -101,6 +101,10 @@ export function createSessionState(): SessionState {
         systemPromptTokens: undefined,
         protectedRefs: new Set<string>(),
         memo: null,
+        debug: {
+            enabled: false,
+            directory: null,
+        },
     }
 }
 
