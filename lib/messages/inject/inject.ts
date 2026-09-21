@@ -38,6 +38,7 @@ export const injectCompressNudges = (
     messages: WithParts[],
     prompts: RuntimePrompts,
     compressionPriorities?: CompressionPriorityMap,
+    uncoveredMessages: WithParts[] = messages,
 ): void => {
     if (compressPermission(state, config) === "deny") {
         return
@@ -136,7 +137,7 @@ export const injectCompressNudges = (
         }
     }
 
-    const uncoveredRanges = findUncoveredRanges(state, messages)
+    const uncoveredRanges = findUncoveredRanges(state, uncoveredMessages)
     const uncoveredText = formatUncoveredRanges(uncoveredRanges, state.prune.messages.blocksById)
     const nudgedPrompts = { ...prompts }
     if (uncoveredText) {

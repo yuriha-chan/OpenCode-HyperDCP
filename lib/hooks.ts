@@ -169,6 +169,7 @@ export function createChatMessageTransformHandler(
             state.manualMode = state.preCompressManualMode
         }
         state.prune.messages.activeMessageIds = output.messages.map((message) => message.info.id)
+        const prePruneMessages = [...output.messages]
         prune(state, logger, config, output.messages)
         await injectExtendedSubAgentResults(
             client,
@@ -186,6 +187,7 @@ export function createChatMessageTransformHandler(
             output.messages,
             prompts.getRuntimePrompts(),
             compressionPriorities,
+            prePruneMessages,
         )
         injectMessageIds(state, config, output.messages, compressionPriorities)
         applyPendingManualTrigger(state, output.messages, logger)
