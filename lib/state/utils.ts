@@ -32,6 +32,7 @@ interface PersistedPruneMessagesState {
     nextBlockId: number
     nextRunId: number
     lastSeenUserMessageId?: string
+    activeMessageIds?: string[]
 }
 
 export function serializePruneMessagesState(
@@ -50,6 +51,7 @@ export function serializePruneMessagesState(
         nextBlockId: messagesState.nextBlockId,
         nextRunId: messagesState.nextRunId,
         lastSeenUserMessageId: messagesState.lastSeenUserMessageId,
+        activeMessageIds: messagesState.activeMessageIds,
     }
 }
 
@@ -115,6 +117,7 @@ export function createPruneMessagesState(): PruneMessagesState {
         nextBlockId: 1,
         nextRunId: 1,
         lastSeenUserMessageId: "",
+        activeMessageIds: [],
     }
 }
 
@@ -285,6 +288,16 @@ export function loadPruneMessagesState(
         typeof persisted.lastSeenUserMessageId === "string"
     ) {
         state.lastSeenUserMessageId = persisted.lastSeenUserMessageId
+    }
+
+    if (Array.isArray(persisted.activeMessageIds)) {
+        state.activeMessageIds = [
+            ...new Set(
+                persisted.activeMessageIds.filter(
+                    (item): item is string => typeof item === "string",
+                ),
+            ),
+        ]
     }
 
     for (const [blockId, block] of state.blocksById) {

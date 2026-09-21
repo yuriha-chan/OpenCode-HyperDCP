@@ -183,6 +183,24 @@ function addCompressionBlock(
 
     rawMessages.push({
         info: {
+            id: `msg-${overrides.blockId}`,
+            role: "assistant",
+            sessionID,
+            agent: "assistant",
+            time: { created: rawMessages.length + 1 },
+        } as WithParts["info"],
+        parts: [
+            textPart(
+                `msg-${overrides.blockId}`,
+                sessionID,
+                `msg-${overrides.blockId}-part`,
+                "covered message",
+            ),
+        ],
+    })
+
+    rawMessages.push({
+        info: {
             id: block.compressMessageId,
             role: "assistant",
             sessionID,

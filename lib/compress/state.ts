@@ -1,5 +1,6 @@
 import type { CompressionBlock, PruneMessagesState, SessionState } from "../state"
 import { formatBlockRef, formatMessageIdTag } from "../message-ids"
+import { filterToActive } from "../messages/coverage"
 import type { AppliedCompressionResult, CompressionStateInput, SelectionResolution } from "./types"
 
 export const COMPRESSED_BLOCK_HEADER = "[Compressed conversation section]"
@@ -75,6 +76,18 @@ export function applyCompressionState(
     preExistingActiveMessages?: Set<string>,
 ): AppliedCompressionResult {
     const messagesState = state.prune.messages
+
+    const activeMessageIds = messagesState.activeMessageIds
+    if (activeMessageIds.length > 0) {
+        const activeSet = new Set(activeMessageIds)
+        const onChainMessageIds = filterToActive(selection.messageIds, activeSet)
+        if (onChainMessageIds === null) {
+            throw new Error(
+                "Compression range contains no messages on the active conversation branch.",
+            )
+        }
+        selection.messageIds = onChainMessageIds
+    }
 
     for (const block of messagesState.blocksById.values()) {
         if (!block.active) continue

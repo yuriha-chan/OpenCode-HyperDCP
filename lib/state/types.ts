@@ -71,6 +71,7 @@ export interface PruneMessagesState {
     nextBlockId: number
     nextRunId: number
     lastSeenUserMessageId: string
+    activeMessageIds: string[]
 }
 
 export interface Prune {

@@ -21,6 +21,7 @@ export interface PersistedPruneMessagesState {
     nextBlockId: number
     nextRunId: number
     lastSeenUserMessageId?: string
+    activeMessageIds?: string[]
 }
 
 export interface PersistedPrune {

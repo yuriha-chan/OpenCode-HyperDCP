@@ -2,8 +2,9 @@ import type { SessionState, WithParts } from "../state"
 import type { CompressionBlock } from "../state/types"
 import { isIgnoredUserMessage } from "../messages/query"
 import { countAllMessageTokens } from "../token-utils"
-import { formatTokenCount } from "../ui/utils"
 import { assignMessageRefs } from "../message-ids"
+import { formatTokenCount } from "../ui/utils"
+import { onChainCoverage } from "./coverage"
 
 function refToNumber(ref: string): number {
     const m = ref.match(/^m(\d+)$/)
@@ -50,15 +51,27 @@ export interface UncoveredRange {
 /**
  * Finds contiguous gaps in the message list that are not covered by any active compression block.
  * Skips covered messages and returns the uncovered ranges with reference IDs and token estimates.
+ * Blocks are filtered to on-chain coverage, so blocks from inactive branches do not count as covering.
  */
-export function findUncoveredRanges(state: SessionState, messages: WithParts[]): UncoveredRange[] {
-    assignMessageRefs(state, messages)
+export function findUncoveredRanges(
+    state: SessionState,
+    activeMessages: WithParts[],
+): UncoveredRange[] {
+    assignMessageRefs(state, activeMessages)
+
+    const activeSet = new Set<string>()
+    for (const message of activeMessages) {
+        if (isIgnoredUserMessage(message)) continue
+        activeSet.add(message.info.id)
+    }
 
     const coveredIds = new Set<string>()
     for (const [, block] of state.prune.messages.blocksById) {
         if (!block.active) continue
-        for (const msgId of block.effectiveMessageIds) {
-            coveredIds.add(msgId)
+        const ids = onChainCoverage(block, activeSet)
+        if (ids === null) continue
+        for (const id of ids) {
+            coveredIds.add(id)
         }
     }
 
@@ -70,10 +83,9 @@ export function findUncoveredRanges(state: SessionState, messages: WithParts[]):
 
     function flushRange() {
         if (!currentStart) return
-        const startRef =
-            state.messageIds.byRawId.get(currentStart.info.id) || currentStart.info.id
+        const startRef = state.messageIds.byRawId.get(currentStart.info.id) ?? currentStart.info.id
         const endRef = currentEnd
-            ? state.messageIds.byRawId.get(currentEnd.info.id) || currentEnd.info.id
+            ? (state.messageIds.byRawId.get(currentEnd.info.id) ?? currentEnd.info.id)
             : startRef
         ranges.push({
             startId: startRef,
@@ -87,20 +99,20 @@ export function findUncoveredRanges(state: SessionState, messages: WithParts[]):
         currentTokens = 0
     }
 
-    for (const msg of messages) {
-        if (isIgnoredUserMessage(msg)) continue
+    for (const message of activeMessages) {
+        if (isIgnoredUserMessage(message)) continue
 
-        if (coveredIds.has(msg.info.id)) {
+        if (coveredIds.has(message.info.id)) {
             flushRange()
             continue
         }
 
         if (!currentStart) {
-            currentStart = msg
+            currentStart = message
         }
-        currentEnd = msg
+        currentEnd = message
         currentCount++
-        currentTokens += countAllMessageTokens(msg)
+        currentTokens += countAllMessageTokens(message)
     }
 
     // Flush trailing uncovered range

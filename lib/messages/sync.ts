@@ -1,6 +1,7 @@
 import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
 import { countAllMessageTokens } from "../token-utils"
+import { onChainCoverage } from "./coverage"
 
 function sortBlocksByCreation(
     a: { createdAt: number; blockId: number },
@@ -43,7 +44,9 @@ export const syncCompressionBlocks = (
             block.compressMessageId.length > 0 &&
             messageIds.has(block.compressMessageId)
 
-        if (!hasOriginMessage) {
+        const hasOnChainCoverage = onChainCoverage(block, messageIds) !== null
+
+        if (!hasOriginMessage || !hasOnChainCoverage) {
             block.active = false
             block.deactivatedAt = now
             block.deactivatedByBlockId = undefined

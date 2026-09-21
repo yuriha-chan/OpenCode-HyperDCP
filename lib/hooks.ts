@@ -168,6 +168,7 @@ export function createChatMessageTransformHandler(
         if (isNewUserMessage && state.manualMode === "compress-pending" && !state.pendingManualTrigger) {
             state.manualMode = state.preCompressManualMode
         }
+        state.prune.messages.activeMessageIds = output.messages.map((message) => message.info.id)
         prune(state, logger, config, output.messages)
         await injectExtendedSubAgentResults(
             client,
