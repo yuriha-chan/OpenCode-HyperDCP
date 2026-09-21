@@ -1,4 +1,5 @@
 export { handleContextCommand } from "./context"
+export { handleAutotoggleCommand } from "./autotoggle"
 export { handleDebugCommand } from "./debug"
 export { handleDecompressCommand } from "./decompress"
 export { handleEditCommand } from "./edit"

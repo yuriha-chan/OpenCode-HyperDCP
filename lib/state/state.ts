@@ -105,6 +105,7 @@ export function createSessionState(): SessionState {
             enabled: false,
             directory: null,
         },
+        autotoggle: false,
     }
 }
 
@@ -142,6 +143,7 @@ export function resetSessionState(state: SessionState): void {
     state.systemPromptTokens = undefined
     state.protectedRefs = new Set<string>()
     state.memo = null
+    state.autotoggle = false
 }
 
 export async function ensureSessionInitialized(

@@ -122,4 +122,5 @@ export interface SessionState {
     protectedRefs: Set<string>
     memo: string | null
     debug: DebugState
+    autotoggle: boolean
 }

@@ -29,6 +29,7 @@ import { sendIgnoredMessage } from "./ui/notification"
 import { dumpTransformedMessages } from "./debug-dump"
 import {
     applyPendingManualTrigger,
+    handleAutotoggleCommand,
     handleContextCommand,
     handleDebugCommand,
     handleDecompressCommand,
@@ -417,6 +418,15 @@ export function createCommandExecuteHandler(
                     ...commandCtx,
                     args: subArgs,
                     workingDirectory,
+                })
+                output.handled = true
+                return
+            }
+
+            if (subcommand === "autotoggle") {
+                await handleAutotoggleCommand({
+                    ...commandCtx,
+                    args: subArgs,
                 })
                 output.handled = true
                 return

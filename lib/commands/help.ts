@@ -28,6 +28,7 @@ const BASE_COMMANDS: [string, string][] = [
     ["/dcp protect <n>", "Protect a message from compression"],
     ["/dcp unprotect <n>", "Remove manual protection from a message"],
     ["/dcp debug [on <dir>|off]", "Dump each post-transform LLM query as JSON to <dir>"],
+    ["/dcp autotoggle [on|off]", "Allow the LLM to call toggle_summary_version"],
 ]
 
 const TOOL_COMMANDS: Record<string, [string, string]> = {
