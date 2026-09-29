@@ -48,10 +48,27 @@
                     "description": "Enable DCP slash commands (/dcp)"
                 },
                 "protectedTools": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "protect": {
+                                        "type": "boolean",
+                                        "default": true
+                                    }
+                                }
+                            }
+                        }
+                    ],
                     "default": [],
                     "description": "Additional tool names or wildcard patterns to protect from pruning via commands (e.g., /dcp sweep). Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 }
@@ -230,12 +247,42 @@
                     "description": "Controls how likely compression is after user messages. 'strong' is more likely, 'soft' is less likely."
                 },
                 "protectedTools": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "protect": {
+                                        "type": "boolean",
+                                        "default": true
+                                    },
+                                    "truncateSize": {
+                                        "type": "number",
+                                        "minimum": 1
+                                    },
+                                    "truncateDirection": {
+                                        "type": "string",
+                                        "enum": ["head", "tail", "both"],
+                                        "default": "both"
+                                    },
+                                    "keepLast": {
+                                        "type": "number",
+                                        "minimum": 1
+                                    }
+                                }
+                            }
+                        }
+                    ],
                     "default": [],
-                    "description": "Tool names or wildcard patterns whose completed outputs should be appended to the compression summary. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
+                    "description": "Tool names or wildcard patterns whose completed outputs should be appended to the compression summary. Accepts an array of names/patterns, or an object keyed by tool name with per-tool options. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 },
                 "protectTags": {
                     "type": "boolean",
@@ -279,10 +326,27 @@
                             "description": "Enable deduplication strategy"
                         },
                         "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
+                            "oneOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "protect": {
+                                                "type": "boolean",
+                                                "default": true
+                                            }
+                                        }
+                                    }
+                                }
+                            ],
                             "default": [],
                             "description": "Tool names or wildcard patterns excluded from deduplication. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }
@@ -304,10 +368,27 @@
                             "description": "Number of turns after which errors are purged"
                         },
                         "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
+                            "oneOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "properties": {
+                                            "protect": {
+                                                "type": "boolean",
+                                                "default": true
+                                            }
+                                        }
+                                    }
+                                }
+                            ],
                             "default": [],
                             "description": "Tool names or wildcard patterns excluded from error purging. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                         }

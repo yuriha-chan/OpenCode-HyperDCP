@@ -1,3 +1,5 @@
+import { normalizeProtectedTools, type ProtectedToolsConfig } from "../../protected-tools"
+
 export const MANUAL_MODE_SYSTEM_EXTENSION = `<dcp-system-reminder>
 Manual mode is enabled. Do NOT use compress unless the user has explicitly triggered it through a manual marker.
 
@@ -18,12 +20,18 @@ All subsequent messages in the session will have IDs.
 </dcp-system-reminder>
 `
 
-export function buildProtectedToolsExtension(protectedTools: string[]): string {
-    if (protectedTools.length === 0) {
+export function buildProtectedToolsExtension(
+    protectedTools: ProtectedToolsConfig,
+): string {
+    const toolList = Object.entries(normalizeProtectedTools(protectedTools))
+        .filter(([, spec]) => spec.protect !== false)
+        .map(([name]) => `\`${name}\``)
+        .join(", ")
+
+    if (!toolList) {
         return ""
     }
 
-    const toolList = protectedTools.map((t) => `\`${t}\``).join(", ")
     return `<dcp-system-reminder>
 The following tools are environment-managed: ${toolList}.
 Their outputs are automatically preserved during compression.

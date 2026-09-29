@@ -1,11 +1,8 @@
 import { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import {
-    getFilePathsFromParameters,
-    isFilePathProtected,
-    isToolNameProtected,
-} from "../protected-patterns"
+import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
+import { isToolProtected } from "../protected-tools"
 import { getTotalToolTokens } from "../token-utils"
 
 /**
@@ -54,7 +51,7 @@ export const purgeErrors = (
         }
 
         // Skip protected tools
-        if (isToolNameProtected(metadata.tool, protectedTools)) {
+        if (isToolProtected(protectedTools, metadata.tool)) {
             continue
         }
 

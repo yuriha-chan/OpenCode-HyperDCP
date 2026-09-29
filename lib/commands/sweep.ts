@@ -17,11 +17,8 @@ import { isIgnoredUserMessage } from "../messages/query"
 import { buildToolIdList } from "../messages/utils"
 import { saveSessionState } from "../state/persistence"
 import { isMessageCompacted } from "../state/utils"
-import {
-    getFilePathsFromParameters,
-    isFilePathProtected,
-    isToolNameProtected,
-} from "../protected-patterns"
+import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
+import { isToolProtected } from "../protected-tools"
 import { syncToolCache } from "../state/tool-cache"
 
 export interface SweepCommandContext {
@@ -176,7 +173,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         if (!entry) {
             return true
         }
-        if (isToolNameProtected(entry.tool, protectedTools)) {
+        if (isToolProtected(protectedTools, entry.tool)) {
             logger.debug(`Sweep: skipping protected tool ${entry.tool} (${id})`)
             return false
         }
@@ -194,7 +191,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         if (!entry) {
             return false
         }
-        if (isToolNameProtected(entry.tool, protectedTools)) {
+        if (isToolProtected(protectedTools, entry.tool)) {
             return true
         }
         const filePaths = getFilePathsFromParameters(entry.tool, entry.parameters)

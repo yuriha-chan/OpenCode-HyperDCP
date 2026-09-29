@@ -1,10 +1,12 @@
 import type { SessionState } from "../state"
 import { isIgnoredUserMessage } from "../messages/query"
+import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
 import {
-    getFilePathsFromParameters,
-    isFilePathProtected,
-    isToolNameProtected,
-} from "../protected-patterns"
+    resolveProtectedTool,
+    truncateText,
+    type CompressProtectedToolSpec,
+    type ProtectedToolsConfig,
+} from "../protected-tools"
 import {
     buildSubagentResultText,
     getSubAgentId,
@@ -114,10 +116,10 @@ export async function appendProtectedTools(
     summary: string,
     selection: SelectionResolution,
     searchContext: SearchContext,
-    protectedTools: string[],
+    protectedTools: ProtectedToolsConfig<CompressProtectedToolSpec>,
     protectedFilePatterns: string[] = [],
 ): Promise<string> {
-    const protectedOutputs: string[] = []
+    const collected: Array<{ tool: string; text: string; keepLast?: number }> = []
 
     for (const messageId of selection.messageIds) {
         const existingCompressionEntry = state.prune.messages.byMessageId.get(messageId)
@@ -131,73 +133,82 @@ export async function appendProtectedTools(
         const parts = Array.isArray(message.parts) ? message.parts : []
         for (const part of parts) {
             if (part.type === "tool" && part.callID) {
-                let isToolProtected = isToolNameProtected(part.tool, protectedTools)
+                const spec = resolveProtectedTool(protectedTools, part.tool)
+                let protectTool = spec !== null && spec.protect === true
 
-                if (!isToolProtected && protectedFilePatterns.length > 0) {
+                if (!protectTool && protectedFilePatterns.length > 0) {
                     const filePaths = getFilePathsFromParameters(part.tool, part.state?.input)
                     if (isFilePathProtected(filePaths, protectedFilePatterns)) {
-                        isToolProtected = true
+                        protectTool = true
                     }
                 }
 
-                if (isToolProtected) {
-                    const title = `Tool: ${part.tool}`
-                    let output = ""
+                if (!protectTool) continue
 
-                    if (part.state?.status === "completed" && part.state?.output) {
-                        output =
-                            typeof part.state.output === "string"
-                                ? part.state.output
-                                : JSON.stringify(part.state.output)
-                    }
+                const title = `Tool: ${part.tool}`
+                let output = ""
 
-                    if (
-                        allowSubAgents &&
-                        part.tool === "task" &&
-                        part.state?.status === "completed" &&
-                        typeof part.state?.output === "string"
-                    ) {
-                        const cachedSubAgentResult = state.subAgentResultCache.get(part.callID)
+                if (part.state?.status === "completed" && part.state?.output) {
+                    output =
+                        typeof part.state.output === "string"
+                            ? part.state.output
+                            : JSON.stringify(part.state.output)
+                }
 
-                        if (cachedSubAgentResult !== undefined) {
-                            if (cachedSubAgentResult) {
-                                output = mergeSubagentResult(
-                                    part.state.output,
-                                    cachedSubAgentResult,
+                if (
+                    allowSubAgents &&
+                    part.tool === "task" &&
+                    part.state?.status === "completed" &&
+                    typeof part.state?.output === "string"
+                ) {
+                    const cachedSubAgentResult = state.subAgentResultCache.get(part.callID)
+
+                    if (cachedSubAgentResult !== undefined) {
+                        if (cachedSubAgentResult) {
+                            output = mergeSubagentResult(part.state.output, cachedSubAgentResult)
+                        }
+                    } else {
+                        const subAgentSessionId = getSubAgentId(part)
+                        if (subAgentSessionId) {
+                            let subAgentResultText = ""
+                            try {
+                                const subAgentMessages = await fetchSessionMessages(
+                                    client,
+                                    subAgentSessionId,
                                 )
+                                subAgentResultText = buildSubagentResultText(subAgentMessages)
+                            } catch {
+                                subAgentResultText = ""
                             }
-                        } else {
-                            const subAgentSessionId = getSubAgentId(part)
-                            if (subAgentSessionId) {
-                                let subAgentResultText = ""
-                                try {
-                                    const subAgentMessages = await fetchSessionMessages(
-                                        client,
-                                        subAgentSessionId,
-                                    )
-                                    subAgentResultText = buildSubagentResultText(subAgentMessages)
-                                } catch {
-                                    subAgentResultText = ""
-                                }
 
-                                if (subAgentResultText) {
-                                    state.subAgentResultCache.set(part.callID, subAgentResultText)
-                                    output = mergeSubagentResult(
-                                        part.state.output,
-                                        subAgentResultText,
-                                    )
-                                }
+                            if (subAgentResultText) {
+                                state.subAgentResultCache.set(part.callID, subAgentResultText)
+                                output = mergeSubagentResult(part.state.output, subAgentResultText)
                             }
                         }
                     }
-
-                    if (output) {
-                        protectedOutputs.push(`\n### ${title}\n${output}`)
-                    }
                 }
+
+                if (!output) continue
+
+                if (spec && spec.truncateSize !== undefined) {
+                    output = truncateText(
+                        output,
+                        spec.truncateSize,
+                        spec.truncateDirection ?? "both",
+                    )
+                }
+
+                collected.push({
+                    tool: part.tool,
+                    text: `\n### ${title}\n${output}`,
+                    keepLast: spec?.keepLast,
+                })
             }
         }
     }
+
+    const protectedOutputs = applyKeepLast(collected)
 
     if (protectedOutputs.length === 0) {
         return summary
@@ -205,4 +216,27 @@ export async function appendProtectedTools(
 
     const heading = "\n\nThe following protected tools were used in this conversation as well:"
     return summary + heading + protectedOutputs.join("")
+}
+
+function applyKeepLast(
+    entries: Array<{ tool: string; text: string; keepLast?: number }>,
+): string[] {
+    const indicesByTool = new Map<string, number[]>()
+    entries.forEach((entry, index) => {
+        const indices = indicesByTool.get(entry.tool) ?? []
+        indices.push(index)
+        indicesByTool.set(entry.tool, indices)
+    })
+
+    const dropped = new Set<number>()
+    for (const indices of indicesByTool.values()) {
+        const keepLast = entries[indices[0]]?.keepLast
+        if (keepLast !== undefined && keepLast >= 0 && indices.length > keepLast) {
+            for (const index of indices.slice(0, indices.length - keepLast)) {
+                dropped.add(index)
+            }
+        }
+    }
+
+    return entries.filter((_, index) => !dropped.has(index)).map((entry) => entry.text)
 }

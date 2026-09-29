@@ -3,13 +3,19 @@ import { join, dirname } from "path"
 import { homedir } from "os"
 import { parse } from "jsonc-parser/lib/esm/main.js"
 import type { PluginInput } from "@opencode-ai/plugin"
+import {
+    mergeProtectedTools,
+    normalizeProtectedTools,
+    type CompressProtectedToolSpec,
+    type ProtectedToolsConfig,
+} from "./protected-tools"
 
 type Permission = "ask" | "allow" | "deny"
 type CompressMode = "range" | "message"
 
 export interface Deduplication {
     enabled: boolean
-    protectedTools: string[]
+    protectedTools: ProtectedToolsConfig
 }
 
 export interface CompressConfig {
@@ -24,7 +30,7 @@ export interface CompressConfig {
     nudgeFrequency: number
     iterationNudgeThreshold: number
     nudgeForce: "strong" | "soft"
-    protectedTools: string[]
+    protectedTools: ProtectedToolsConfig<CompressProtectedToolSpec>
     protectTags: boolean
     protectUserMessages: boolean
     maxToolOutputChars: number
@@ -34,7 +40,7 @@ export interface CompressConfig {
 
 export interface Commands {
     enabled: boolean
-    protectedTools: string[]
+    protectedTools: ProtectedToolsConfig
 }
 
 export interface ManualModeConfig {
@@ -45,7 +51,7 @@ export interface ManualModeConfig {
 export interface PurgeErrors {
     enabled: boolean
     turns: number
-    protectedTools: string[]
+    protectedTools: ProtectedToolsConfig
 }
 
 export interface TurnProtection {
@@ -149,7 +155,12 @@ function getConfigKeyPaths(obj: Record<string, any>, prefix = ""): string[] {
         keys.push(fullKey)
 
         // model*Limits are dynamic maps keyed by providerID/modelID; do not recurse into arbitrary IDs.
-        if (fullKey === "compress.modelMaxLimits" || fullKey === "compress.modelMinLimits") {
+        // protectedTools is a dynamic map keyed by tool name; do not recurse into arbitrary tool names.
+        if (
+            fullKey === "compress.modelMaxLimits" ||
+            fullKey === "compress.modelMinLimits" ||
+            fullKey.endsWith(".protectedTools")
+        ) {
             continue
         }
 
@@ -173,6 +184,104 @@ interface ValidationError {
 
 export function validateConfigTypes(config: Record<string, any>): ValidationError[] {
     const errors: ValidationError[] = []
+
+    const validateProtectedTools = (
+        key: string,
+        value: unknown,
+        allowCompressFields: boolean,
+    ): void => {
+        if (value === undefined) {
+            return
+        }
+
+        if (Array.isArray(value)) {
+            if (!value.every((entry) => typeof entry === "string" && entry.length > 0)) {
+                errors.push({
+                    key,
+                    expected: "string[]",
+                    actual: "invalid entries",
+                })
+            }
+            return
+        }
+
+        if (typeof value !== "object" || value === null) {
+            errors.push({ key, expected: "string[] | object", actual: typeof value })
+            return
+        }
+
+        const allowedFields = allowCompressFields
+            ? ["protect", "truncateSize", "truncateDirection", "keepLast"]
+            : ["protect"]
+
+        for (const [toolName, spec] of Object.entries(value as Record<string, unknown>)) {
+            if (typeof spec !== "object" || spec === null || Array.isArray(spec)) {
+                errors.push({
+                    key: `${key}.${toolName}`,
+                    expected: "object",
+                    actual: typeof spec,
+                })
+                continue
+            }
+
+            const fields = spec as Record<string, unknown>
+
+            if (fields.protect !== undefined && typeof fields.protect !== "boolean") {
+                errors.push({
+                    key: `${key}.${toolName}.protect`,
+                    expected: "boolean",
+                    actual: typeof fields.protect,
+                })
+            }
+
+            if (allowCompressFields) {
+                if (
+                    fields.truncateSize !== undefined &&
+                    (typeof fields.truncateSize !== "number" || fields.truncateSize < 1)
+                ) {
+                    errors.push({
+                        key: `${key}.${toolName}.truncateSize`,
+                        expected: "positive number (>= 1)",
+                        actual: JSON.stringify(fields.truncateSize),
+                    })
+                }
+
+                if (
+                    fields.truncateDirection !== undefined &&
+                    fields.truncateDirection !== "head" &&
+                    fields.truncateDirection !== "tail" &&
+                    fields.truncateDirection !== "both"
+                ) {
+                    errors.push({
+                        key: `${key}.${toolName}.truncateDirection`,
+                        expected: '"head" | "tail" | "both"',
+                        actual: JSON.stringify(fields.truncateDirection),
+                    })
+                }
+
+                if (
+                    fields.keepLast !== undefined &&
+                    (typeof fields.keepLast !== "number" || fields.keepLast < 1)
+                ) {
+                    errors.push({
+                        key: `${key}.${toolName}.keepLast`,
+                        expected: "positive number (>= 1)",
+                        actual: JSON.stringify(fields.keepLast),
+                    })
+                }
+            }
+
+            for (const field of Object.keys(fields)) {
+                if (!allowedFields.includes(field)) {
+                    errors.push({
+                        key: `${key}.${toolName}.${field}`,
+                        expected: allowedFields.join(" | "),
+                        actual: "unknown field",
+                    })
+                }
+            }
+        }
+    }
 
     if (config.enabled !== undefined && typeof config.enabled !== "boolean") {
         errors.push({ key: "enabled", expected: "boolean", actual: typeof config.enabled })
@@ -308,13 +417,7 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
                     actual: typeof commands.enabled,
                 })
             }
-            if (commands.protectedTools !== undefined && !Array.isArray(commands.protectedTools)) {
-                errors.push({
-                    key: "commands.protectedTools",
-                    expected: "string[]",
-                    actual: typeof commands.protectedTools,
-                })
-            }
+            validateProtectedTools("commands.protectedTools", commands.protectedTools, false)
         }
     }
 
@@ -422,13 +525,7 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
                 })
             }
 
-            if (compress.protectedTools !== undefined && !Array.isArray(compress.protectedTools)) {
-                errors.push({
-                    key: "compress.protectedTools",
-                    expected: "string[]",
-                    actual: typeof compress.protectedTools,
-                })
-            }
+            validateProtectedTools("compress.protectedTools", compress.protectedTools, true)
 
             if (compress.protectTags !== undefined && typeof compress.protectTags !== "boolean") {
                 errors.push({
@@ -580,16 +677,11 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
             })
         }
 
-        if (
-            strategies.deduplication?.protectedTools !== undefined &&
-            !Array.isArray(strategies.deduplication.protectedTools)
-        ) {
-            errors.push({
-                key: "strategies.deduplication.protectedTools",
-                expected: "string[]",
-                actual: typeof strategies.deduplication.protectedTools,
-            })
-        }
+        validateProtectedTools(
+            "strategies.deduplication.protectedTools",
+            strategies.deduplication?.protectedTools,
+            false,
+        )
 
         if (strategies.purgeErrors) {
             if (
@@ -624,16 +716,11 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
                     actual: `${strategies.purgeErrors.turns} (will be clamped to 1)`,
                 })
             }
-            if (
-                strategies.purgeErrors.protectedTools !== undefined &&
-                !Array.isArray(strategies.purgeErrors.protectedTools)
-            ) {
-                errors.push({
-                    key: "strategies.purgeErrors.protectedTools",
-                    expected: "string[]",
-                    actual: typeof strategies.purgeErrors.protectedTools,
-                })
-            }
+            validateProtectedTools(
+                "strategies.purgeErrors.protectedTools",
+                strategies.purgeErrors.protectedTools,
+                false,
+            )
         }
     }
 
@@ -693,7 +780,7 @@ const defaultConfig: PluginConfig = {
     pruneNotificationType: "chat",
     commands: {
         enabled: true,
-        protectedTools: [...DEFAULT_PROTECTED_TOOLS],
+        protectedTools: normalizeProtectedTools(DEFAULT_PROTECTED_TOOLS),
     },
     manualMode: {
         enabled: false,
@@ -718,7 +805,9 @@ const defaultConfig: PluginConfig = {
         nudgeFrequency: 5,
         iterationNudgeThreshold: 15,
         nudgeForce: "soft",
-        protectedTools: [...COMPRESS_DEFAULT_PROTECTED_TOOLS],
+        protectedTools: normalizeProtectedTools<CompressProtectedToolSpec>(
+            COMPRESS_DEFAULT_PROTECTED_TOOLS,
+        ),
         protectTags: false,
         protectUserMessages: false,
         maxToolOutputChars: 0,
@@ -728,12 +817,12 @@ const defaultConfig: PluginConfig = {
     strategies: {
         deduplication: {
             enabled: true,
-            protectedTools: [],
+            protectedTools: {},
         },
         purgeErrors: {
             enabled: true,
             turns: 4,
-            protectedTools: [],
+            protectedTools: {},
         },
     },
 }
@@ -847,22 +936,18 @@ function mergeStrategies(
     return {
         deduplication: {
             enabled: override.deduplication?.enabled ?? base.deduplication.enabled,
-            protectedTools: [
-                ...new Set([
-                    ...base.deduplication.protectedTools,
-                    ...(override.deduplication?.protectedTools ?? []),
-                ]),
-            ],
+            protectedTools: mergeProtectedTools(
+                base.deduplication.protectedTools,
+                override.deduplication?.protectedTools,
+            ),
         },
         purgeErrors: {
             enabled: override.purgeErrors?.enabled ?? base.purgeErrors.enabled,
             turns: override.purgeErrors?.turns ?? base.purgeErrors.turns,
-            protectedTools: [
-                ...new Set([
-                    ...base.purgeErrors.protectedTools,
-                    ...(override.purgeErrors?.protectedTools ?? []),
-                ]),
-            ],
+            protectedTools: mergeProtectedTools(
+                base.purgeErrors.protectedTools,
+                override.purgeErrors?.protectedTools,
+            ),
         },
     }
 }
@@ -887,7 +972,7 @@ function mergeCompress(
         nudgeFrequency: override.nudgeFrequency ?? base.nudgeFrequency,
         iterationNudgeThreshold: override.iterationNudgeThreshold ?? base.iterationNudgeThreshold,
         nudgeForce: override.nudgeForce ?? base.nudgeForce,
-        protectedTools: [...new Set([...base.protectedTools, ...(override.protectedTools ?? [])])],
+        protectedTools: mergeProtectedTools(base.protectedTools, override.protectedTools),
         protectTags: override.protectTags ?? base.protectTags,
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
         maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,
@@ -907,7 +992,7 @@ function mergeCommands(
 
     return {
         enabled: override.enabled ?? base.enabled,
-        protectedTools: [...new Set([...base.protectedTools, ...(override.protectedTools ?? [])])],
+        protectedTools: mergeProtectedTools(base.protectedTools, override.protectedTools),
     }
 }
 
@@ -940,7 +1025,7 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
         ...config,
         commands: {
             enabled: config.commands.enabled,
-            protectedTools: [...config.commands.protectedTools],
+            protectedTools: normalizeProtectedTools(config.commands.protectedTools),
         },
         manualMode: {
             enabled: config.manualMode.enabled,
@@ -953,16 +1038,20 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
             ...config.compress,
             modelMaxLimits: { ...config.compress.modelMaxLimits },
             modelMinLimits: { ...config.compress.modelMinLimits },
-            protectedTools: [...config.compress.protectedTools],
+            protectedTools: normalizeProtectedTools(config.compress.protectedTools),
         },
         strategies: {
             deduplication: {
                 ...config.strategies.deduplication,
-                protectedTools: [...config.strategies.deduplication.protectedTools],
+                protectedTools: normalizeProtectedTools(
+                    config.strategies.deduplication.protectedTools,
+                ),
             },
             purgeErrors: {
                 ...config.strategies.purgeErrors,
-                protectedTools: [...config.strategies.purgeErrors.protectedTools],
+                protectedTools: normalizeProtectedTools(
+                    config.strategies.purgeErrors.protectedTools,
+                ),
             },
         },
     }

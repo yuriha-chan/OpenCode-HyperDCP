@@ -104,7 +104,7 @@ export function isFilePathProtected(filePaths: string[], patterns: string[]): bo
     return filePaths.some((path) => patterns.some((pattern) => matchesGlob(path, pattern)))
 }
 
-const GLOB_CHARS = /[*?]/
+export const GLOB_CHARS = /[*?]/
 
 export function isToolNameProtected(toolName: string, patterns: string[]): boolean {
     if (!toolName || !patterns || patterns.length === 0) return false
