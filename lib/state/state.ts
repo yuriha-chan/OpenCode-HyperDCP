@@ -194,6 +194,7 @@ export async function ensureSessionInitialized(
     }
     state.protectedRefs = new Set(persisted.protectedRefs || [])
     state.memo = persisted.memo ?? null
+    state.autotoggle = persisted.autotoggle === true
 
     if (persisted.messageIds) {
         state.messageIds.byRawId = new Map(Object.entries(persisted.messageIds.byRawId))

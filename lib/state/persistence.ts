@@ -48,6 +48,7 @@ export interface PersistedSessionState {
     protectedRefs?: string[]
     memo?: string | null
     messageIds?: PersistedMessageIds
+    autotoggle?: boolean
     lastUpdated: string
 }
 
@@ -97,6 +98,7 @@ export async function saveSessionState(
             },
             protectedRefs: Array.from(sessionState.protectedRefs),
             memo: sessionState.memo,
+            autotoggle: sessionState.autotoggle,
             messageIds: {
                 byRawId: Object.fromEntries(sessionState.messageIds.byRawId),
                 nextRef: sessionState.messageIds.nextRef,

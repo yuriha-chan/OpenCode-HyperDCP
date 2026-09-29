@@ -2,12 +2,14 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, rmSync } from "node:fs"
 import { handleAutotoggleCommand } from "../lib/commands/autotoggle"
 import { createSessionState, type WithParts } from "../lib/state"
 import { Logger } from "../lib/logger"
 import type { PluginConfig } from "../lib/config"
-import { resetSessionState } from "../lib/state/state"
+import { ensureSessionInitialized, resetSessionState } from "../lib/state/state"
+import { loadSessionState, saveSessionState } from "../lib/state/persistence"
+import { getSessionFilePath } from "../lib/paths"
 
 const testDataHome = join(tmpdir(), `opencode-dcp-autotoggle-tests-${process.pid}`)
 const testConfigHome = join(tmpdir(), `opencode-dcp-autotoggle-config-tests-${process.pid}`)
@@ -195,4 +197,81 @@ test("autotoggle flag is reset by resetSessionState (per-session)", () => {
     resetSessionState(state)
 
     assert.equal(state.autotoggle, false)
+})
+
+// ── autotoggle persistence ────────────────────────────────────────────────────
+
+function makeInitClient() {
+    return {
+        session: {
+            get: async () => ({ data: {} }),
+        },
+    }
+}
+
+test("autotoggle ON is persisted to the session state file and restored on reload", async () => {
+    const sessionID = `ses_autotoggle_persist_${Date.now()}`
+    const logger = new Logger(false)
+
+    const saved = createSessionState()
+    saved.sessionId = sessionID
+    saved.autotoggle = true
+    await saveSessionState(saved, logger)
+
+    const reloaded = createSessionState()
+    await ensureSessionInitialized(
+        makeInitClient(),
+        reloaded,
+        sessionID,
+        logger,
+        buildMessages(sessionID),
+        false,
+    )
+
+    assert.equal(reloaded.autotoggle, true)
+    rmSync(getSessionFilePath(sessionID), { force: true })
+})
+
+test("autotoggle defaults to OFF when the saved value is OFF", async () => {
+    const sessionID = `ses_autotoggle_default_${Date.now()}`
+    const logger = new Logger(false)
+
+    const saved = createSessionState()
+    saved.sessionId = sessionID
+    saved.autotoggle = false
+    await saveSessionState(saved, logger)
+
+    const reloaded = createSessionState()
+    await ensureSessionInitialized(
+        makeInitClient(),
+        reloaded,
+        sessionID,
+        logger,
+        buildMessages(sessionID),
+        false,
+    )
+
+    assert.equal(reloaded.autotoggle, false)
+    rmSync(getSessionFilePath(sessionID), { force: true })
+})
+
+test("/dcp autotoggle on persists the flag to disk", async () => {
+    const sessionID = `ses_autotoggle_cmd_persist_${Date.now()}`
+    const state = createSessionState()
+    state.sessionId = sessionID
+    const logger = new Logger(false)
+    const { client } = makeClient()
+
+    await handleAutotoggleCommand({
+        client,
+        state,
+        logger,
+        sessionId: sessionID,
+        messages: buildMessages(sessionID),
+        args: ["on"],
+    } as any)
+
+    const persisted = await loadSessionState(sessionID, logger)
+    assert.equal(persisted?.autotoggle, true)
+    rmSync(getSessionFilePath(sessionID), { force: true })
 })

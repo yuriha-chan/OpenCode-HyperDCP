@@ -2,6 +2,7 @@ import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
+import { saveSessionState } from "../state/persistence"
 
 export interface AutotoggleCommandContext {
     client: any
@@ -23,12 +24,14 @@ export async function handleAutotoggleCommand(ctx: AutotoggleCommandContext): Pr
 
     if (subcommand === "on") {
         state.autotoggle = true
+        await saveSessionState(state, logger)
         await sendIgnoredMessage(client, sessionId, formatStatus(state), params, logger)
         return
     }
 
     if (subcommand === "off") {
         state.autotoggle = false
+        await saveSessionState(state, logger)
         await sendIgnoredMessage(client, sessionId, formatStatus(state), params, logger)
         return
     }
