@@ -34,7 +34,10 @@ def load_steps(path):
       {"keys": "...", "delay": 800}   write keys, then wait delay ms (default settle)
       {"waitFor": "marker", "timeout": 5000}  wait until the screen shows marker
       {"screenshot": "expected"}       assert expected text is on screen
+      {"png": "name.png"}              render the colored screen to name.png.html
     The Node harness writes the JSON step file; keys are already escape-encoded.
+    The png step only writes the HTML next to the capture; the Node side turns it
+    into the final PNG with chromium --headless --screenshot.
     """
     if not path:
         return []
@@ -78,16 +81,67 @@ class Screen:
         self.cols = cols
         self.rows = rows
         self.grid = [[" "] * cols for _ in range(rows)]
+        self.style = [[self._default_style() for _ in range(cols)] for _ in range(rows)]
         self.row = 0
         self.col = 0
+        self.cur = self._default_style()
+
+    @staticmethod
+    def _default_style():
+        return {"fg": None, "bg": None, "bold": False, "underline": False, "inverse": False}
+
+    def _sgr(self, params):
+        if not params:
+            params = [0]
+        i = 0
+        while i < len(params):
+            code = params[i]
+            if code == 0:
+                self.cur = self._default_style()
+            elif code == 1:
+                self.cur["bold"] = True
+            elif code == 4:
+                self.cur["underline"] = True
+            elif code == 7:
+                self.cur["inverse"] = True
+            elif code == 22:
+                self.cur["bold"] = False
+            elif code == 24:
+                self.cur["underline"] = False
+            elif code == 27:
+                self.cur["inverse"] = False
+            elif 30 <= code <= 37:
+                self.cur["fg"] = code - 30
+            elif code == 39:
+                self.cur["fg"] = None
+            elif 40 <= code <= 47:
+                self.cur["bg"] = code - 40
+            elif code == 49:
+                self.cur["bg"] = None
+            elif 90 <= code <= 97:
+                self.cur["fg"] = code - 90 + 8
+            elif 100 <= code <= 107:
+                self.cur["bg"] = code - 100 + 8
+            elif code == 38 and i + 1 < len(params) and params[i + 1] == 5 and i + 2 < len(params):
+                self.cur["fg"] = params[i + 2]
+                i += 2
+            elif code == 48 and i + 1 < len(params) and params[i + 1] == 5 and i + 2 < len(params):
+                self.cur["bg"] = params[i + 2]
+                i += 2
+            i += 1
 
     def _put(self, char):
         if 0 <= self.row < self.rows and 0 <= self.col < self.cols:
             self.grid[self.row][self.col] = char
+            self.style[self.row][self.col] = dict(self.cur)
         self.col += 1
         if self.col >= self.cols:
             self.col = 0
             self.row = min(self.rows - 1, self.row + 1)
+
+    def _clear_cell(self, row, col):
+        self.grid[row][col] = " "
+        self.style[row][col] = self._default_style()
 
     def feed(self, data):
         text = data.decode("utf-8", "replace")
@@ -102,7 +156,7 @@ class Screen:
                         i += 1
                         continue
                     params, final = match.group(1), match.group(3)
-                    nums = [None if v == "" else int(v) for v in params.split(";")]
+                    nums = [None if v == "" or not v.isdigit() else int(v) for v in params.split(";")]
                     first = nums[0] if nums and nums[0] is not None else 1
                     if final in ("H", "f"):
                         self.row = (nums[0] or 1) - 1 if nums and nums[0] else 0
@@ -129,21 +183,26 @@ class Screen:
                         mode = nums[0] or 0 if nums else 0
                         if mode in (2, 3):
                             self.grid = [[" "] * self.cols for _ in range(self.rows)]
+                            self.style = [[self._default_style() for _ in range(self.cols)] for _ in range(self.rows)]
                         elif mode == 0:
                             for c in range(self.col, self.cols):
-                                self.grid[self.row][c] = " "
+                                self._clear_cell(self.row, c)
                             for r in range(self.row + 1, self.rows):
                                 self.grid[r] = [" "] * self.cols
+                                self.style[r] = [self._default_style() for _ in range(self.cols)]
                     elif final == "K":
                         mode = nums[0] or 0 if nums else 0
                         if mode == 0:
                             for c in range(self.col, self.cols):
-                                self.grid[self.row][c] = " "
+                                self._clear_cell(self.row, c)
                         elif mode == 1:
                             for c in range(0, min(self.col + 1, self.cols)):
-                                self.grid[self.row][c] = " "
+                                self._clear_cell(self.row, c)
                         elif mode == 2:
                             self.grid[self.row] = [" "] * self.cols
+                            self.style[self.row] = [self._default_style() for _ in range(self.cols)]
+                    elif final == "m":
+                        self._sgr([0 if v is None else v for v in nums])
                     i += len(match.group(0))
                     continue
                 if nxt == "]":
@@ -171,6 +230,73 @@ class Screen:
 
     def text(self):
         return "\n".join("".join(line).rstrip() for line in self.grid)
+
+    def to_html(self):
+        """Render the colored grid to a standalone HTML page (for chromium --screenshot)."""
+        import html as html_mod
+
+        def color(value, is_bg):
+            if value is None:
+                return None
+            base = [
+                "#000000", "#cd0000", "#00cd00", "#cdcd00", "#0000ee", "#cd00cd", "#00cdcd", "#e5e5e5",
+                "#7f7f7f", "#ff0000", "#00ff00", "#ffff00", "#5c5cff", "#ff00ff", "#00ffff", "#ffffff",
+            ]
+            if 0 <= value < len(base):
+                return base[value]
+            if value < 16:
+                return base[value]
+            if value < 232:
+                value -= 16
+                r = value // 36
+                g = (value % 36) // 6
+                b = value % 6
+                step = [0, 95, 135, 175, 215, 255]
+                return f"rgb({step[r]},{step[g]},{step[b]})"
+            level = 8 + (value - 232) * 10
+            return f"rgb({level},{level},{level})"
+
+        rows_html = []
+        for r in range(self.rows):
+            cells = []
+            run = []  # adjacent default-styled spaces, coalesced into plain text
+            for c in range(self.cols):
+                ch = self.grid[r][c]
+                st = self.style[r][c]
+                fg, bg = color(st["fg"], False), color(st["bg"], True)
+                if st["inverse"]:
+                    fg, bg = (bg or "#e5e5e5"), (fg or "#000000")
+                styled = not (fg is None and bg is None and not st["bold"] and not st["underline"])
+                if not styled:
+                    run.append(ch)
+                    continue
+                if run:
+                    cells.append(html_mod.escape("".join(run)))
+                    run = []
+                css = ""
+                if fg is not None:
+                    css += f"color:{fg};"
+                if bg is not None:
+                    css += f"background:{bg};"
+                if st["bold"]:
+                    css += "font-weight:bold;"
+                if st["underline"]:
+                    css += "text-decoration:underline;"
+                cells.append(f'<span style="{css}">{html_mod.escape(ch)}</span>')
+            if run:
+                cells.append(html_mod.escape("".join(run)))
+            rows_html.append('<div class="row">' + "".join(cells) + "</div>")
+        body = "\n".join(rows_html)
+        return (
+            "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
+            "body{margin:0;background:#000;}"
+            ".screen{font-family:'DejaVu Sans Mono',monospace;font-size:16px;line-height:1.0;"
+            "white-space:pre;display:inline-block;padding:8px;}"
+            ".row{height:1.0em;}"
+            "</style></head><body><div class=\"screen\">"
+            f"{body}"
+            "</div></body></html>"
+        )
 
 
 def main():
@@ -236,6 +362,7 @@ def main():
     failure = None
     next_action_at = None
     results = []
+    png_requests = []
 
     def drain(timeout):
         readable, _, _ = select.select([master_fd], [], [], timeout)
@@ -355,6 +482,19 @@ def main():
                             failure = failure or f"screenshot assertion failed: {expected}"
                             terminating = True
                             cleanup_at = now + 0.2
+                    elif "png" in step:
+                        filename = step["png"]
+                        html_path = os.path.join(os.path.dirname(os.path.abspath(args.capture)), filename + ".html")
+                        try:
+                            with open(html_path, "w", encoding="utf-8") as html_handle:
+                                html_handle.write(screen.to_html())
+                            png_requests.append({"png": filename, "html": html_path})
+                            results.append({"step": "png", "png": filename, "html": html_path, "ok": True})
+                        except OSError as error:
+                            results.append({"step": "png", "png": filename, "ok": False, "reason": str(error)})
+                            failure = failure or f"png render failed: {error}"
+                        complete_step()
+                        step_started_at = None
                     else:
                         complete_step()
                         step_started_at = None
@@ -414,7 +554,7 @@ def main():
 
     if args.result_file:
         with open(args.result_file, "w", encoding="utf-8") as handle:
-            json.dump({"failure": failure, "results": results, "screen": screen.text()}, handle)
+            json.dump({"failure": failure, "results": results, "screen": screen.text(), "pngRequests": png_requests}, handle)
 
     return 1 if failure else 0
 

@@ -31,6 +31,7 @@ import {
     writeAsciicast,
     ansiToText,
     renderFrameSnapshots,
+    htmlToPng,
     repoRoot,
 } from "./tui-harness.mjs"
 import { scenarios, findScenario, DEFAULT_WAIT_FOR } from "./tui-scenarios.mjs"
@@ -186,6 +187,15 @@ async function main() {
                     .join("\n\n")
                 writeFileSync(timelineFile, `${body}\n`)
                 console.log(`frames -> ${timelineFile}`)
+            }
+            for (const request of outcome.pngRequests ?? []) {
+                const pngPath = path.join(options.out, request.png)
+                const rendered = htmlToPng(request.html, pngPath)
+                if (rendered) {
+                    console.log(`png -> ${rendered}`)
+                } else {
+                    console.log(`png FAILED: ${request.png} (chromium unavailable or render failed)`)
+                }
             }
             const matched = scenario.capture ? outcome.text.includes(scenario.capture) : null
             const stepFailure = outcome.stepResults?.failure ?? null

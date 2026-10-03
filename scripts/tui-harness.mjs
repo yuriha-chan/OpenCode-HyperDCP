@@ -393,7 +393,40 @@ export async function runTui(options) {
         }
     }
 
-    return { raw, text, stderr, rawCapture, frames, stepResults }
+    return { raw, text, stderr, rawCapture, frames, stepResults, pngRequests: stepResults?.pngRequests ?? [] }
+}
+
+// Renders an HTML capture (from a {"png": ...} step) to a PNG using the machine's
+// chromium in headless screenshot mode. Returns the PNG path, or null if the
+// renderer is unavailable or the render failed.
+export function htmlToPng(htmlPath, pngPath, { cols = DEFAULT_COLS, rows = DEFAULT_ROWS, renderer = process.env.CHROMIUM } = {}) {
+    if (!existsSync(htmlPath)) return null
+    const chromium = renderer || findChromium()
+    if (!chromium) return null
+    const width = cols * 10 + 16
+    const height = rows * 17 + 16
+    const result = spawnSync(
+        chromium,
+        [
+            "--headless",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            "--no-sandbox",
+            `--window-size=${width},${height}`,
+            `--screenshot=${pngPath}`,
+            `file://${htmlPath}`,
+        ],
+        { stdio: ["ignore", "ignore", "ignore"] },
+    )
+    return result.status === 0 && existsSync(pngPath) ? pngPath : null
+}
+
+function findChromium() {
+    for (const candidate of ["chromium", "chromium-browser", "google-chrome", "chrome"]) {
+        const probe = spawnSync("sh", ["-c", `command -v ${candidate}`], { stdio: ["ignore", "pipe", "ignore"] })
+        if (probe.status === 0) return probe.stdout.toString().trim()
+    }
+    return null
 }
 
 export function writeAsciicast(text, outFile, { cols = DEFAULT_COLS, rows = DEFAULT_ROWS, delay = 0.2 } = {}) {

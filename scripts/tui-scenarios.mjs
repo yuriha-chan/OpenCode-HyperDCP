@@ -4,6 +4,7 @@
 //   { keys: "..." , delay?: ms }        type keys, then wait delay (default settle)
 //   { waitFor: "marker", timeout?: ms } block until the emulated screen shows marker
 //   { screenshot: "expected" }          assert expected text is on screen (null = just capture)
+//   { png: "name.png" }                 render the colored screen to name.png (chromium headless)
 //
 // `waitFor` matches what the user sees (the Python driver replays the PTY stream
 // into a screen grid). On timeout the scenario aborts and is reported as failed.
@@ -30,6 +31,7 @@ export const scenarios = [
             ...openCommand("dcp-tui-blocks"),
             { waitFor: "DCP Blocks", timeout: 5000 },
             { screenshot: "DCP Blocks" },
+            { png: "dcp-blocks-list.png" },
         ],
     },
     {
