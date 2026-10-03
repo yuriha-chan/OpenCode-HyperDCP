@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { Show, For, onCleanup, createSignal, createMemo } from "solid-js"
+import { Show, For, onCleanup, createSignal, createMemo, createEffect } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -29,8 +29,7 @@ interface BlockInfo {
     deactivatedByUser: boolean
     parentBlockIds: number[]
     includedBlockIds: number[]
-    summary: string
-    summaryVersions: string[]
+    versions: string[]
 }
 
 interface MessageEntry {
@@ -44,13 +43,14 @@ function estimateTokens(text: string): number {
     return Math.round(text.length / 4)
 }
 
-function activeSummaryText(block: any): string {
-    const idx = typeof block.activeVersionIndex === "number" ? block.activeVersionIndex : 1
-    if (idx === 0) return ""
-    if (idx >= 2 && Array.isArray(block.summaryVersions) && idx - 2 < block.summaryVersions.length) {
-        return block.summaryVersions[idx - 2]
-    }
-    return block.summary ?? ""
+function versionTextOf(versions: string[], idx: number): string {
+    if (idx <= 0) return ""
+    const text = versions[idx - 1]
+    return typeof text === "string" ? text : ""
+}
+
+function versionTokens(versions: string[], idx: number): number {
+    return estimateTokens(versionTextOf(versions, idx))
 }
 
 function readBlocks(sessionId: string): BlockInfo[] {
@@ -63,13 +63,8 @@ function readBlocks(sessionId: string): BlockInfo[] {
         return Object.values(blocks).map((block: any) => {
             const activeVersionIndex = block.activeVersionIndex ?? 1
             const summaryVersions: string[] = Array.isArray(block.summaryVersions) ? block.summaryVersions : []
-            let summaryTokens = block.summaryTokens ?? 0
-            if (activeVersionIndex === 0) {
-                summaryTokens = 0
-            } else if (activeVersionIndex > 1) {
-                const versionText = summaryVersions[activeVersionIndex - 2]
-                summaryTokens = typeof versionText === "string" ? estimateTokens(versionText) : 0
-            }
+            const baseSummary = typeof block.summary === "string" ? block.summary : ""
+            const versions: string[] = [baseSummary, ...summaryVersions]
             return {
                 blockId: block.blockId ?? 0,
                 active: block.active ?? false,
@@ -78,15 +73,14 @@ function readBlocks(sessionId: string): BlockInfo[] {
                 batchTopic: block.batchTopic,
                 mode: block.mode,
                 compressedTokens: block.compressedTokens ?? 0,
-                summaryTokens,
+                summaryTokens: versionTokens(versions, activeVersionIndex),
                 startId: block.startId ?? "",
                 endId: block.endId ?? "",
                 durationMs: block.durationMs ?? 0,
                 deactivatedByUser: block.deactivatedByUser ?? false,
                 parentBlockIds: Array.isArray(block.parentBlockIds) ? block.parentBlockIds : [],
                 includedBlockIds: Array.isArray(block.includedBlockIds) ? block.includedBlockIds : [],
-                summary: activeSummaryText(block),
-                summaryVersions,
+                versions,
             }
         })
     } catch {
@@ -251,7 +245,9 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
         return
     }
 
-    const original = block.summary ?? ""
+    const original = versionTextOf(block.versions, block.activeVersionIndex)
+    const originalVersionCount = block.versions.length
+    const originalActiveVersion = block.activeVersionIndex
     const filePath = join(tmpdir(), `dcp-summary-${blockId}-${Date.now()}.md`)
     writeFileSync(filePath, buildSummaryFile(original), "utf-8")
 
@@ -285,6 +281,7 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
     }
 
     writeFileSync(filePath, edited, "utf-8")
+    startBlockSummaryPoller(sessionID, blockId, originalVersionCount, originalActiveVersion)
     try {
         await (api.client as any).session.command({
             sessionID,
@@ -292,7 +289,7 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
             arguments: `edit-file ${blockId} ${filePath}`,
         })
         api.ui.toast({ variant: "success", message: `Updated summary for block b${blockId}` })
-    } catch {
+    } catch (e) {
         api.ui.toast({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
     } finally {
         rmSync(filePath, { force: true })
@@ -530,13 +527,47 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
 
 // --- Individual block detail page ---
 
+let emitBlockSummaryUpdate: ((blockId: number) => void) | null = null
+let summaryPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startBlockSummaryPoller(sessionID: string, blockId: number, versionCount: number, activeVersion: number): void {
+    if (summaryPollTimer) clearInterval(summaryPollTimer)
+    const deadline = Date.now() + 30000
+    summaryPollTimer = setInterval(() => {
+        if (Date.now() > deadline) {
+            if (summaryPollTimer) clearInterval(summaryPollTimer)
+            summaryPollTimer = null
+            return
+        }
+        const current = readSingleBlock(sessionID, blockId)
+        if (current && (current.versions.length !== versionCount || current.activeVersionIndex !== activeVersion)) {
+            if (summaryPollTimer) clearInterval(summaryPollTimer)
+            summaryPollTimer = null
+            emitBlockSummaryUpdate?.(blockId)
+        }
+    }, 200)
+}
+
 const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
     const popMode = props.api.mode.push(DCP_BLOCK_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const blockId = props.params?.blockId as number | undefined
     const skin = look(props.api.theme.current)
-    const block = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
+    const [blockData, setBlockData] = createSignal<BlockInfo | null>(null)
+    const [manualRevision, setManualRevision] = createSignal(0)
+    emitBlockSummaryUpdate = (changedBlockId) => {
+        if (changedBlockId === blockId) setManualRevision((v) => v + 1)
+    }
+    onCleanup(() => {
+        emitBlockSummaryUpdate = null
+    })
+    createEffect(() => {
+        manualRevision()
+        const next = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
+        setBlockData(next)
+    })
+    const readCurrent = (): BlockInfo | null => blockData()
     const [selectedVersion, setSelectedVersion] = createSignal<number | null>(null)
 
     return (
@@ -547,25 +578,23 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
             backParams={sessionID ? { sessionID } : undefined}
         >
             <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
-                <Show when={block} fallback={<text fg={skin.muted}>Block b{blockId} not found</text>}>
-                    {(b) => {
-                        const mode = b().mode ?? "range"
-                        const versionCount = b().summaryVersions.length + 2
+                <Show when={readCurrent()} fallback={<text fg={skin.muted}>Block b{blockId} not found</text>}>
+                    {(() => {
+                        const b = () => readCurrent()!
+                        const mode = () => b().mode ?? "range"
+                        const versionCount = () => b().versions.length + 1
                         const shownVersion = () => selectedVersion() ?? b().activeVersionIndex
                         const versionText = (idx: number): string => {
                             if (idx === 0) return "(disabled)"
-                            if (idx >= 2) {
-                                const text = b().summaryVersions[idx - 2]
-                                return typeof text === "string" && text.length > 0 ? text : "(empty)"
-                            }
-                            return b().summary || "(empty)"
+                            const text = versionTextOf(b().versions, idx)
+                            return text.length > 0 ? text : "(empty)"
                         }
                         return (
                             <>
                                 <text fg={skin.text}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
                                 <box flexDirection="row" gap={1}>
                                     <text fg={skin.muted}>Versions:</text>
-                                    <For each={Array.from({ length: versionCount }, (_, i) => i)}>
+                                    <For each={Array.from({ length: versionCount() }, (_, i) => i)}>
                                         {(idx) => {
                                             const isActive = () => idx === b().activeVersionIndex
                                             const isShown = () => idx === shownVersion()
@@ -583,7 +612,7 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
                                     </For>
                                 </box>
                                 <text fg={skin.muted}>
-                                    {b().startId}→{b().endId} | {mode} | {statusLabel(b())} | {tokenLabelPrecise(b().compressedTokens)}→{tokenLabelPrecise(b().summaryTokens)}
+                                    {b().startId}→{b().endId} | {mode()} | {statusLabel(b())} | {tokenLabelPrecise(b().compressedTokens)}→{tokenLabelPrecise(b().summaryTokens)}
                                     {b().durationMs ? ` | ${b().durationMs}ms` : ""}
                                     {b().parentBlockIds.length > 0 ? ` | parents: b${b().parentBlockIds.join(" b")}` : ""}
                                     {b().includedBlockIds.length > 0 ? ` | includes: b${b().includedBlockIds.join(" b")}` : ""}
@@ -593,7 +622,7 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
                                 <text fg={skin.text}>{versionText(shownVersion())}</text>
                             </>
                         )
-                    }}
+                    })()}
                 </Show>
             </Show>
         </PageShell>
