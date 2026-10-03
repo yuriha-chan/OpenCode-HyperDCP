@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { Show, For, onCleanup, createSignal } from "solid-js"
+import { Show, For, onCleanup, createSignal, createMemo } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -641,7 +641,7 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const skin = look(props.api.theme.current)
-    const page = (props.params?.page as number) ?? 0
+    const [page, setPage] = createSignal((props.params?.page as number) ?? 0)
 
     // Module-level cache: SDK messages (populated before navigation)
     const sdkMessages = sessionID ? sdkMessagesCache.get(sessionID) : undefined
@@ -678,13 +678,11 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
 
     const totalMessages = allEntries.length
     const totalPages = Math.max(1, Math.ceil(totalMessages / PAGE_SIZE))
-    const pageEntries = allEntries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+    const pageEntries = createMemo(() => allEntries.slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE))
 
     const navTo = (newPage: number) => {
         log(props.api, `messages: navigate to page=${newPage}`)
-        const currentName = props.api.route.current.name
-        const nextName = currentName === "dcp-messages" ? "dcp-messages-alt" : "dcp-messages"
-        props.api.route.navigate(nextName, { sessionID, page: newPage })
+        setPage(newPage)
     }
 
     if (!sessionID) {
@@ -699,17 +697,17 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
         <PageShell api={props.api} title="DCP Messages">
             <box flexDirection="row" gap={1}>
                 <text fg={skin.muted}>
-                    {totalMessages} messages — page {page + 1}/{totalPages}
+                    {totalMessages} messages — page {page() + 1}/{totalPages}
                     {dcpMessages.length > totalMessages ? ` (${dcpMessages.length} tracked)` : ""}
                 </text>
             </box>
             <text fg={skin.muted}>{"─".repeat(40)}</text>
             {allEntries.length === 0 ? (
                 <text fg={skin.muted}>No messages in this session.</text>
-            ) : pageEntries.length === 0 ? (
-                <text fg={skin.muted}>Page {page + 1} is empty.</text>
+            ) : pageEntries().length === 0 ? (
+                <text fg={skin.muted}>Page {page() + 1} is empty.</text>
             ) : (
-                pageEntries.map((entry) => {
+                pageEntries().map((entry) => {
                     const isCompressed = entry.activeBlockIds.length > 0
                     return (
                         <box key={entry.rawId} flexDirection="row" gap={1}>
@@ -724,15 +722,15 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
                 <>
                     <text fg={skin.muted}>{"─".repeat(40)}</text>
                     <box flexDirection="row" gap={1} alignItems="center">
-                        {page > 0 ? (
-                                <box onMouseDown={() => navTo(page - 1)}>
-                                    <text bold inverse onMouseDown={() => navTo(page - 1)} onDblClick={() => navTo(page - 1)}> ← Newer </text>
+                        {page() > 0 ? (
+                                <box onMouseDown={() => navTo(page() - 1)}>
+                                    <text bold inverse> ← Newer </text>
                                 </box>
                             ) : null}
-                            <text fg={skin.muted}>Page {page + 1} of {totalPages}</text>
-                            {page < totalPages - 1 ? (
-                                <box onMouseDown={() => navTo(page + 1)}>
-                                    <text bold inverse onMouseDown={() => navTo(page + 1)} onDblClick={() => navTo(page + 1)}> Older → </text>
+                            <text fg={skin.muted}>Page {page() + 1} of {totalPages}</text>
+                            {page() < totalPages - 1 ? (
+                                <box onMouseDown={() => navTo(page() + 1)}>
+                                    <text bold inverse> Older → </text>
                                 </box>
                         ) : null}
                     </box>
@@ -797,10 +795,6 @@ const tui: TuiPlugin = async (api, options, meta) => {
         },
         {
             name: "dcp-messages",
-            render: ({ params }) => <MessagesDetail api={api} params={params} />,
-        },
-        {
-            name: "dcp-messages-alt",
             render: ({ params }) => <MessagesDetail api={api} params={params} />,
         },
         {
