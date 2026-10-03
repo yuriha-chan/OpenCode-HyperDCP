@@ -2,10 +2,58 @@
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { Show, For, onCleanup } from "solid-js"
-import { readFileSync } from "node:fs"
+import { readFileSync, writeFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { spawnSync } from "node:child_process"
 import { getSessionFilePath } from "../lib/paths"
+import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
 
 const DCP_MODE = "dcp-routes"
+const DCP_BLOCK_MODE = "dcp-block"
+
+// TUI plugin is bundled by tsup/esbuild without the Solid transform, so Solid
+// reactivity does not drive re-renders. Remount the page by cycling between two
+// identical route names (same trick as dcp-messages / dcp-messages-alt).
+function isBlockDetailRoute(name: string): boolean {
+    return name === "dcp-block" || name === "dcp-block-alt"
+}
+
+function reloadBlockDetail(api: TuiPluginApi, sessionID: string, blockId: number): void {
+    const nextName = api.route.current.name === "dcp-block" ? "dcp-block-alt" : "dcp-block"
+    api.route.navigate(nextName, { sessionID, blockId })
+}
+
+let summaryReloadPoll = 0
+
+// The server applies the edit asynchronously, so the page may remount before the
+// state file is rewritten. Poll until the active summary reflects the edit; stop
+// if the user leaves the block detail page or a newer edit supersedes this one.
+function pollForSummaryUpdate(
+    api: TuiPluginApi,
+    sessionID: string,
+    blockId: number,
+    expectedSummary: string,
+): void {
+    const token = ++summaryReloadPoll
+    const deadline = Date.now() + 3000
+    const tick = (): void => {
+        if (token !== summaryReloadPoll) return
+        const current = api.route.current
+        const onPage =
+            isBlockDetailRoute(current.name) &&
+            (current.params?.blockId as number | undefined) === blockId
+        if (!onPage) return
+        const block = readSingleBlock(sessionID, blockId)
+        if (block && block.summary === expectedSummary) {
+            reloadBlockDetail(api, sessionID, blockId)
+            return
+        }
+        if (Date.now() >= deadline) return
+        setTimeout(tick, 50)
+    }
+    setTimeout(tick, 50)
+}
 
 interface BlockInfo {
     blockId: number
@@ -228,6 +276,96 @@ function goBack(api: TuiPluginApi, target: string, params?: Record<string, unkno
     }
 }
 
+function runEditor(editor: string, filePath: string): void {
+    const parts = editor.split(/\s+/).filter(Boolean)
+    const command = parts[0] ?? "vi"
+    const args = [...parts.slice(1), filePath]
+    spawnSync(command, args, { stdio: "inherit" })
+}
+
+async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: number): Promise<void> {
+    const block = readSingleBlock(sessionID, blockId)
+    if (!block) {
+        api.ui.toast({ variant: "error", message: `Block b${blockId} not found` })
+        return
+    }
+
+    const original = block.summary ?? ""
+    const filePath = join(tmpdir(), `dcp-summary-${blockId}-${Date.now()}.md`)
+    writeFileSync(filePath, buildSummaryFile(original), "utf-8")
+
+    const editor = process.env.VISUAL || process.env.EDITOR || "vi"
+    api.renderer.suspend()
+    try {
+        runEditor(editor, filePath)
+    } finally {
+        api.renderer.resume()
+    }
+
+    let edited: string
+    try {
+        edited = parseSummaryFile(readFileSync(filePath, "utf-8"))
+    } catch {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "error", message: "Could not read the edited summary" })
+        return
+    }
+
+    const trimmed = edited.trim()
+    if (!trimmed) {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "warning", message: "Edited summary is empty; nothing applied" })
+        return
+    }
+    if (trimmed === original.trim()) {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "info", message: `No changes to block b${blockId}` })
+        return
+    }
+
+    writeFileSync(filePath, edited, "utf-8")
+    try {
+        await (api.client as any).session.command({
+            sessionID,
+            command: "dcp",
+            arguments: `edit-file ${blockId} ${filePath}`,
+        })
+        api.ui.toast({ variant: "success", message: `Updated summary for block b${blockId}` })
+        pollForSummaryUpdate(api, sessionID, blockId, trimmed)
+    } catch {
+        api.ui.toast({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
+    } finally {
+        rmSync(filePath, { force: true })
+    }
+}
+
+function pickBlockToEdit(api: TuiPluginApi, sessionID: string): void {
+    const blocks = readBlocks(sessionID)
+    if (blocks.length === 0) {
+        api.ui.toast({ variant: "info", message: "No compression blocks yet" })
+        return
+    }
+    const options = blocks.map((block) => ({
+        title: `b${block.blockId} ${block.topic || "(no topic)"}`,
+        value: block.blockId,
+        description: `${block.startId}→${block.endId} — ${statusLabel(block)}`,
+    }))
+    api.ui.dialog.replace(
+        () => (
+            <api.ui.DialogSelect
+                title="Edit block summary"
+                placeholder="Search blocks"
+                options={options}
+                onSelect={(option) => {
+                    api.ui.dialog.clear()
+                    void editBlockSummary(api, sessionID, option.value as number)
+                }}
+            />
+        ),
+        () => {},
+    )
+}
+
 // --- Sidebar component ---
 
 const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
@@ -381,44 +519,41 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
 // --- Individual block detail page ---
 
 const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_MODE)
+    const popMode = props.api.mode.push(DCP_BLOCK_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const blockId = props.params?.blockId as number | undefined
     const skin = look(props.api.theme.current)
     const block = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
-    const isEmpty = (b: BlockInfo) => b.summaryTokens === 0
-
-    if (!sessionID) {
-        return (
-            <PageShell api={props.api} title="Block Detail">
-                <text fg={skin.muted}>No active session</text>
-            </PageShell>
-        )
-    }
-
-    if (!block) {
-        return (
-            <PageShell api={props.api} title="Block Detail" backTarget="dcp-blocks" backParams={{ sessionID }}>
-                <text fg={skin.muted}>Block b{blockId} not found</text>
-            </PageShell>
-        )
-    }
-
-    const mode = block.mode ?? "range"
 
     return (
-        <PageShell api={props.api} title="Block Detail" backTarget="dcp-blocks" backParams={{ sessionID }}>
-            <text fg={skin.text}><b>b{block.blockId} — {block.topic || "(no topic)"}</b></text>
-            <text fg={skin.muted}>
-                {block.startId}→{block.endId} | {mode} | {statusLabel(block)} | {tokenLabelPrecise(block.compressedTokens)}→{tokenLabelPrecise(block.summaryTokens)}
-                {block.durationMs ? ` | ${block.durationMs}ms` : ""}
-                {block.parentBlockIds.length > 0 ? ` | parents: b${block.parentBlockIds.join(" b")}` : ""}
-                {block.includedBlockIds.length > 0 ? ` | includes: b${block.includedBlockIds.join(" b")}` : ""}
-                {block.batchTopic ? ` | batch: ${block.batchTopic}` : ""}
-            </text>
-            <text fg={skin.muted}>{"─".repeat(40)}</text>
-            <text fg={skin.text}>{block.summary || "(empty)"}</text>
+        <PageShell
+            api={props.api}
+            title="Block Detail"
+            backTarget={sessionID ? "dcp-blocks" : undefined}
+            backParams={sessionID ? { sessionID } : undefined}
+        >
+            <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={block} fallback={<text fg={skin.muted}>Block b{blockId} not found</text>}>
+                    {(b) => {
+                        const mode = b().mode ?? "range"
+                        return (
+                            <>
+                                <text fg={skin.text}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
+                                <text fg={skin.muted}>
+                                    {b().startId}→{b().endId} | {mode} | {statusLabel(b())} | {tokenLabelPrecise(b().compressedTokens)}→{tokenLabelPrecise(b().summaryTokens)}
+                                    {b().durationMs ? ` | ${b().durationMs}ms` : ""}
+                                    {b().parentBlockIds.length > 0 ? ` | parents: b${b().parentBlockIds.join(" b")}` : ""}
+                                    {b().includedBlockIds.length > 0 ? ` | includes: b${b().includedBlockIds.join(" b")}` : ""}
+                                    {b().batchTopic ? ` | batch: ${b().batchTopic}` : ""}
+                                </text>
+                                <text fg={skin.muted}>{"─".repeat(40)}</text>
+                                <text fg={skin.text}>{b().summary || "(empty)"}</text>
+                            </>
+                        )
+                    }}
+                </Show>
+            </Show>
         </PageShell>
     )
 }
@@ -651,6 +786,10 @@ const tui: TuiPlugin = async (api, options, meta) => {
             render: ({ params }) => <BlockDetail api={api} params={params} />,
         },
         {
+            name: "dcp-block-alt",
+            render: ({ params }) => <BlockDetail api={api} params={params} />,
+        },
+        {
             name: "dcp-messages",
             render: ({ params }) => <MessagesDetail api={api} params={params} />,
         },
@@ -713,6 +852,27 @@ const tui: TuiPlugin = async (api, options, meta) => {
                     }
                 },
             },
+            {
+                name: "dcp-tui.edit",
+                title: "DCP Edit Block Summary",
+                category: "Plugin",
+                namespace: "palette",
+                slashName: "dcp-tui-edit",
+                run() {
+                    const current = api.route.current
+                    const sessionID = current.params?.sessionID as string | undefined
+                    const blockId = current.params?.blockId as number | undefined
+                    if (!sessionID) {
+                        api.ui.toast({ variant: "info", message: "No active session" })
+                        return
+                    }
+                    if (isBlockDetailRoute(current.name) && typeof blockId === "number") {
+                        void editBlockSummary(api, sessionID, blockId)
+                    } else {
+                        pickBlockToEdit(api, sessionID)
+                    }
+                },
+            },
         ],
     })
 
@@ -727,7 +887,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 run() {
                     const name = api.route.current.name
                     const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (name === "dcp-block" && sessionID) {
+                    if (isBlockDetailRoute(name) && sessionID) {
                         api.route.navigate("dcp-blocks", { sessionID })
                     } else if (sessionID) {
                         api.route.navigate("session", { sessionID })
@@ -738,6 +898,11 @@ const tui: TuiPlugin = async (api, options, meta) => {
             },
         ],
         bindings: [{ key: "escape", cmd: "dcp-tui.back", desc: "Back" }],
+    })
+
+    api.keymap.registerLayer({
+        mode: DCP_BLOCK_MODE,
+        bindings: [{ key: "e", cmd: "dcp-tui.edit", desc: "Edit summary" }],
     })
 }
 

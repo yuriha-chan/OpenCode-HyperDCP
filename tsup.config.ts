@@ -23,6 +23,7 @@ export default defineConfig([
             "node:fs",
             "node:os",
             "node:path",
+            "node:child_process",
         ],
         esbuildOptions(options) {
             options.jsx = "automatic"

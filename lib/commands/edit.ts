@@ -17,7 +17,7 @@ export interface EditCommandContext {
     args: string[]
 }
 
-function parseBlockIdArg(arg: string): number | null {
+export function parseBlockIdArg(arg: string): number | null {
     const normalized = arg.trim().toLowerCase()
     const blockRef = parseBlockRef(normalized)
     if (blockRef !== null) {

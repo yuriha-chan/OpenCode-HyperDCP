@@ -34,6 +34,7 @@ import {
     handleDebugCommand,
     handleDecompressCommand,
     handleEditCommand,
+    handleEditFileCommand,
     handleHelpCommand,
     handleManualToggleCommand,
     handleManualTriggerCommand,
@@ -336,6 +337,15 @@ export function createCommandExecuteHandler(
 
             if (subcommand === "edit") {
                 await handleEditCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
+                output.handled = true
+                return
+            }
+
+            if (subcommand === "edit-file") {
+                await handleEditFileCommand({
                     ...commandCtx,
                     args: subArgs,
                 })
