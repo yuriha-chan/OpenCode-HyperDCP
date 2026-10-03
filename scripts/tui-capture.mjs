@@ -13,20 +13,23 @@
 //   node scripts/tui-harness.mjs dcp-blocks-list      # run one scenario
 //   node scripts/tui-harness.mjs --list               # list scenario names
 //   node scripts/tui-harness.mjs --out DIR            # output directory
-//   node scripts/tui-harness.mjs --seed <sessionId>   # seed state from a real session
+//   node scripts/tui-harness.mjs --out DIR             # output directory
 //   node scripts/tui-harness.mjs --keep               # keep the temp project
+//
+// Scenario state is always seeded from the committed neutral fixture
+// scripts/fixtures/demo-pizza-bot.json, so screenshots never leak a real session.
 //
 // Screenshots land in ./harness-out/<scenario>.cast (asciicast v2) and
 // ./harness-out/<scenario>.raw (raw ANSI). Render the cast later with agg or
 // svg-term once installed.
 
-import { mkdirSync, readdirSync, existsSync, copyFileSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, existsSync, copyFileSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import process from "node:process"
-import { homedir } from "node:os"
 
 import {
     makeIsolatedProject,
+    bootstrapSession,
     runTui,
     writeAsciicast,
     ansiToText,
@@ -36,12 +39,13 @@ import {
 } from "./tui-harness.mjs"
 import { scenarios, findScenario, DEFAULT_WAIT_FOR } from "./tui-scenarios.mjs"
 
-const DEFAULT_STORAGE = path.join(homedir(), ".local", "share", "opencode", "storage", "plugin", "dcp")
+// Neutral, committed fixture so the harness never depends on a real personal
+// session for demos/screenshots. Regenerate with scripts/fixtures/make-demo-fixture.mjs.
+const DEMO_FIXTURE = path.join(repoRoot, "scripts", "fixtures", "demo-pizza-bot.json")
 
 function parseArgs(argv) {
     const options = {
         out: path.join(repoRoot, "harness-out"),
-        seed: null,
         keep: false,
         list: false,
         frames: false,
@@ -55,8 +59,6 @@ function parseArgs(argv) {
         const arg = argv[i]
         if (arg === "--out") {
             options.out = path.resolve(argv[++i])
-        } else if (arg === "--seed") {
-            options.seed = argv[++i]
         } else if (arg === "--keep") {
             options.keep = true
         } else if (arg === "--frames") {
@@ -80,20 +82,12 @@ function parseArgs(argv) {
     return options
 }
 
-function pickSeedState(seed) {
-    if (!existsSync(DEFAULT_STORAGE)) return null
-    if (seed) {
-        const file = path.join(DEFAULT_STORAGE, `${seed}.json`)
-        return existsSync(file) ? { file, name: seed } : null
-    }
-    const candidates = readdirSync(DEFAULT_STORAGE)
-        .filter((name) => name.startsWith("ses_") && name.endsWith(".json"))
-        .map((name) => ({
-            name: name.replace(/\.json$/, ""),
-            file: path.join(DEFAULT_STORAGE, name),
-        }))
-    if (candidates.length === 0) return null
-    return candidates.sort((a, b) => a.name.localeCompare(b.name))[0]
+// The harness only ever seeds the committed neutral fixture. Real sessions are
+// deliberately not supported: rendering someone's real DCP state into a demo
+// screenshot could leak private content.
+function loadSeedState() {
+    if (!existsSync(DEMO_FIXTURE)) return null
+    return { file: DEMO_FIXTURE, name: "demo-pizza-bot" }
 }
 
 function printHelp() {
@@ -105,7 +99,6 @@ Usage:
 Options:
   --list            list scenario names and exit
   --out DIR         output directory (default: <repo>/harness-out)
-  --seed SESSIONID  seed isolated state from this real session state file
   --frames          record and write a frame-by-frame screen timeline per scenario
   --startup MS      wait before sending the first key (default: 2500)
   --wait-for TEXT   raw-output marker signalling readiness (default: "Ask anything")
@@ -142,14 +135,24 @@ async function main() {
     mkdirSync(options.out, { recursive: true })
 
     const project = makeIsolatedProject("/tmp/opencode")
-    const seed = pickSeedState(options.seed)
+    let sessionId
+    try {
+        process.stdout.write("bootstrapping isolated session ... ")
+        sessionId = bootstrapSession(project)
+        console.log(sessionId)
+    } catch (error) {
+        console.log(`ERROR: ${error.message}`)
+        if (!options.keep) project.cleanup()
+        return 1
+    }
+
+    const seed = loadSeedState()
     if (seed) {
         const state = JSON.parse(readFileSync(seed.file, "utf8"))
-        const sessionId = seed.name
         project.seedState(sessionId, state)
         console.log(`seeded session ${sessionId} from ${seed.file}`)
     } else {
-        console.log("no seed state found; scenarios run against an empty session list")
+        console.log(`missing fixture ${DEMO_FIXTURE}; scenarios run against an empty DCP state`)
     }
 
     const results = []
@@ -163,6 +166,8 @@ async function main() {
                     cwd: project.dir,
                     dataHome: project.dataHome,
                     configHome: project.configHome,
+                    command: "opencode",
+                    commandArgs: ["--session", sessionId],
                     keys: scenario.keys,
                     steps: scenario.steps,
                     startupMs: scenario.startupMs ?? options.startupMs,
@@ -190,7 +195,10 @@ async function main() {
             }
             for (const request of outcome.pngRequests ?? []) {
                 const pngPath = path.join(options.out, request.png)
-                const rendered = htmlToPng(request.html, pngPath)
+                const rendered = htmlToPng(request.html, pngPath, {
+                    width: request.width,
+                    height: request.height,
+                })
                 if (rendered) {
                     console.log(`png -> ${rendered}`)
                 } else {

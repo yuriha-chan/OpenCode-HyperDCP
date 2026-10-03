@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process"
+import { DatabaseSync } from "node:sqlite"
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import path from "node:path"
@@ -9,9 +10,9 @@ export const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)
 const ptyDriverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "tui-pty-driver.py")
 
 // 120x40 is too narrow: opencode hides the DCP sidebar slot below a width
-// threshold, so screenshots come back empty. 169x47 matches a normal terminal
-// and renders the sidebar.
-export const DEFAULT_COLS = 169
+// threshold, so screenshots come back empty. 150x47 is wide enough to render
+// the sidebar while keeping the captured layout tight.
+export const DEFAULT_COLS = 150
 export const DEFAULT_ROWS = 47
 
 function sleep(ms) {
@@ -232,6 +233,36 @@ export function makeIsolatedProject(baseDir, { pluginDir = repoRoot } = {}) {
     }
 }
 
+// The DCP TUI reads block state by the LIVE opencode session id, so seeding a
+// state file under an arbitrary id is never read. This bootstraps a real session
+// in the isolated project by running a throwaway `opencode run` (which creates
+// opencode.db and runs its own migrations), then returns that session id so the
+// caller can seed the DCP state under it and launch `opencode --session <id>`.
+export function bootstrapSession(project, { timeoutMs = 90000 } = {}) {
+    const env = {
+        ...process.env,
+        HOME: homedir(),
+        XDG_DATA_HOME: project.dataHome,
+        XDG_CONFIG_HOME: project.configHome,
+        TERM: "xterm-256color",
+    }
+    const result = spawnSync("opencode", ["run", "hi"], {
+        cwd: project.dir,
+        env,
+        stdio: ["ignore", "ignore", "ignore"],
+        timeout: timeoutMs,
+    })
+    const dbFile = path.join(project.dataHome, "opencode", "opencode.db")
+    if (!existsSync(dbFile)) {
+        throw new Error(`opencode run did not create a database (status ${result.status}, signal ${result.signal})`)
+    }
+    const db = new DatabaseSync(dbFile)
+    const row = db.prepare("SELECT id FROM session ORDER BY time_created DESC LIMIT 1").get()
+    db.close()
+    if (!row || !row.id) throw new Error("opencode run created no session row")
+    return row.id
+}
+
 export function cloneTemplateState(templatePath, sessionId) {
     const state = JSON.parse(readFileSync(templatePath, "utf8"))
     state.lastUpdated = Date.now()
@@ -399,12 +430,12 @@ export async function runTui(options) {
 // Renders an HTML capture (from a {"png": ...} step) to a PNG using the machine's
 // chromium in headless screenshot mode. Returns the PNG path, or null if the
 // renderer is unavailable or the render failed.
-export function htmlToPng(htmlPath, pngPath, { cols = DEFAULT_COLS, rows = DEFAULT_ROWS, renderer = process.env.CHROMIUM } = {}) {
+export function htmlToPng(htmlPath, pngPath, { cols = DEFAULT_COLS, rows = DEFAULT_ROWS, width, height, renderer = process.env.CHROMIUM } = {}) {
     if (!existsSync(htmlPath)) return null
     const chromium = renderer || findChromium()
     if (!chromium) return null
-    const width = cols * 10 + 16
-    const height = rows * 17 + 16
+    const viewW = width ?? cols * 10 + 16
+    const viewH = height ?? rows * 17 + 16
     const result = spawnSync(
         chromium,
         [
@@ -412,7 +443,7 @@ export function htmlToPng(htmlPath, pngPath, { cols = DEFAULT_COLS, rows = DEFAU
             "--disable-gpu",
             "--hide-scrollbars",
             "--no-sandbox",
-            `--window-size=${width},${height}`,
+            `--window-size=${viewW},${viewH}`,
             `--screenshot=${pngPath}`,
             `file://${htmlPath}`,
         ],

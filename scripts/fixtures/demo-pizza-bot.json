@@ -1,0 +1,2101 @@
+{
+  "sessionName": "Doughbot firmware — demo session",
+  "prune": {
+    "tools": {},
+    "messages": {
+      "byMessageId": {
+        "msg_demo0001": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0002": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0003": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0004": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0005": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0006": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0007": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0008": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0009": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0010": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0011": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0012": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0013": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0014": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0015": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0016": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0017": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0018": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0019": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0020": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0021": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0022": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0023": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0024": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0025": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0026": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0027": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0028": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0029": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0030": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0031": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0032": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0033": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0034": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0035": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0036": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0037": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0038": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0039": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0040": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0041": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0042": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0043": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0044": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0045": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0046": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0047": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0048": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0049": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0050": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0051": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0052": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0053": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0054": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0055": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0056": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0057": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0058": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0059": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0060": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0061": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0062": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0063": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0064": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0065": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0066": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0067": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0068": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0069": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0070": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0071": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0072": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0073": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0074": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0075": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0076": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0077": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0078": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0079": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0080": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0081": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0082": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0083": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0084": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0085": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0086": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0087": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0088": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0089": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0090": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0091": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0092": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0093": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0094": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0095": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0096": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0097": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0098": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0099": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0100": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0101": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0102": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0103": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0104": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0105": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0106": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0107": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0108": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0109": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0110": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0111": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0112": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0113": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0114": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0115": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0116": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0117": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0118": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0119": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0120": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0121": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0122": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0123": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0124": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0125": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0126": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0127": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0128": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0129": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0130": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0131": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0132": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0133": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0134": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0135": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0136": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0137": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0138": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0139": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0140": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0141": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0142": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0143": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0144": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0145": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0146": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0147": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0148": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0149": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0150": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0151": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0152": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0153": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0154": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0155": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0156": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0157": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0158": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0159": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0160": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0161": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0162": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0163": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0164": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0165": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0166": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0167": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0168": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0169": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0170": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0171": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0172": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0173": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0174": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0175": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0176": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0177": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0178": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0179": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0180": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0181": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0182": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0183": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0184": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0185": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0186": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0187": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0188": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0189": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0190": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0191": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0192": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0193": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0194": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0195": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0196": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0197": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0198": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0199": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0200": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0201": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0202": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0203": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0204": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0205": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0206": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0207": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0208": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0209": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0210": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0211": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0212": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0213": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0214": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0215": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0216": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0217": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0218": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0219": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0220": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0221": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0222": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0223": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0224": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0225": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        },
+        "msg_demo0226": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0227": {
+          "tokenCount": 217,
+          "activeBlockIds": []
+        },
+        "msg_demo0228": {
+          "tokenCount": 254,
+          "activeBlockIds": []
+        },
+        "msg_demo0229": {
+          "tokenCount": 291,
+          "activeBlockIds": []
+        },
+        "msg_demo0230": {
+          "tokenCount": 328,
+          "activeBlockIds": []
+        },
+        "msg_demo0231": {
+          "tokenCount": 365,
+          "activeBlockIds": []
+        },
+        "msg_demo0232": {
+          "tokenCount": 402,
+          "activeBlockIds": []
+        },
+        "msg_demo0233": {
+          "tokenCount": 439,
+          "activeBlockIds": []
+        },
+        "msg_demo0234": {
+          "tokenCount": 476,
+          "activeBlockIds": []
+        }
+      },
+      "blocksById": {
+        "1": {
+          "blockId": 1,
+          "runId": 1,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 24610,
+          "summaryTokens": 1337,
+          "durationMs": 9120,
+          "mode": "range",
+          "topic": "Bootloader handshake for the dough sensor",
+          "batchTopic": "Bootloader handshake for the dough sensor",
+          "startId": "m0003",
+          "endId": "m0028",
+          "anchorMessageId": "msg_demo0003",
+          "compressMessageId": "msg_demo0028",
+          "compressCallId": "call_demo_1",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0003",
+            "msg_demo0004",
+            "msg_demo0005",
+            "msg_demo0006",
+            "msg_demo0007",
+            "msg_demo0008",
+            "msg_demo0009",
+            "msg_demo0010",
+            "msg_demo0011",
+            "msg_demo0012",
+            "msg_demo0013",
+            "msg_demo0014",
+            "msg_demo0015",
+            "msg_demo0016",
+            "msg_demo0017",
+            "msg_demo0018",
+            "msg_demo0019",
+            "msg_demo0020",
+            "msg_demo0021",
+            "msg_demo0022",
+            "msg_demo0023",
+            "msg_demo0024",
+            "msg_demo0025",
+            "msg_demo0026",
+            "msg_demo0027",
+            "msg_demo0028"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0003",
+            "msg_demo0004",
+            "msg_demo0005",
+            "msg_demo0006",
+            "msg_demo0007",
+            "msg_demo0008",
+            "msg_demo0009",
+            "msg_demo0010",
+            "msg_demo0011",
+            "msg_demo0012",
+            "msg_demo0013",
+            "msg_demo0014",
+            "msg_demo0015",
+            "msg_demo0016",
+            "msg_demo0017",
+            "msg_demo0018",
+            "msg_demo0019",
+            "msg_demo0020",
+            "msg_demo0021",
+            "msg_demo0022",
+            "msg_demo0023",
+            "msg_demo0024",
+            "msg_demo0025",
+            "msg_demo0026",
+            "msg_demo0027",
+            "msg_demo0028"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-01T09:11:00.000Z",
+          "summary": "## Dough sensor bootloader\nThe dough sensor board ships with a tiny bootloader that must complete a\nhandshake before the arm firmware will talk to it.\n\n- Handshake is a 4-byte magic `0xD0 0x6C 0x44 0x21` followed by a CRC-8.\n- The sensor answers with a status byte; 0x00 means \"flour level unknown yet\".\n- We retry the handshake up to 5 times with a 120 ms backoff before giving up\n  and entering \"no dough\" safe mode (arm parks, LED pulses amber).",
+          "summaryVersions": [],
+          "activeVersionIndex": 1
+        },
+        "2": {
+          "blockId": 2,
+          "runId": 2,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 31220,
+          "summaryTokens": 1474,
+          "durationMs": 14380,
+          "mode": "range",
+          "topic": "Knead routine timing and torque limits",
+          "batchTopic": "Knead routine timing and torque limits",
+          "startId": "m0029",
+          "endId": "m0061",
+          "anchorMessageId": "msg_demo0029",
+          "compressMessageId": "msg_demo0061",
+          "compressCallId": "call_demo_2",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0029",
+            "msg_demo0030",
+            "msg_demo0031",
+            "msg_demo0032",
+            "msg_demo0033",
+            "msg_demo0034",
+            "msg_demo0035",
+            "msg_demo0036",
+            "msg_demo0037",
+            "msg_demo0038",
+            "msg_demo0039",
+            "msg_demo0040",
+            "msg_demo0041",
+            "msg_demo0042",
+            "msg_demo0043",
+            "msg_demo0044",
+            "msg_demo0045",
+            "msg_demo0046",
+            "msg_demo0047",
+            "msg_demo0048",
+            "msg_demo0049",
+            "msg_demo0050",
+            "msg_demo0051",
+            "msg_demo0052",
+            "msg_demo0053",
+            "msg_demo0054",
+            "msg_demo0055",
+            "msg_demo0056",
+            "msg_demo0057",
+            "msg_demo0058",
+            "msg_demo0059",
+            "msg_demo0060",
+            "msg_demo0061"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0029",
+            "msg_demo0030",
+            "msg_demo0031",
+            "msg_demo0032",
+            "msg_demo0033",
+            "msg_demo0034",
+            "msg_demo0035",
+            "msg_demo0036",
+            "msg_demo0037",
+            "msg_demo0038",
+            "msg_demo0039",
+            "msg_demo0040",
+            "msg_demo0041",
+            "msg_demo0042",
+            "msg_demo0043",
+            "msg_demo0044",
+            "msg_demo0045",
+            "msg_demo0046",
+            "msg_demo0047",
+            "msg_demo0048",
+            "msg_demo0049",
+            "msg_demo0050",
+            "msg_demo0051",
+            "msg_demo0052",
+            "msg_demo0053",
+            "msg_demo0054",
+            "msg_demo0055",
+            "msg_demo0056",
+            "msg_demo0057",
+            "msg_demo0058",
+            "msg_demo0059",
+            "msg_demo0060",
+            "msg_demo0061"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-02T09:12:00.000Z",
+          "summary": "## Knead routine\nGoal: a repeatable 90-second knead that never stalls the motor.\n\n- Torque is capped at 0.42 N·m; above that the arm backs off 15% for 400 ms.\n- Two-phase motion: slow fold (40 s) then rhythmic press (50 s, 1.1 Hz).\n- We log a \"dough elasticity\" score from the last 10 torque peaks.\n- Edge case: if elasticity plateaus for 8 presses, stop early and raise the\n  \"probably done\" flag.",
+          "summaryVersions": [],
+          "activeVersionIndex": 0
+        },
+        "3": {
+          "blockId": 3,
+          "runId": 3,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 41970,
+          "summaryTokens": 1611,
+          "durationMs": 20410,
+          "mode": "range",
+          "topic": "Topping placement vision pipeline",
+          "batchTopic": "Topping placement vision pipeline",
+          "startId": "m0062",
+          "endId": "m0108",
+          "anchorMessageId": "msg_demo0062",
+          "compressMessageId": "msg_demo0108",
+          "compressCallId": "call_demo_3",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0062",
+            "msg_demo0063",
+            "msg_demo0064",
+            "msg_demo0065",
+            "msg_demo0066",
+            "msg_demo0067",
+            "msg_demo0068",
+            "msg_demo0069",
+            "msg_demo0070",
+            "msg_demo0071",
+            "msg_demo0072",
+            "msg_demo0073",
+            "msg_demo0074",
+            "msg_demo0075",
+            "msg_demo0076",
+            "msg_demo0077",
+            "msg_demo0078",
+            "msg_demo0079",
+            "msg_demo0080",
+            "msg_demo0081",
+            "msg_demo0082",
+            "msg_demo0083",
+            "msg_demo0084",
+            "msg_demo0085",
+            "msg_demo0086",
+            "msg_demo0087",
+            "msg_demo0088",
+            "msg_demo0089",
+            "msg_demo0090",
+            "msg_demo0091",
+            "msg_demo0092",
+            "msg_demo0093",
+            "msg_demo0094",
+            "msg_demo0095",
+            "msg_demo0096",
+            "msg_demo0097",
+            "msg_demo0098",
+            "msg_demo0099",
+            "msg_demo0100",
+            "msg_demo0101",
+            "msg_demo0102",
+            "msg_demo0103",
+            "msg_demo0104",
+            "msg_demo0105",
+            "msg_demo0106",
+            "msg_demo0107",
+            "msg_demo0108"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0062",
+            "msg_demo0063",
+            "msg_demo0064",
+            "msg_demo0065",
+            "msg_demo0066",
+            "msg_demo0067",
+            "msg_demo0068",
+            "msg_demo0069",
+            "msg_demo0070",
+            "msg_demo0071",
+            "msg_demo0072",
+            "msg_demo0073",
+            "msg_demo0074",
+            "msg_demo0075",
+            "msg_demo0076",
+            "msg_demo0077",
+            "msg_demo0078",
+            "msg_demo0079",
+            "msg_demo0080",
+            "msg_demo0081",
+            "msg_demo0082",
+            "msg_demo0083",
+            "msg_demo0084",
+            "msg_demo0085",
+            "msg_demo0086",
+            "msg_demo0087",
+            "msg_demo0088",
+            "msg_demo0089",
+            "msg_demo0090",
+            "msg_demo0091",
+            "msg_demo0092",
+            "msg_demo0093",
+            "msg_demo0094",
+            "msg_demo0095",
+            "msg_demo0096",
+            "msg_demo0097",
+            "msg_demo0098",
+            "msg_demo0099",
+            "msg_demo0100",
+            "msg_demo0101",
+            "msg_demo0102",
+            "msg_demo0103",
+            "msg_demo0104",
+            "msg_demo0105",
+            "msg_demo0106",
+            "msg_demo0107",
+            "msg_demo0108"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-03T09:13:00.000Z",
+          "summary": "## Topping vision pipeline\nA 64x64 camera stream feeds a pepperoni/pepper/green-onion classifier.\n\n- Frames are downscaled and cropped to the crust polygon before inference.\n- Pepperoni targets sit on an 8-point ring; placement jitter must stay under\n  6 mm so the cheese blanket covers them evenly.\n- Green onion is sprinkled last with a 0.7 g target per pie.\n- False positives on the crust edge are dropped by an inset mask.",
+          "summaryVersions": [
+            "## Topping vision pipeline (v2)\nPepperoni ring switched from 8 points to 10 for large pies, and the inset mask\nwas widened by 3 px after the \"onion on the crust\" bug."
+          ],
+          "activeVersionIndex": 2
+        },
+        "4": {
+          "blockId": 4,
+          "runId": 4,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 28640,
+          "summaryTokens": 1748,
+          "durationMs": 11760,
+          "mode": "range",
+          "topic": "Oven handoff and temperature safety",
+          "batchTopic": "Oven handoff and temperature safety",
+          "startId": "m0109",
+          "endId": "m0147",
+          "anchorMessageId": "msg_demo0109",
+          "compressMessageId": "msg_demo0147",
+          "compressCallId": "call_demo_4",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0109",
+            "msg_demo0110",
+            "msg_demo0111",
+            "msg_demo0112",
+            "msg_demo0113",
+            "msg_demo0114",
+            "msg_demo0115",
+            "msg_demo0116",
+            "msg_demo0117",
+            "msg_demo0118",
+            "msg_demo0119",
+            "msg_demo0120",
+            "msg_demo0121",
+            "msg_demo0122",
+            "msg_demo0123",
+            "msg_demo0124",
+            "msg_demo0125",
+            "msg_demo0126",
+            "msg_demo0127",
+            "msg_demo0128",
+            "msg_demo0129",
+            "msg_demo0130",
+            "msg_demo0131",
+            "msg_demo0132",
+            "msg_demo0133",
+            "msg_demo0134",
+            "msg_demo0135",
+            "msg_demo0136",
+            "msg_demo0137",
+            "msg_demo0138",
+            "msg_demo0139",
+            "msg_demo0140",
+            "msg_demo0141",
+            "msg_demo0142",
+            "msg_demo0143",
+            "msg_demo0144",
+            "msg_demo0145",
+            "msg_demo0146",
+            "msg_demo0147"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0109",
+            "msg_demo0110",
+            "msg_demo0111",
+            "msg_demo0112",
+            "msg_demo0113",
+            "msg_demo0114",
+            "msg_demo0115",
+            "msg_demo0116",
+            "msg_demo0117",
+            "msg_demo0118",
+            "msg_demo0119",
+            "msg_demo0120",
+            "msg_demo0121",
+            "msg_demo0122",
+            "msg_demo0123",
+            "msg_demo0124",
+            "msg_demo0125",
+            "msg_demo0126",
+            "msg_demo0127",
+            "msg_demo0128",
+            "msg_demo0129",
+            "msg_demo0130",
+            "msg_demo0131",
+            "msg_demo0132",
+            "msg_demo0133",
+            "msg_demo0134",
+            "msg_demo0135",
+            "msg_demo0136",
+            "msg_demo0137",
+            "msg_demo0138",
+            "msg_demo0139",
+            "msg_demo0140",
+            "msg_demo0141",
+            "msg_demo0142",
+            "msg_demo0143",
+            "msg_demo0144",
+            "msg_demo0145",
+            "msg_demo0146",
+            "msg_demo0147"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-04T09:14:00.000Z",
+          "summary": "## Oven handoff\nAfter toppings, the robot waits for the oven slot to open before extending.\n\n- Slot-open detection uses an IR beam; debounce is 50 ms.\n- The arm withdraws fully within 1.4 s or the oven gate stays shut.\n- Surface temp at the peel tip is sampled; above 180 C it aborts and cools.\n- A \"please don't burn the pepperoni\" watchdog trims dwell time by 10% if the\n  last 3 pies came out darker than target.",
+          "summaryVersions": [],
+          "activeVersionIndex": 1
+        },
+        "5": {
+          "blockId": 5,
+          "runId": 5,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 33480,
+          "summaryTokens": 1885,
+          "durationMs": 15230,
+          "mode": "range",
+          "topic": "Delivery route trolley docking",
+          "batchTopic": "Delivery route trolley docking",
+          "startId": "m0148",
+          "endId": "m0196",
+          "anchorMessageId": "msg_demo0148",
+          "compressMessageId": "msg_demo0196",
+          "compressCallId": "call_demo_5",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0148",
+            "msg_demo0149",
+            "msg_demo0150",
+            "msg_demo0151",
+            "msg_demo0152",
+            "msg_demo0153",
+            "msg_demo0154",
+            "msg_demo0155",
+            "msg_demo0156",
+            "msg_demo0157",
+            "msg_demo0158",
+            "msg_demo0159",
+            "msg_demo0160",
+            "msg_demo0161",
+            "msg_demo0162",
+            "msg_demo0163",
+            "msg_demo0164",
+            "msg_demo0165",
+            "msg_demo0166",
+            "msg_demo0167",
+            "msg_demo0168",
+            "msg_demo0169",
+            "msg_demo0170",
+            "msg_demo0171",
+            "msg_demo0172",
+            "msg_demo0173",
+            "msg_demo0174",
+            "msg_demo0175",
+            "msg_demo0176",
+            "msg_demo0177",
+            "msg_demo0178",
+            "msg_demo0179",
+            "msg_demo0180",
+            "msg_demo0181",
+            "msg_demo0182",
+            "msg_demo0183",
+            "msg_demo0184",
+            "msg_demo0185",
+            "msg_demo0186",
+            "msg_demo0187",
+            "msg_demo0188",
+            "msg_demo0189",
+            "msg_demo0190",
+            "msg_demo0191",
+            "msg_demo0192",
+            "msg_demo0193",
+            "msg_demo0194",
+            "msg_demo0195",
+            "msg_demo0196"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0148",
+            "msg_demo0149",
+            "msg_demo0150",
+            "msg_demo0151",
+            "msg_demo0152",
+            "msg_demo0153",
+            "msg_demo0154",
+            "msg_demo0155",
+            "msg_demo0156",
+            "msg_demo0157",
+            "msg_demo0158",
+            "msg_demo0159",
+            "msg_demo0160",
+            "msg_demo0161",
+            "msg_demo0162",
+            "msg_demo0163",
+            "msg_demo0164",
+            "msg_demo0165",
+            "msg_demo0166",
+            "msg_demo0167",
+            "msg_demo0168",
+            "msg_demo0169",
+            "msg_demo0170",
+            "msg_demo0171",
+            "msg_demo0172",
+            "msg_demo0173",
+            "msg_demo0174",
+            "msg_demo0175",
+            "msg_demo0176",
+            "msg_demo0177",
+            "msg_demo0178",
+            "msg_demo0179",
+            "msg_demo0180",
+            "msg_demo0181",
+            "msg_demo0182",
+            "msg_demo0183",
+            "msg_demo0184",
+            "msg_demo0185",
+            "msg_demo0186",
+            "msg_demo0187",
+            "msg_demo0188",
+            "msg_demo0189",
+            "msg_demo0190",
+            "msg_demo0191",
+            "msg_demo0192",
+            "msg_demo0193",
+            "msg_demo0194",
+            "msg_demo0195",
+            "msg_demo0196"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-05T09:15:00.000Z",
+          "summary": "## Trolley docking\nThe robot docks onto the delivery trolley to hand off finished pies.\n\n- Docking uses two reflective markers and a short reverse alignment wiggle.\n- Tolerance is +/- 4 mm lateral, +/- 2 deg yaw.\n- On the third failed attempt it honks twice (a friendly \"beep beep\") and asks\n  a human to nudge the trolley.\n- Successful dock closes the box, seals warm air in, and plays the little\n  \"order up!\" chime.",
+          "summaryVersions": [],
+          "activeVersionIndex": 1
+        },
+        "6": {
+          "blockId": 6,
+          "runId": 6,
+          "active": true,
+          "deactivatedByUser": false,
+          "compressedTokens": 22760,
+          "summaryTokens": 2022,
+          "durationMs": 8440,
+          "mode": "range",
+          "topic": "Deposit queue and order handoff UX",
+          "batchTopic": "Deposit queue and order handoff UX",
+          "startId": "m0197",
+          "endId": "m0233",
+          "anchorMessageId": "msg_demo0197",
+          "compressMessageId": "msg_demo0233",
+          "compressCallId": "call_demo_6",
+          "includedBlockIds": [],
+          "consumedBlockIds": [],
+          "parentBlockIds": [],
+          "directMessageIds": [
+            "msg_demo0197",
+            "msg_demo0198",
+            "msg_demo0199",
+            "msg_demo0200",
+            "msg_demo0201",
+            "msg_demo0202",
+            "msg_demo0203",
+            "msg_demo0204",
+            "msg_demo0205",
+            "msg_demo0206",
+            "msg_demo0207",
+            "msg_demo0208",
+            "msg_demo0209",
+            "msg_demo0210",
+            "msg_demo0211",
+            "msg_demo0212",
+            "msg_demo0213",
+            "msg_demo0214",
+            "msg_demo0215",
+            "msg_demo0216",
+            "msg_demo0217",
+            "msg_demo0218",
+            "msg_demo0219",
+            "msg_demo0220",
+            "msg_demo0221",
+            "msg_demo0222",
+            "msg_demo0223",
+            "msg_demo0224",
+            "msg_demo0225",
+            "msg_demo0226",
+            "msg_demo0227",
+            "msg_demo0228",
+            "msg_demo0229",
+            "msg_demo0230",
+            "msg_demo0231",
+            "msg_demo0232",
+            "msg_demo0233"
+          ],
+          "directToolIds": [],
+          "effectiveMessageIds": [
+            "msg_demo0197",
+            "msg_demo0198",
+            "msg_demo0199",
+            "msg_demo0200",
+            "msg_demo0201",
+            "msg_demo0202",
+            "msg_demo0203",
+            "msg_demo0204",
+            "msg_demo0205",
+            "msg_demo0206",
+            "msg_demo0207",
+            "msg_demo0208",
+            "msg_demo0209",
+            "msg_demo0210",
+            "msg_demo0211",
+            "msg_demo0212",
+            "msg_demo0213",
+            "msg_demo0214",
+            "msg_demo0215",
+            "msg_demo0216",
+            "msg_demo0217",
+            "msg_demo0218",
+            "msg_demo0219",
+            "msg_demo0220",
+            "msg_demo0221",
+            "msg_demo0222",
+            "msg_demo0223",
+            "msg_demo0224",
+            "msg_demo0225",
+            "msg_demo0226",
+            "msg_demo0227",
+            "msg_demo0228",
+            "msg_demo0229",
+            "msg_demo0230",
+            "msg_demo0231",
+            "msg_demo0232",
+            "msg_demo0233"
+          ],
+          "effectiveToolIds": [],
+          "createdAt": "2026-05-06T09:16:00.000Z",
+          "summary": "## Order handoff\nThe robot carries pies to the deposit shelf and announces each order.\n\n- Shelf has 4 numbered slots; the robot always fills the lowest free slot.\n- Announcement is a short tone pattern plus a spoken order label (friendly,\n  not shouty). Volume is tuned so it is audible but never startles.\n- If a slot stays full past its pickup window, the robot asks the kitchen to\n  clear it rather than double-stacking.",
+          "summaryVersions": [],
+          "activeVersionIndex": 1
+        }
+      },
+      "activeBlockIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "activeByAnchorMessageId": {
+        "msg_demo0003": 1,
+        "msg_demo0029": 2,
+        "msg_demo0062": 3,
+        "msg_demo0109": 4,
+        "msg_demo0148": 5,
+        "msg_demo0197": 6
+      },
+      "nextBlockId": 7,
+      "nextRunId": 7,
+      "lastSeenUserMessageId": "msg_demo0234",
+      "activeMessageIds": [
+        "msg_demo0001",
+        "msg_demo0002",
+        "msg_demo0003",
+        "msg_demo0004",
+        "msg_demo0005",
+        "msg_demo0006",
+        "msg_demo0007",
+        "msg_demo0008",
+        "msg_demo0009",
+        "msg_demo0010",
+        "msg_demo0011",
+        "msg_demo0012",
+        "msg_demo0013",
+        "msg_demo0014",
+        "msg_demo0015",
+        "msg_demo0016",
+        "msg_demo0017",
+        "msg_demo0018",
+        "msg_demo0019",
+        "msg_demo0020",
+        "msg_demo0021",
+        "msg_demo0022",
+        "msg_demo0023",
+        "msg_demo0024",
+        "msg_demo0025",
+        "msg_demo0026",
+        "msg_demo0027",
+        "msg_demo0028",
+        "msg_demo0029",
+        "msg_demo0030",
+        "msg_demo0031",
+        "msg_demo0032",
+        "msg_demo0033",
+        "msg_demo0034",
+        "msg_demo0035",
+        "msg_demo0036",
+        "msg_demo0037",
+        "msg_demo0038",
+        "msg_demo0039",
+        "msg_demo0040",
+        "msg_demo0041",
+        "msg_demo0042",
+        "msg_demo0043",
+        "msg_demo0044",
+        "msg_demo0045",
+        "msg_demo0046",
+        "msg_demo0047",
+        "msg_demo0048",
+        "msg_demo0049",
+        "msg_demo0050",
+        "msg_demo0051",
+        "msg_demo0052",
+        "msg_demo0053",
+        "msg_demo0054",
+        "msg_demo0055",
+        "msg_demo0056",
+        "msg_demo0057",
+        "msg_demo0058",
+        "msg_demo0059",
+        "msg_demo0060",
+        "msg_demo0061",
+        "msg_demo0062",
+        "msg_demo0063",
+        "msg_demo0064",
+        "msg_demo0065",
+        "msg_demo0066",
+        "msg_demo0067",
+        "msg_demo0068",
+        "msg_demo0069",
+        "msg_demo0070",
+        "msg_demo0071",
+        "msg_demo0072",
+        "msg_demo0073",
+        "msg_demo0074",
+        "msg_demo0075",
+        "msg_demo0076",
+        "msg_demo0077",
+        "msg_demo0078",
+        "msg_demo0079",
+        "msg_demo0080",
+        "msg_demo0081",
+        "msg_demo0082",
+        "msg_demo0083",
+        "msg_demo0084",
+        "msg_demo0085",
+        "msg_demo0086",
+        "msg_demo0087",
+        "msg_demo0088",
+        "msg_demo0089",
+        "msg_demo0090",
+        "msg_demo0091",
+        "msg_demo0092",
+        "msg_demo0093",
+        "msg_demo0094",
+        "msg_demo0095",
+        "msg_demo0096",
+        "msg_demo0097",
+        "msg_demo0098",
+        "msg_demo0099",
+        "msg_demo0100",
+        "msg_demo0101",
+        "msg_demo0102",
+        "msg_demo0103",
+        "msg_demo0104",
+        "msg_demo0105",
+        "msg_demo0106",
+        "msg_demo0107",
+        "msg_demo0108",
+        "msg_demo0109",
+        "msg_demo0110",
+        "msg_demo0111",
+        "msg_demo0112",
+        "msg_demo0113",
+        "msg_demo0114",
+        "msg_demo0115",
+        "msg_demo0116",
+        "msg_demo0117",
+        "msg_demo0118",
+        "msg_demo0119",
+        "msg_demo0120",
+        "msg_demo0121",
+        "msg_demo0122",
+        "msg_demo0123",
+        "msg_demo0124",
+        "msg_demo0125",
+        "msg_demo0126",
+        "msg_demo0127",
+        "msg_demo0128",
+        "msg_demo0129",
+        "msg_demo0130",
+        "msg_demo0131",
+        "msg_demo0132",
+        "msg_demo0133",
+        "msg_demo0134",
+        "msg_demo0135",
+        "msg_demo0136",
+        "msg_demo0137",
+        "msg_demo0138",
+        "msg_demo0139",
+        "msg_demo0140",
+        "msg_demo0141",
+        "msg_demo0142",
+        "msg_demo0143",
+        "msg_demo0144",
+        "msg_demo0145",
+        "msg_demo0146",
+        "msg_demo0147",
+        "msg_demo0148",
+        "msg_demo0149",
+        "msg_demo0150",
+        "msg_demo0151",
+        "msg_demo0152",
+        "msg_demo0153",
+        "msg_demo0154",
+        "msg_demo0155",
+        "msg_demo0156",
+        "msg_demo0157",
+        "msg_demo0158",
+        "msg_demo0159",
+        "msg_demo0160",
+        "msg_demo0161",
+        "msg_demo0162",
+        "msg_demo0163",
+        "msg_demo0164",
+        "msg_demo0165",
+        "msg_demo0166",
+        "msg_demo0167",
+        "msg_demo0168",
+        "msg_demo0169",
+        "msg_demo0170",
+        "msg_demo0171",
+        "msg_demo0172",
+        "msg_demo0173",
+        "msg_demo0174",
+        "msg_demo0175",
+        "msg_demo0176",
+        "msg_demo0177",
+        "msg_demo0178",
+        "msg_demo0179",
+        "msg_demo0180",
+        "msg_demo0181",
+        "msg_demo0182",
+        "msg_demo0183",
+        "msg_demo0184",
+        "msg_demo0185",
+        "msg_demo0186",
+        "msg_demo0187",
+        "msg_demo0188",
+        "msg_demo0189",
+        "msg_demo0190",
+        "msg_demo0191",
+        "msg_demo0192",
+        "msg_demo0193",
+        "msg_demo0194",
+        "msg_demo0195",
+        "msg_demo0196",
+        "msg_demo0197",
+        "msg_demo0198",
+        "msg_demo0199",
+        "msg_demo0200",
+        "msg_demo0201",
+        "msg_demo0202",
+        "msg_demo0203",
+        "msg_demo0204",
+        "msg_demo0205",
+        "msg_demo0206",
+        "msg_demo0207",
+        "msg_demo0208",
+        "msg_demo0209",
+        "msg_demo0210",
+        "msg_demo0211",
+        "msg_demo0212",
+        "msg_demo0213",
+        "msg_demo0214",
+        "msg_demo0215",
+        "msg_demo0216",
+        "msg_demo0217",
+        "msg_demo0218",
+        "msg_demo0219",
+        "msg_demo0220",
+        "msg_demo0221",
+        "msg_demo0222",
+        "msg_demo0223",
+        "msg_demo0224",
+        "msg_demo0225",
+        "msg_demo0226",
+        "msg_demo0227",
+        "msg_demo0228",
+        "msg_demo0229",
+        "msg_demo0230",
+        "msg_demo0231",
+        "msg_demo0232",
+        "msg_demo0233",
+        "msg_demo0234"
+      ]
+    }
+  },
+  "nudges": {
+    "contextLimitAnchors": [],
+    "turnNudgeAnchors": [],
+    "iterationNudgeAnchors": []
+  },
+  "protectedRefs": [],
+  "memo": "# Project\nAdorable pizza-delivery robot firmware (\"Doughbot\"). English only, no real data.\n\n# Working commands\n- make flash-dough   -> flash the dough sensor board\n- make test-knead    -> run the knead routine in simulation\n- make sim-pie       -> dry-run one full order end to end\n\n# Constraints\n- Never exceed 0.42 N·m on the knead motor.\n- Oven handoff must fully retract the peel before the gate closes.\n- All announcements stay friendly and never shouty.\n\n# Takeaways\n- Keep the dough sensor in safe mode when its handshake fails; never guess flour.\n- Topping jitter above 6 mm breaks the cheese blanket coverage.",
+  "messageIds": {
+    "byRawId": {
+      "msg_demo0001": "m0001",
+      "msg_demo0002": "m0002",
+      "msg_demo0003": "m0003",
+      "msg_demo0004": "m0004",
+      "msg_demo0005": "m0005",
+      "msg_demo0006": "m0006",
+      "msg_demo0007": "m0007",
+      "msg_demo0008": "m0008",
+      "msg_demo0009": "m0009",
+      "msg_demo0010": "m0010",
+      "msg_demo0011": "m0011",
+      "msg_demo0012": "m0012",
+      "msg_demo0013": "m0013",
+      "msg_demo0014": "m0014",
+      "msg_demo0015": "m0015",
+      "msg_demo0016": "m0016",
+      "msg_demo0017": "m0017",
+      "msg_demo0018": "m0018",
+      "msg_demo0019": "m0019",
+      "msg_demo0020": "m0020",
+      "msg_demo0021": "m0021",
+      "msg_demo0022": "m0022",
+      "msg_demo0023": "m0023",
+      "msg_demo0024": "m0024",
+      "msg_demo0025": "m0025",
+      "msg_demo0026": "m0026",
+      "msg_demo0027": "m0027",
+      "msg_demo0028": "m0028",
+      "msg_demo0029": "m0029",
+      "msg_demo0030": "m0030",
+      "msg_demo0031": "m0031",
+      "msg_demo0032": "m0032",
+      "msg_demo0033": "m0033",
+      "msg_demo0034": "m0034",
+      "msg_demo0035": "m0035",
+      "msg_demo0036": "m0036",
+      "msg_demo0037": "m0037",
+      "msg_demo0038": "m0038",
+      "msg_demo0039": "m0039",
+      "msg_demo0040": "m0040",
+      "msg_demo0041": "m0041",
+      "msg_demo0042": "m0042",
+      "msg_demo0043": "m0043",
+      "msg_demo0044": "m0044",
+      "msg_demo0045": "m0045",
+      "msg_demo0046": "m0046",
+      "msg_demo0047": "m0047",
+      "msg_demo0048": "m0048",
+      "msg_demo0049": "m0049",
+      "msg_demo0050": "m0050",
+      "msg_demo0051": "m0051",
+      "msg_demo0052": "m0052",
+      "msg_demo0053": "m0053",
+      "msg_demo0054": "m0054",
+      "msg_demo0055": "m0055",
+      "msg_demo0056": "m0056",
+      "msg_demo0057": "m0057",
+      "msg_demo0058": "m0058",
+      "msg_demo0059": "m0059",
+      "msg_demo0060": "m0060",
+      "msg_demo0061": "m0061",
+      "msg_demo0062": "m0062",
+      "msg_demo0063": "m0063",
+      "msg_demo0064": "m0064",
+      "msg_demo0065": "m0065",
+      "msg_demo0066": "m0066",
+      "msg_demo0067": "m0067",
+      "msg_demo0068": "m0068",
+      "msg_demo0069": "m0069",
+      "msg_demo0070": "m0070",
+      "msg_demo0071": "m0071",
+      "msg_demo0072": "m0072",
+      "msg_demo0073": "m0073",
+      "msg_demo0074": "m0074",
+      "msg_demo0075": "m0075",
+      "msg_demo0076": "m0076",
+      "msg_demo0077": "m0077",
+      "msg_demo0078": "m0078",
+      "msg_demo0079": "m0079",
+      "msg_demo0080": "m0080",
+      "msg_demo0081": "m0081",
+      "msg_demo0082": "m0082",
+      "msg_demo0083": "m0083",
+      "msg_demo0084": "m0084",
+      "msg_demo0085": "m0085",
+      "msg_demo0086": "m0086",
+      "msg_demo0087": "m0087",
+      "msg_demo0088": "m0088",
+      "msg_demo0089": "m0089",
+      "msg_demo0090": "m0090",
+      "msg_demo0091": "m0091",
+      "msg_demo0092": "m0092",
+      "msg_demo0093": "m0093",
+      "msg_demo0094": "m0094",
+      "msg_demo0095": "m0095",
+      "msg_demo0096": "m0096",
+      "msg_demo0097": "m0097",
+      "msg_demo0098": "m0098",
+      "msg_demo0099": "m0099",
+      "msg_demo0100": "m0100",
+      "msg_demo0101": "m0101",
+      "msg_demo0102": "m0102",
+      "msg_demo0103": "m0103",
+      "msg_demo0104": "m0104",
+      "msg_demo0105": "m0105",
+      "msg_demo0106": "m0106",
+      "msg_demo0107": "m0107",
+      "msg_demo0108": "m0108",
+      "msg_demo0109": "m0109",
+      "msg_demo0110": "m0110",
+      "msg_demo0111": "m0111",
+      "msg_demo0112": "m0112",
+      "msg_demo0113": "m0113",
+      "msg_demo0114": "m0114",
+      "msg_demo0115": "m0115",
+      "msg_demo0116": "m0116",
+      "msg_demo0117": "m0117",
+      "msg_demo0118": "m0118",
+      "msg_demo0119": "m0119",
+      "msg_demo0120": "m0120",
+      "msg_demo0121": "m0121",
+      "msg_demo0122": "m0122",
+      "msg_demo0123": "m0123",
+      "msg_demo0124": "m0124",
+      "msg_demo0125": "m0125",
+      "msg_demo0126": "m0126",
+      "msg_demo0127": "m0127",
+      "msg_demo0128": "m0128",
+      "msg_demo0129": "m0129",
+      "msg_demo0130": "m0130",
+      "msg_demo0131": "m0131",
+      "msg_demo0132": "m0132",
+      "msg_demo0133": "m0133",
+      "msg_demo0134": "m0134",
+      "msg_demo0135": "m0135",
+      "msg_demo0136": "m0136",
+      "msg_demo0137": "m0137",
+      "msg_demo0138": "m0138",
+      "msg_demo0139": "m0139",
+      "msg_demo0140": "m0140",
+      "msg_demo0141": "m0141",
+      "msg_demo0142": "m0142",
+      "msg_demo0143": "m0143",
+      "msg_demo0144": "m0144",
+      "msg_demo0145": "m0145",
+      "msg_demo0146": "m0146",
+      "msg_demo0147": "m0147",
+      "msg_demo0148": "m0148",
+      "msg_demo0149": "m0149",
+      "msg_demo0150": "m0150",
+      "msg_demo0151": "m0151",
+      "msg_demo0152": "m0152",
+      "msg_demo0153": "m0153",
+      "msg_demo0154": "m0154",
+      "msg_demo0155": "m0155",
+      "msg_demo0156": "m0156",
+      "msg_demo0157": "m0157",
+      "msg_demo0158": "m0158",
+      "msg_demo0159": "m0159",
+      "msg_demo0160": "m0160",
+      "msg_demo0161": "m0161",
+      "msg_demo0162": "m0162",
+      "msg_demo0163": "m0163",
+      "msg_demo0164": "m0164",
+      "msg_demo0165": "m0165",
+      "msg_demo0166": "m0166",
+      "msg_demo0167": "m0167",
+      "msg_demo0168": "m0168",
+      "msg_demo0169": "m0169",
+      "msg_demo0170": "m0170",
+      "msg_demo0171": "m0171",
+      "msg_demo0172": "m0172",
+      "msg_demo0173": "m0173",
+      "msg_demo0174": "m0174",
+      "msg_demo0175": "m0175",
+      "msg_demo0176": "m0176",
+      "msg_demo0177": "m0177",
+      "msg_demo0178": "m0178",
+      "msg_demo0179": "m0179",
+      "msg_demo0180": "m0180",
+      "msg_demo0181": "m0181",
+      "msg_demo0182": "m0182",
+      "msg_demo0183": "m0183",
+      "msg_demo0184": "m0184",
+      "msg_demo0185": "m0185",
+      "msg_demo0186": "m0186",
+      "msg_demo0187": "m0187",
+      "msg_demo0188": "m0188",
+      "msg_demo0189": "m0189",
+      "msg_demo0190": "m0190",
+      "msg_demo0191": "m0191",
+      "msg_demo0192": "m0192",
+      "msg_demo0193": "m0193",
+      "msg_demo0194": "m0194",
+      "msg_demo0195": "m0195",
+      "msg_demo0196": "m0196",
+      "msg_demo0197": "m0197",
+      "msg_demo0198": "m0198",
+      "msg_demo0199": "m0199",
+      "msg_demo0200": "m0200",
+      "msg_demo0201": "m0201",
+      "msg_demo0202": "m0202",
+      "msg_demo0203": "m0203",
+      "msg_demo0204": "m0204",
+      "msg_demo0205": "m0205",
+      "msg_demo0206": "m0206",
+      "msg_demo0207": "m0207",
+      "msg_demo0208": "m0208",
+      "msg_demo0209": "m0209",
+      "msg_demo0210": "m0210",
+      "msg_demo0211": "m0211",
+      "msg_demo0212": "m0212",
+      "msg_demo0213": "m0213",
+      "msg_demo0214": "m0214",
+      "msg_demo0215": "m0215",
+      "msg_demo0216": "m0216",
+      "msg_demo0217": "m0217",
+      "msg_demo0218": "m0218",
+      "msg_demo0219": "m0219",
+      "msg_demo0220": "m0220",
+      "msg_demo0221": "m0221",
+      "msg_demo0222": "m0222",
+      "msg_demo0223": "m0223",
+      "msg_demo0224": "m0224",
+      "msg_demo0225": "m0225",
+      "msg_demo0226": "m0226",
+      "msg_demo0227": "m0227",
+      "msg_demo0228": "m0228",
+      "msg_demo0229": "m0229",
+      "msg_demo0230": "m0230",
+      "msg_demo0231": "m0231",
+      "msg_demo0232": "m0232",
+      "msg_demo0233": "m0233",
+      "msg_demo0234": "m0234"
+    },
+    "nextRef": 235
+  },
+  "stats": {
+    "totalPruneTokens": 182680,
+    "totalMessagesPruned": 231,
+    "totalToolsPruned": 0,
+    "compressionRatio": 0.68
+  },
+  "autotoggle": false,
+  "lastUpdated": "2026-05-06T09:20:00.000Z"
+}

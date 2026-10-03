@@ -12,6 +12,7 @@ into escape sequences). The full PTY output is written to the capture file.
 """
 
 import argparse
+import codecs
 import fcntl
 import json
 import os
@@ -26,6 +27,14 @@ import time
 
 TERMINATE = b"\x03\x03"
 
+# Screen-to-PNG metrics. CHAR_W_PX is the advance of DejaVu Sans Mono at
+# FONT_SIZE_PX (0.602 em); keep the chromium viewport exactly this size so the
+# screenshot has no empty margin to the right.
+FONT_SIZE_PX = 14
+LINE_H_PX = 15
+CHAR_W_PX = FONT_SIZE_PX * 0.602
+SCREEN_PAD_PX = 6
+
 
 def load_steps(path):
     """Read the ordered scenario step list.
@@ -33,8 +42,10 @@ def load_steps(path):
     A step is one of:
       {"keys": "...", "delay": 800}   write keys, then wait delay ms (default settle)
       {"waitFor": "marker", "timeout": 5000}  wait until the screen shows marker
-      {"screenshot": "expected"}       assert expected text is on screen
-      {"png": "name.png"}              render the colored screen to name.png.html
+      {"screenshot": "name.png"}       render the colored screen to name.png.html
+      {"assert": "expected"}           assert expected text is on screen
+      {"click": "label", "delay": 800} find label on screen, send an SGR mouse
+                                       press+release at its cell, then wait delay
     The Node harness writes the JSON step file; keys are already escape-encoded.
     The png step only writes the HTML next to the capture; the Node side turns it
     into the final PNG with chromium --headless --screenshot.
@@ -85,6 +96,8 @@ class Screen:
         self.row = 0
         self.col = 0
         self.cur = self._default_style()
+        self._pending = ""  # bytes of an escape sequence split across feeds()
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
 
     @staticmethod
     def _default_style():
@@ -144,76 +157,19 @@ class Screen:
         self.style[row][col] = self._default_style()
 
     def feed(self, data):
-        text = data.decode("utf-8", "replace")
+        text = self._pending + self._decoder.decode(data)
+        self._pending = ""
         i = 0
         while i < len(text):
             ch = text[i]
             if ch == "\x1b":
-                nxt = text[i + 1] if i + 1 < len(text) else ""
-                if nxt == "[":
-                    match = re.compile(r"^\x1b\[([0-9;?]*)([ -/]*)([@-~])").match(text[i:])
-                    if not match:
-                        i += 1
-                        continue
-                    params, final = match.group(1), match.group(3)
-                    nums = [None if v == "" or not v.isdigit() else int(v) for v in params.split(";")]
-                    first = nums[0] if nums and nums[0] is not None else 1
-                    if final in ("H", "f"):
-                        self.row = (nums[0] or 1) - 1 if nums and nums[0] else 0
-                        self.col = (nums[1] or 1) - 1 if len(nums) > 1 and nums[1] else 0
-                    elif final == "A":
-                        self.row = max(0, self.row - first)
-                    elif final == "B":
-                        self.row = min(self.rows - 1, self.row + first)
-                    elif final == "C":
-                        self.col = min(self.cols - 1, self.col + first)
-                    elif final == "D":
-                        self.col = max(0, self.col - first)
-                    elif final == "E":
-                        self.row = min(self.rows - 1, self.row + first)
-                        self.col = 0
-                    elif final == "F":
-                        self.row = max(0, self.row - first)
-                        self.col = 0
-                    elif final == "G":
-                        self.col = first - 1
-                    elif final == "d":
-                        self.row = first - 1
-                    elif final == "J":
-                        mode = nums[0] or 0 if nums else 0
-                        if mode in (2, 3):
-                            self.grid = [[" "] * self.cols for _ in range(self.rows)]
-                            self.style = [[self._default_style() for _ in range(self.cols)] for _ in range(self.rows)]
-                        elif mode == 0:
-                            for c in range(self.col, self.cols):
-                                self._clear_cell(self.row, c)
-                            for r in range(self.row + 1, self.rows):
-                                self.grid[r] = [" "] * self.cols
-                                self.style[r] = [self._default_style() for _ in range(self.cols)]
-                    elif final == "K":
-                        mode = nums[0] or 0 if nums else 0
-                        if mode == 0:
-                            for c in range(self.col, self.cols):
-                                self._clear_cell(self.row, c)
-                        elif mode == 1:
-                            for c in range(0, min(self.col + 1, self.cols)):
-                                self._clear_cell(self.row, c)
-                        elif mode == 2:
-                            self.grid[self.row] = [" "] * self.cols
-                            self.style[self.row] = [self._default_style() for _ in range(self.cols)]
-                    elif final == "m":
-                        self._sgr([0 if v is None else v for v in nums])
-                    i += len(match.group(0))
-                    continue
-                if nxt == "]":
-                    osc = re.compile(r"^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").match(text[i:])
-                    i += len(osc.group(0)) if osc else 2
-                    continue
-                if nxt in ("P", "(", ")", "#"):
-                    seq = re.compile(r"^\x1b[P()#][^\x1b]*(?:\x1b\\)?").match(text[i:])
-                    i += len(seq.group(0)) if seq else 3
-                    continue
-                i += 2
+                consumed = self._consume_escape(text, i)
+                if consumed is None:
+                    # Incomplete escape at the end of this chunk; keep it for
+                    # the next feed() so its bytes never render as literal text.
+                    self._pending = text[i:]
+                    return
+                i += consumed
                 continue
             if ch == "\n":
                 self.row = min(self.rows - 1, self.row + 1)
@@ -228,8 +184,140 @@ class Screen:
                 self._put(ch)
             i += 1
 
+    def _consume_escape(self, text, i):
+        """Process the escape sequence at text[i], returning its length.
+
+        Returns None when the sequence is incomplete (the caller must buffer it).
+        """
+        if i + 1 >= len(text):
+            return None
+        nxt = text[i + 1]
+        if nxt == "[":
+            match = re.compile(r"^\x1b\[([0-9:;<=>?]*)([ -/]*)([@-~])").match(text[i:])
+            if not match:
+                # Either an intermediate/parameter byte not yet final, or a
+                # genuinely unknown introducer. If the tail could still grow
+                # into a CSI, buffer it; otherwise drop the introducer.
+                tail = text[i + 2:]
+                if re.match(r"^[0-9:;<=>?\-/]*$", tail):
+                    return None
+                return 1
+            params, final = match.group(1), match.group(3)
+            nums = [None if v == "" or not v.isdigit() else int(v) for v in params.split(";")]
+            first = nums[0] if nums and nums[0] is not None else 1
+            if final in ("H", "f"):
+                self.row = (nums[0] or 1) - 1 if nums and nums[0] else 0
+                self.col = (nums[1] or 1) - 1 if len(nums) > 1 and nums[1] else 0
+            elif final == "A":
+                self.row = max(0, self.row - first)
+            elif final == "B":
+                self.row = min(self.rows - 1, self.row + first)
+            elif final == "C":
+                self.col = min(self.cols - 1, self.col + first)
+            elif final == "D":
+                self.col = max(0, self.col - first)
+            elif final == "E":
+                self.row = min(self.rows - 1, self.row + first)
+                self.col = 0
+            elif final == "F":
+                self.row = max(0, self.row - first)
+                self.col = 0
+            elif final == "G":
+                self.col = first - 1
+            elif final == "d":
+                self.row = first - 1
+            elif final == "J":
+                mode = nums[0] or 0 if nums else 0
+                if mode in (2, 3):
+                    self.grid = [[" "] * self.cols for _ in range(self.rows)]
+                    self.style = [[self._default_style() for _ in range(self.cols)] for _ in range(self.rows)]
+                elif mode == 0:
+                    for c in range(self.col, self.cols):
+                        self._clear_cell(self.row, c)
+                    for r in range(self.row + 1, self.rows):
+                        self.grid[r] = [" "] * self.cols
+                        self.style[r] = [self._default_style() for _ in range(self.cols)]
+            elif final == "K":
+                mode = nums[0] or 0 if nums else 0
+                if mode == 0:
+                    for c in range(self.col, self.cols):
+                        self._clear_cell(self.row, c)
+                elif mode == 1:
+                    for c in range(0, min(self.col + 1, self.cols)):
+                        self._clear_cell(self.row, c)
+                elif mode == 2:
+                    self.grid[self.row] = [" "] * self.cols
+                    self.style[self.row] = [self._default_style() for _ in range(self.cols)]
+            elif final == "m":
+                self._sgr([0 if v is None else v for v in nums])
+            return len(match.group(0))
+        if nxt == "]":
+            osc = re.compile(r"^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)").match(text[i:])
+            if osc:
+                return len(osc.group(0))
+            # Incomplete OSC (no BEL/ST yet): buffer unless it can't be an OSC.
+            if re.match(r"^\x1b\][^\x07\x1b]*$", text[i:]) or re.match(r"^\x1b\][^\x07\x1b]*\x1b$", text[i:]):
+                return None
+            return 2
+        if nxt in ("P", "(", ")", "#"):
+            seq = re.compile(r"^\x1b[P()#][^\x1b]*(?:\x1b\\)?").match(text[i:])
+            if seq:
+                return len(seq.group(0))
+            if nxt == "P":
+                if not text.endswith("\x1b\\") and "\x1b\\" not in text[i:]:
+                    return None
+            return 2
+        return 2
+
     def text(self):
         return "\n".join("".join(line).rstrip() for line in self.grid)
+
+    def find(self, needle):
+        """Return (row, col) of the first occurrence of needle, or None.
+
+        row/col are 0-based cell coordinates of the first character. Matching is
+        done per rendered row so a marker cannot straddle two lines.
+        """
+        if not needle:
+            return None
+        for row_index, line in enumerate(self.grid):
+            hay = "".join(line)
+            col_index = hay.find(needle)
+            if col_index >= 0:
+                return row_index, col_index
+        return None
+
+    def _dominant_bg(self):
+        """Most common explicit background color on screen (hex), or None.
+
+        Used as the page background so unpainted cells never show a different
+        black than the terminal's real background.
+        """
+        counts = {}
+        for r in range(self.rows):
+            for c in range(self.cols):
+                st = self.style[r][c]
+                val = st["bg"]
+                if val is None:
+                    continue
+                if st["inverse"] and st["fg"] is not None:
+                    val = st["fg"]
+                counts[val] = counts.get(val, 0) + 1
+        if not counts:
+            return None
+        best = max(counts.items(), key=lambda kv: kv[1])[0]
+        base = [
+            "#000000", "#cd0000", "#00cd00", "#cdcd00", "#0000ee", "#cd00cd", "#00cdcd", "#e5e5e5",
+            "#7f7f7f", "#ff0000", "#00ff00", "#ffff00", "#5c5cff", "#ff00ff", "#00ffff", "#ffffff",
+        ]
+        if 0 <= best < len(base):
+            return base[best]
+        if best < 232:
+            v = best - 16
+            step = [0, 95, 135, 175, 215, 255]
+            return f"rgb({step[v // 36]},{step[(v % 36) // 6]},{step[v % 6]})"
+        level = 8 + (best - 232) * 10
+        return f"rgb({level},{level},{level})"
 
     def to_html(self):
         """Render the colored grid to a standalone HTML page (for chromium --screenshot)."""
@@ -287,16 +375,25 @@ class Screen:
                 cells.append(html_mod.escape("".join(run)))
             rows_html.append('<div class="row">' + "".join(cells) + "</div>")
         body = "\n".join(rows_html)
+        screen_bg = self._dominant_bg() or "#080808"
         return (
             "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
-            "body{margin:0;background:#000;}"
-            ".screen{font-family:'DejaVu Sans Mono',monospace;font-size:16px;line-height:1.0;"
-            "white-space:pre;display:inline-block;padding:8px;}"
-            ".row{height:1.0em;}"
+            f"html,body{{margin:0;background:{screen_bg};}}"
+            ".screen{font-family:'DejaVu Sans Mono',monospace;"
+            f"font-size:{FONT_SIZE_PX}px;color:#ffffff;"
+            "white-space:pre;display:inline-block;"
+            f"padding:{SCREEN_PAD_PX}px;}}"
+            f".row{{height:{LINE_H_PX}px;line-height:{LINE_H_PX}px;background:{screen_bg};}}"
             "</style></head><body><div class=\"screen\">"
             f"{body}"
             "</div></body></html>"
         )
+
+    def pixel_size(self):
+        """Exact pixel size of the rendered screen (for the chromium viewport)."""
+        width = int(self.cols * CHAR_W_PX + 2 * SCREEN_PAD_PX + 0.999)
+        height = self.rows * LINE_H_PX + 2 * SCREEN_PAD_PX
+        return width, height
 
 
 def main():
@@ -473,28 +570,54 @@ def main():
                                 terminating = True
                                 cleanup_at = now + 0.2
                     elif "screenshot" in step:
-                        expected = step["screenshot"]
-                        ok = expected is None or expected in screen.text()
-                        results.append({"step": "screenshot", "expected": expected, "ok": ok})
-                        complete_step()
-                        step_started_at = None
-                        if not ok:
-                            failure = failure or f"screenshot assertion failed: {expected}"
-                            terminating = True
-                            cleanup_at = now + 0.2
-                    elif "png" in step:
-                        filename = step["png"]
+                        # screenshot names the PNG to render the current screen to.
+                        filename = step["screenshot"]
                         html_path = os.path.join(os.path.dirname(os.path.abspath(args.capture)), filename + ".html")
                         try:
                             with open(html_path, "w", encoding="utf-8") as html_handle:
                                 html_handle.write(screen.to_html())
-                            png_requests.append({"png": filename, "html": html_path})
-                            results.append({"step": "png", "png": filename, "html": html_path, "ok": True})
+                            width, height = screen.pixel_size()
+                            png_requests.append({"png": filename, "html": html_path, "width": width, "height": height})
+                            results.append({"step": "screenshot", "png": filename, "html": html_path, "ok": True})
                         except OSError as error:
-                            results.append({"step": "png", "png": filename, "ok": False, "reason": str(error)})
-                            failure = failure or f"png render failed: {error}"
+                            results.append({"step": "screenshot", "png": filename, "ok": False, "reason": str(error)})
+                            failure = failure or f"screenshot render failed: {error}"
                         complete_step()
                         step_started_at = None
+                    elif "assert" in step:
+                        expected = step["assert"]
+                        ok = expected in screen.text()
+                        results.append({"step": "assert", "expected": expected, "ok": ok})
+                        complete_step()
+                        step_started_at = None
+                        if not ok:
+                            failure = failure or f"assert failed: {expected}"
+                            terminating = True
+                            cleanup_at = now + 0.2
+                    elif "click" in step:
+                        label = step["click"]
+                        spot = screen.find(label)
+                        if spot is None:
+                            results.append({"step": "click", "label": label, "ok": False, "reason": "not found"})
+                            failure = failure or f"click target not found: {label}"
+                            terminating = True
+                            cleanup_at = now + 0.2
+                        else:
+                            row_index, col_index = spot
+                            col = col_index + 1
+                            row = row_index + 1
+                            press = f"\x1b[<0;{col};{row}M".encode("utf-8")
+                            release = f"\x1b[<0;{col};{row}m".encode("utf-8")
+                            try:
+                                os.write(master_fd, press)
+                                os.write(master_fd, release)
+                            except OSError:
+                                pass
+                            results.append({"step": "click", "label": label, "col": col, "row": row, "ok": True})
+                            delay_s = step.get("delay", args.settle_ms) / 1000.0
+                            complete_step()
+                            step_started_at = None
+                            wait_until = now + delay_s
                     else:
                         complete_step()
                         step_started_at = None
