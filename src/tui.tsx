@@ -323,6 +323,27 @@ function pickBlockToEdit(api: TuiPluginApi, sessionID: string): void {
     )
 }
 
+let emitMemoUpdate: (() => void) | null = null
+let memoPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startMemoPoller(sessionID: string, original: string): void {
+    if (memoPollTimer) clearInterval(memoPollTimer)
+    const deadline = Date.now() + 30000
+    memoPollTimer = setInterval(() => {
+        if (Date.now() > deadline) {
+            if (memoPollTimer) clearInterval(memoPollTimer)
+            memoPollTimer = null
+            return
+        }
+        const current = readMemo(sessionID)
+        if (current !== null && current.trim() !== original.trim()) {
+            if (memoPollTimer) clearInterval(memoPollTimer)
+            memoPollTimer = null
+            emitMemoUpdate?.()
+        }
+    }, 200)
+}
+
 async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
     const original = readMemo(sessionID) ?? ""
     const filePath = join(tmpdir(), `dcp-memo-${Date.now()}.md`)
@@ -358,6 +379,7 @@ async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
     }
 
     writeFileSync(filePath, edited, "utf-8")
+    startMemoPoller(sessionID, original)
     try {
         await (api.client as any).session.command({
             sessionID,
@@ -808,27 +830,27 @@ const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown>
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const skin = look(props.api.theme.current)
-    const memo = sessionID ? readMemo(sessionID) : null
-
-    if (!sessionID) {
-        return (
-            <PageShell api={props.api} title="DCP Memo">
-                <text fg={skin.muted}>No active session</text>
-            </PageShell>
-        )
-    }
+    const [memoData, setMemoData] = createSignal<string | null>(null)
+    const [manualRevision, setManualRevision] = createSignal(0)
+    emitMemoUpdate = () => setManualRevision((v) => v + 1)
+    onCleanup(() => {
+        emitMemoUpdate = null
+    })
+    createEffect(() => {
+        manualRevision()
+        setMemoData(sessionID ? readMemo(sessionID) : null)
+    })
+    const readCurrent = (): string | null => memoData()
 
     return (
         <PageShell api={props.api} title="DCP Memo">
-            {memo === null ? (
-                <text fg={skin.muted}>No memo set</text>
-            ) : (
-                <>
-                    <text fg={skin.muted}>{memo.length} chars</text>
+            <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={readCurrent() !== null} fallback={<text fg={skin.muted}>No memo set</text>}>
+                    <text fg={skin.muted}>{readCurrent()!.length} chars</text>
                     <text fg={skin.muted}>{"─".repeat(40)}</text>
-                    <text fg={skin.text}>{memo}</text>
-                </>
-            )}
+                    <text fg={skin.text}>{readCurrent()!}</text>
+                </Show>
+            </Show>
         </PageShell>
     )
 }
