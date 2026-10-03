@@ -14,49 +14,6 @@ const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
 const DCP_MEMO_MODE = "dcp-memo"
 
-// TUI plugin is bundled by tsup/esbuild without the Solid transform, so Solid
-// reactivity does not drive re-renders. Remount the page by cycling between two
-// identical route names (same trick as dcp-messages / dcp-messages-alt).
-function isBlockDetailRoute(name: string): boolean {
-    return name === "dcp-block" || name === "dcp-block-alt"
-}
-
-function reloadBlockDetail(api: TuiPluginApi, sessionID: string, blockId: number): void {
-    const nextName = api.route.current.name === "dcp-block" ? "dcp-block-alt" : "dcp-block"
-    api.route.navigate(nextName, { sessionID, blockId })
-}
-
-let summaryReloadPoll = 0
-
-// The server applies the edit asynchronously, so the page may remount before the
-// state file is rewritten. Poll until the active summary reflects the edit; stop
-// if the user leaves the block detail page or a newer edit supersedes this one.
-function pollForSummaryUpdate(
-    api: TuiPluginApi,
-    sessionID: string,
-    blockId: number,
-    expectedSummary: string,
-): void {
-    const token = ++summaryReloadPoll
-    const deadline = Date.now() + 3000
-    const tick = (): void => {
-        if (token !== summaryReloadPoll) return
-        const current = api.route.current
-        const onPage =
-            isBlockDetailRoute(current.name) &&
-            (current.params?.blockId as number | undefined) === blockId
-        if (!onPage) return
-        const block = readSingleBlock(sessionID, blockId)
-        if (block && block.summary === expectedSummary) {
-            reloadBlockDetail(api, sessionID, blockId)
-            return
-        }
-        if (Date.now() >= deadline) return
-        setTimeout(tick, 50)
-    }
-    setTimeout(tick, 50)
-}
-
 interface BlockInfo {
     blockId: number
     active: boolean
@@ -333,7 +290,6 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
             arguments: `edit-file ${blockId} ${filePath}`,
         })
         api.ui.toast({ variant: "success", message: `Updated summary for block b${blockId}` })
-        pollForSummaryUpdate(api, sessionID, blockId, trimmed)
     } catch {
         api.ui.toast({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
     } finally {
@@ -837,10 +793,6 @@ const tui: TuiPlugin = async (api, options, meta) => {
             render: ({ params }) => <BlockDetail api={api} params={params} />,
         },
         {
-            name: "dcp-block-alt",
-            render: ({ params }) => <BlockDetail api={api} params={params} />,
-        },
-        {
             name: "dcp-messages",
             render: ({ params }) => <MessagesDetail api={api} params={params} />,
         },
@@ -917,7 +869,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                         api.ui.toast({ variant: "info", message: "No active session" })
                         return
                     }
-                    if (isBlockDetailRoute(current.name) && typeof blockId === "number") {
+                    if (current.name === "dcp-block" && typeof blockId === "number") {
                         void editBlockSummary(api, sessionID, blockId)
                     } else {
                         pickBlockToEdit(api, sessionID)
@@ -953,7 +905,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 run() {
                     const name = api.route.current.name
                     const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (isBlockDetailRoute(name) && sessionID) {
+                    if (name === "dcp-block" && sessionID) {
                         api.route.navigate("dcp-blocks", { sessionID })
                     } else if (sessionID) {
                         api.route.navigate("session", { sessionID })
