@@ -8,9 +8,11 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { getSessionFilePath } from "../lib/paths"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
+import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
 
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
+const DCP_MEMO_MODE = "dcp-memo"
 
 // TUI plugin is bundled by tsup/esbuild without the Solid transform, so Solid
 // reactivity does not drive re-renders. Remount the page by cycling between two
@@ -364,6 +366,55 @@ function pickBlockToEdit(api: TuiPluginApi, sessionID: string): void {
         ),
         () => {},
     )
+}
+
+async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
+    const original = readMemo(sessionID) ?? ""
+    const filePath = join(tmpdir(), `dcp-memo-${Date.now()}.md`)
+    writeFileSync(filePath, buildMemoFile(original), "utf-8")
+
+    const editor = process.env.VISUAL || process.env.EDITOR || "vi"
+    api.renderer.suspend()
+    try {
+        runEditor(editor, filePath)
+    } finally {
+        api.renderer.resume()
+    }
+
+    let edited: string
+    try {
+        edited = parseMemoFile(readFileSync(filePath, "utf-8"))
+    } catch {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "error", message: "Could not read the edited memo" })
+        return
+    }
+
+    const trimmed = edited.trim()
+    if (!trimmed) {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "warning", message: "Edited memo is empty; nothing applied" })
+        return
+    }
+    if (trimmed === original.trim()) {
+        rmSync(filePath, { force: true })
+        api.ui.toast({ variant: "info", message: "No changes to the memo" })
+        return
+    }
+
+    writeFileSync(filePath, edited, "utf-8")
+    try {
+        await (api.client as any).session.command({
+            sessionID,
+            command: "dcp",
+            arguments: `memo-file ${filePath}`,
+        })
+        api.ui.toast({ variant: "success", message: "Updated the memo" })
+    } catch {
+        api.ui.toast({ variant: "error", message: "Failed to apply the memo" })
+    } finally {
+        rmSync(filePath, { force: true })
+    }
 }
 
 // --- Sidebar component ---
@@ -735,7 +786,7 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
 // --- Memo detail page ---
 
 const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_MODE)
+    const popMode = props.api.mode.push(DCP_MEMO_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const skin = look(props.api.theme.current)
@@ -873,6 +924,21 @@ const tui: TuiPlugin = async (api, options, meta) => {
                     }
                 },
             },
+            {
+                name: "dcp-tui.edit-memo",
+                title: "DCP Edit Memo",
+                category: "Plugin",
+                namespace: "palette",
+                slashName: "dcp-tui-edit-memo",
+                run() {
+                    const sessionID = api.route.current.params?.sessionID as string | undefined
+                    if (!sessionID) {
+                        api.ui.toast({ variant: "info", message: "No active session" })
+                        return
+                    }
+                    void editMemo(api, sessionID)
+                },
+            },
         ],
     })
 
@@ -903,6 +969,11 @@ const tui: TuiPlugin = async (api, options, meta) => {
     api.keymap.registerLayer({
         mode: DCP_BLOCK_MODE,
         bindings: [{ key: "e", cmd: "dcp-tui.edit", desc: "Edit summary" }],
+    })
+
+    api.keymap.registerLayer({
+        mode: DCP_MEMO_MODE,
+        bindings: [{ key: "e", cmd: "dcp-tui.edit-memo", desc: "Edit memo" }],
     })
 }
 

@@ -39,6 +39,7 @@ import {
     handleManualToggleCommand,
     handleManualTriggerCommand,
     handleMemoCommand,
+    handleMemoFileCommand,
     handleMessagesCommand,
     handleProtectCommand,
     handleRecompressCommand,
@@ -422,6 +423,15 @@ export function createCommandExecuteHandler(
                     },
                     subArgs,
                 )
+                output.handled = true
+                return
+            }
+
+            if (subcommand === "memo-file") {
+                await handleMemoFileCommand({
+                    ...commandCtx,
+                    args: subArgs,
+                })
                 output.handled = true
                 return
             }

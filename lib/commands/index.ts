@@ -11,6 +11,7 @@ export {
     handleManualTriggerCommand,
 } from "./manual"
 export { handleMemoCommand } from "./memo"
+export { handleMemoFileCommand } from "./memo-file"
 export { handleMessagesCommand } from "./messages"
 export { handleProtectCommand } from "./protect"
 export { handleRecompressCommand } from "./recompress"

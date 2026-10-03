@@ -30,6 +30,7 @@ const BASE_COMMANDS: [string, string][] = [
     ["/dcp debug [on <dir>|off]", "Dump each post-transform LLM query as JSON to <dir>"],
     ["/dcp autotoggle [on|off]", "Allow the LLM to call toggle_summary_version"],
     ["/dcp edit-file <n> <path>", "Apply summary text from a file to a compression"],
+    ["/dcp memo-file <path>", "Replace the memo with text from a file"],
 ]
 
 const TOOL_COMMANDS: Record<string, [string, string]> = {
