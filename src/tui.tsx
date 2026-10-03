@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { Show, For, onCleanup } from "solid-js"
+import { Show, For, onCleanup, createSignal } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -378,6 +378,7 @@ async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
 const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
     const skin = look(props.api.theme.current)
     const blocks = readBlocks(props.session_id)
+    const [collapsed, setCollapsed] = createSignal(false)
     const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
     const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
     const isEmpty = (block: BlockInfo) => block.summaryTokens === 0
@@ -389,34 +390,36 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
 
     return (
         <box flexDirection="column" gap={0}>
-            <text>
-                <b>DCP Blocks</b>
+            <text onMouseDown={() => setCollapsed(!collapsed())}>
+                <b>{collapsed() ? "▶" : "▼"} DCP Blocks</b>
             </text>
-            <text fg={skin.muted}>
-                <b fg={skin.text}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
-                {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
-            </text>
-            <Show when={blocks.length === 0}>
-                <text fg={skin.muted}>No compression blocks yet</text>
-            </Show>
-            <Show when={blocks.length > 0}>
-                <For each={blocks}>
-                    {(block) => {
-                        const mode = block.mode ?? "range"
-                        return (
-                            <box flexDirection="row" gap={1} justifyContent="space-between">
-                                <box flexDirection="row" gap={1}>
-                                    <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
-                                        { isEmpty(block) ? `b${String(block.blockId).padEnd(3)}` : (<b>b{String(block.blockId).padEnd(3)}</b>) }
-                                    </text>
-                                    <text fg={skin.muted}>
-                                        {tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} {mode !== "range" ? `${mode[0]}:` : ""}{block.startId}-{block.endId}
-                                    </text>
-                                </box>
-                                {block.topic ? <text fg={skin.muted}>{truncateText(block.topic, 10)}</text> : null}
-                            </box>)
-                    }}
-                </For>
+            <Show when={!collapsed()}>
+                <text fg={skin.muted}>
+                    <b fg={skin.text}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
+                    {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
+                </text>
+                <Show when={blocks.length === 0}>
+                    <text fg={skin.muted}>No compression blocks yet</text>
+                </Show>
+                <Show when={blocks.length > 0}>
+                    <For each={blocks}>
+                        {(block) => {
+                            const mode = block.mode ?? "range"
+                            return (
+                                <box flexDirection="row" gap={1} justifyContent="space-between">
+                                    <box flexDirection="row" gap={1}>
+                                        <text fg={ (block.active && !isEmpty(block)) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed}>
+                                            { isEmpty(block) ? `b${String(block.blockId).padEnd(3)}` : (<b>b{String(block.blockId).padEnd(3)}</b>) }
+                                        </text>
+                                        <text fg={skin.muted}>
+                                            {tokenLabel(block.compressedTokens)}→{tokenLabel(block.summaryTokens)} {mode !== "range" ? `${mode[0]}:` : ""}{block.startId}-{block.endId}
+                                        </text>
+                                    </box>
+                                    {block.topic ? <text fg={skin.muted}>{truncateText(block.topic, 10)}</text> : null}
+                                </box>)
+                        }}
+                    </For>
+                </Show>
             </Show>
             <box flexDirection="row" gap={1}>
                 <text bold inverse onMouseDown={async () => {
