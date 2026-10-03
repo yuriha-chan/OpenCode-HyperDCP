@@ -63,17 +63,46 @@ A per-session memo that survives compaction and can be edited in place, keeping 
 
 ![DCP memo view](docs/screenshots/dcp-memo.png)
 
-## Quick start
+## Installation
 
-1. Install and enable the plugin in your OpenCode config:
+OpenCode installs plugins directly from npm by name — no local build required.
+
+1. Add the package (and its TUI companion) to your OpenCode config,
+   `~/.config/opencode/opencode.json`:
 
    ```json
-   { "plugin": ["opencode-hyperdcp"] }
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "plugin": ["@architectural-composition/opencode-hyperdcp"]
+   }
    ```
 
-2. In OpenCode, open the DCP pages from the command palette (`ctrl+p`) with `/dcp-tui-blocks`, `/dcp-tui-messages`, or `/dcp-tui-memo`.
+   Scoped npm packages are supported. OpenCode installs the plugin automatically
+   with Bun at startup and caches it under `~/.cache/opencode/node_modules/`.
 
-3. When context grows, act on the nudge:
+2. The TUI pages and sidebar are registered through `~/.config/opencode/tui.json`:
+
+   ```json
+   {
+     "$schema": "https://opencode.ai/tui.json",
+     "plugin": ["@architectural-composition/opencode-hyperdcp"]
+   }
+   ```
+
+   Alternatively, add the package with the CLI, which writes these entries for you:
+
+   ```sh
+   opencode plugin add @architectural-composition/opencode-hyperdcp
+   ```
+
+3. Restart OpenCode. Package updates are managed with `opencode plugin list`,
+   `opencode plugin check`, and `opencode plugin update`.
+
+## Usage
+
+1. Open the DCP pages from the command palette (`ctrl+p`) with `/dcp-tui-blocks`,
+   `/dcp-tui-messages`, or `/dcp-tui-memo`.
+2. When context grows, act on the nudge:
    - review blocks in the **DCP Blocks** sidebar,
    - rewrite or switch a summary version,
    - protect messages you must keep, or cull blocks you no longer need.

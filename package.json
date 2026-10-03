@@ -1,9 +1,9 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
-    "name": "@yuriha-chan/opencode-hyperdcp",
-    "version": "3.1.13",
+    "name": "@architectural-composition/opencode-hyperdcp",
+    "version": "100.0.0",
     "type": "module",
-    "description": "OpenCode plugin that optimizes token usage by pruning obsolete tool outputs from conversation context",
+    "description": "Observable, controllable context management plugin for OpenCode: inspect, rewrite, version, and cull compressed conversation blocks",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
@@ -40,7 +40,10 @@
         "context",
         "pruning",
         "optimization",
-        "tokens"
+        "tokens",
+        "context-management",
+        "compression",
+        "summarization"
     ],
     "repository": {
         "type": "git",
@@ -50,7 +53,7 @@
         "url": "https://github.com/yuriha-chan/OpenCode-HyperDCP/issues"
     },
     "homepage": "https://github.com/yuriha-chan/OpenCode-HyperDCP/",
-    "author": "yuriha-chan",
+    "author": "yuriha (@yuriha-chan on GitHub, @yuriha@misskey-square.net on Fediverse, https://y5h.net)",
     "license": "AGPL-3.0-or-later",
     "peerDependencies": {
         "@opencode-ai/plugin": ">=1.4.3",
@@ -77,6 +80,7 @@
     },
     "files": [
         "dist/",
+        "docs/screenshots/",
         "README.md",
         "LICENSE"
     ]

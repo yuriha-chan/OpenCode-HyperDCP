@@ -10,7 +10,8 @@ bun.lock
 
 # Documentation
 ANALYSIS.md
-docs/
+docs/*.md
+docs/!(screenshots)/
 notes/
 
 # Source files (since we're shipping dist/)

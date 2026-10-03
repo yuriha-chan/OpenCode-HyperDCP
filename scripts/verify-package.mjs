@@ -19,6 +19,7 @@ const requiredTarballFiles = [
     "package.json",
     "dist/index.js",
     "dist/index.d.ts",
+    "docs/screenshots/dcp-blocks-list.png",
     "README.md",
     "LICENSE",
 ]
@@ -29,7 +30,7 @@ const forbiddenTarballPatterns = [
     /^index\.ts$/,
     /^tests\//,
     /^scripts\//,
-    /^docs\//,
+    /^docs\/(?!screenshots\/)/,
     /^assets\//,
     /^notes\//,
     /^\.github\//,
