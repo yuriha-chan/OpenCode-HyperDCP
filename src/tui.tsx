@@ -30,6 +30,7 @@ interface BlockInfo {
     parentBlockIds: number[]
     includedBlockIds: number[]
     summary: string
+    summaryVersions: string[]
 }
 
 interface MessageEntry {
@@ -85,6 +86,7 @@ function readBlocks(sessionId: string): BlockInfo[] {
                 parentBlockIds: Array.isArray(block.parentBlockIds) ? block.parentBlockIds : [],
                 includedBlockIds: Array.isArray(block.includedBlockIds) ? block.includedBlockIds : [],
                 summary: activeSummaryText(block),
+                summaryVersions,
             }
         })
     } catch {
@@ -535,6 +537,7 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
     const blockId = props.params?.blockId as number | undefined
     const skin = look(props.api.theme.current)
     const block = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
+    const [selectedVersion, setSelectedVersion] = createSignal<number | null>(null)
 
     return (
         <PageShell
@@ -547,9 +550,38 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
                 <Show when={block} fallback={<text fg={skin.muted}>Block b{blockId} not found</text>}>
                     {(b) => {
                         const mode = b().mode ?? "range"
+                        const versionCount = b().summaryVersions.length + 2
+                        const shownVersion = () => selectedVersion() ?? b().activeVersionIndex
+                        const versionText = (idx: number): string => {
+                            if (idx === 0) return "(disabled)"
+                            if (idx >= 2) {
+                                const text = b().summaryVersions[idx - 2]
+                                return typeof text === "string" && text.length > 0 ? text : "(empty)"
+                            }
+                            return b().summary || "(empty)"
+                        }
                         return (
                             <>
                                 <text fg={skin.text}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
+                                <box flexDirection="row" gap={1}>
+                                    <text fg={skin.muted}>Versions:</text>
+                                    <For each={Array.from({ length: versionCount }, (_, i) => i)}>
+                                        {(idx) => {
+                                            const isActive = () => idx === b().activeVersionIndex
+                                            const isShown = () => idx === shownVersion()
+                                            return (
+                                                <text
+                                                    fg={isShown() ? skin.text : skin.muted}
+                                                    onMouseDown={() => setSelectedVersion(idx)}
+                                                >
+                                                    <Show when={isShown()} fallback={<>{`${isActive() ? "*" : ""}v${idx}`}</>}>
+                                                        <b inverse>{`[${isActive() ? "*" : ""}v${idx}]`}</b>
+                                                    </Show>
+                                                </text>
+                                            )
+                                        }}
+                                    </For>
+                                </box>
                                 <text fg={skin.muted}>
                                     {b().startId}→{b().endId} | {mode} | {statusLabel(b())} | {tokenLabelPrecise(b().compressedTokens)}→{tokenLabelPrecise(b().summaryTokens)}
                                     {b().durationMs ? ` | ${b().durationMs}ms` : ""}
@@ -558,7 +590,7 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
                                     {b().batchTopic ? ` | batch: ${b().batchTopic}` : ""}
                                 </text>
                                 <text fg={skin.muted}>{"─".repeat(40)}</text>
-                                <text fg={skin.text}>{b().summary || "(empty)"}</text>
+                                <text fg={skin.text}>{versionText(shownVersion())}</text>
                             </>
                         )
                     }}
