@@ -3,6 +3,25 @@ export const COMPRESS_RANGE = `Collapse a range in the conversation into a detai
 THE SUMMARY
 Your summary must be EXHAUSTIVE. Capture file paths, function signatures, decisions made, constraints discovered, key findings... EVERYTHING that maintains context integrity. This is not a brief note - it is an authoritative record so faithful that the original conversation adds no value.
 
+Summary writing rules
+- Make the reusable knowledge claim stand out as a descriptive heading. Put its explanation below and supporting provenance separately, so later readers can find the knowledge without parsing its evidence. Completion reports, ticket closures, commit records, and passing-check lists are not reusable knowledge by themselves.
+- Write explicit claims about what is known: decisions and their rationale, user hints and verdicts, intended design, discovered truths, constraints, and useful workarounds.
+- Preserve uncertainty: distinguish established findings from hypotheses and unresolved questions.
+- Where useful, briefly support a claim with its provenance, such as a user's verdict, test result, external document, or debug code.
+- Organize by the subject and knowledge a later agent may need, not by the order of events. Do not produce a raw event log or checklist of actions.
+- Convert attempts and checks into their reusable conclusions, retaining evidence details only when they help apply or assess those conclusions.
+- Optimize for retrieval well into later work, not just immediately after resuming: make relevant knowledge easy to spot with minimal attention, so it can support problem-solving and prevent repeated mistakes without reconstructing the conversation.
+
+Summary examples (illustrative)
+Good example:
+## Configuration file is loaded at startup
+Editing the file does not change the running client's configuration (e.g. timeout). Need to restart the client after edits.
+(loader.cpp, docs/configuration; the design is intentional per m0032 "startup-only loading should be preserved")
+
+Bad example — it pretends to be epistemic knowledge, but is not reusable in later context:
+## The Issue Ticket #455 is finished in commit e4f8321643
+#455 "timeout configuration interface should show restart prompt dialogue" is duly implemented and closed. Test passed 201/201, lint & typecheck no error.
+
 USER INTENT FIDELITY
 When the compressed range includes user messages, preserve the user's intent with extra care. Do not change scope, constraints, priorities, acceptance criteria, or requested outcomes.
 Directly quote user messages when they are short enough to include safely. Direct quotes are preferred when they best preserve exact meaning.
