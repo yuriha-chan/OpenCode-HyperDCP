@@ -1,5 +1,6 @@
 import type { SessionState, WithParts } from "./state"
 import { isIgnoredUserMessage } from "./messages/query"
+import { eligibleConversationMessages } from "./housekeeping/history"
 
 const MESSAGE_REF_REGEX = /^m(\d{4})$/
 const BLOCK_REF_REGEX = /^b([1-9]\d*)$/
@@ -117,10 +118,12 @@ export function formatMessageIdTag(
 }
 
 export function assignMessageRefs(state: SessionState, messages: WithParts[]): number {
+    if (state.housekeeping) return 0
     let assigned = 0
     let skippedSubAgentPrompt = false
 
-    for (const message of messages) {
+    const eligibleMessages = eligibleConversationMessages(messages, state.housekeepingHistory)
+    for (const message of eligibleMessages) {
         if (isIgnoredUserMessage(message)) {
             continue
         }
@@ -134,7 +137,6 @@ export function assignMessageRefs(state: SessionState, messages: WithParts[]): n
         if (typeof rawMessageId !== "string" || rawMessageId.length === 0) {
             continue
         }
-
         const existingRef = state.messageIds.byRawId.get(rawMessageId)
         if (existingRef) {
             if (state.messageIds.byRef.get(existingRef) !== rawMessageId) {

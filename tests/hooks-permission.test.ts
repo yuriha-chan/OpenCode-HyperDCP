@@ -1,3 +1,4 @@
+import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { PluginConfig } from "../lib/config"
@@ -15,6 +16,13 @@ import {
     saveSessionState,
     type WithParts,
 } from "../lib/state"
+import {
+    commitBlock,
+    createHousekeepingHarness,
+    ordinaryMessage,
+    stageBlock,
+    visibleText,
+} from "./helpers/housekeeping"
 
 function buildConfig(permission: "allow" | "ask" | "deny" = "allow"): PluginConfig {
     return {
@@ -724,4 +732,428 @@ test("event hook keeps same call id distinct across message ids", async () => {
 
     assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 350)
     assert.equal(state.prune.messages.blocksById.get(2)?.durationMs, 150)
+})
+
+function modelToolPart(messages: WithParts[], callID: string) {
+    const part = messages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.callID === callID)
+    assert.ok(part?.type === "tool", `expected retained tool call ${callID}`)
+    assert.equal(part.state.status, "completed")
+    return part
+}
+
+test("chat transform retains paired boundaries and outside parts while hiding completed housekeeping work", async (t) => {
+    const h = await createHousekeepingHarness(t, { allowedTools: ["custom_inspect"] })
+    h.addText("mixed-boundaries", "Outside text before entry.")
+    const mixed = h.history.at(-1)!
+    const entry = await h.run(
+        "enter_housekeeping",
+        {},
+        {
+            messageID: mixed.info.id,
+            callID: "mixed-enter",
+        },
+    )
+    mixed.parts.push({
+        id: "interior-reasoning",
+        messageID: mixed.info.id,
+        sessionID: h.sessionID,
+        type: "reasoning",
+        text: "Private maintenance reasoning.",
+        time: { start: 1, end: 2 },
+    })
+    mixed.parts.push(
+        ...ordinaryMessage(
+            h.sessionID,
+            mixed.info.id,
+            "assistant",
+            "Private maintenance text.",
+        ).parts.map((part) => ({ ...part, id: "interior-text" })),
+    )
+    await h.run(
+        "compress",
+        {
+            topic: "Parser",
+            content: [{ startId: "m0001", endId: "m0002", summary: "Published parser findings." }],
+        },
+        { messageID: mixed.info.id, callID: "mixed-compress" },
+    )
+    await h.run(
+        "recall_compressed",
+        { action: "get", messageId: "m0001" },
+        {
+            messageID: mixed.info.id,
+            callID: "mixed-recall",
+        },
+    )
+    mixed.parts.push({
+        id: "interior-exception",
+        messageID: mixed.info.id,
+        sessionID: h.sessionID,
+        type: "tool",
+        tool: "custom_inspect",
+        callID: "mixed-exception",
+        state: {
+            status: "completed",
+            input: {},
+            output: "Private exception-tool result.",
+            title: "custom_inspect",
+            metadata: {},
+            time: { start: 1, end: 2 },
+        },
+    })
+
+    const active = await h.render()
+    assert.match(visibleText(active), /Private maintenance reasoning\./)
+    assert.match(visibleText(active), /Private maintenance text\./)
+    assert.match(visibleText(active), /Private exception-tool result\./)
+    const activeEntry = modelToolPart(active, "mixed-enter")
+    assert.ok(activeEntry.state.status === "completed")
+    assert.equal(activeEntry.state.output, entry)
+
+    const receipt = await h.run(
+        "leave_housekeeping",
+        {},
+        {
+            messageID: mixed.info.id,
+            callID: "mixed-leave",
+        },
+    )
+    mixed.parts.push(
+        ...ordinaryMessage(
+            h.sessionID,
+            mixed.info.id,
+            "assistant",
+            "Outside text after leave.",
+        ).parts.map((part) => ({ ...part, id: "outside-after" })),
+    )
+    const raw = structuredClone(h.history)
+    const projected = await h.render()
+    const text = visibleText(projected)
+    assert.match(text, /Outside text before entry\./)
+    assert.match(text, /Outside text after leave\./)
+    assert.match(text, /Published parser findings\./)
+    assert.doesNotMatch(text, /Private maintenance|Private exception-tool result/)
+    const entryPart = modelToolPart(projected, "mixed-enter")
+    const leavePart = modelToolPart(projected, "mixed-leave")
+    assert.equal(entryPart.id, "part-mixed-enter")
+    assert.equal(leavePart.id, "part-mixed-leave")
+    assert.equal(entryPart.tool, "enter_housekeeping")
+    assert.equal(leavePart.tool, "leave_housekeeping")
+    assert.ok(entryPart.state.status === "completed")
+    assert.ok(leavePart.state.status === "completed")
+    assert.ok(entryPart.state.output.trim().length <= 160)
+    assert.match(entryPart.state.output, /completed|finished|hidden|omitted/i)
+    assert.notEqual(entryPart.state.output, entry)
+    assert.doesNotMatch(
+        entryPart.state.output,
+        /UNCOVERED MESSAGE RANGES|m\d{4}\s*→|enter_housekeeping|leave_housekeeping|compress|edit_memo|rewrite_summary|range|guidance/i,
+    )
+    assert.equal(leavePart.state.output, receipt)
+    const parts = projected.flatMap((message) => message.parts)
+    for (const id of [
+        "interior-reasoning",
+        "interior-text",
+        "part-mixed-compress",
+        "part-mixed-recall",
+        "interior-exception",
+    ]) {
+        assert.ok(!parts.some((part) => part.id === id), `${id} must be suppressed`)
+    }
+    assert.deepEqual(h.history, raw, "model projection must preserve the raw host transcript")
+    h.assertSessionReads()
+})
+
+test("chat transform keeps older completed interiors hidden through later entry and leave", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.run("enter_housekeeping", {}, { callID: "first-enter" })
+    h.addText("first-interior", "First private maintenance discussion.")
+    const firstReceipt = await h.run("leave_housekeeping", {}, { callID: "first-leave" })
+    h.addText("between-transactions", "Ordinary text between transactions.", "user")
+
+    const secondGuidance = await h.run("enter_housekeeping", {}, { callID: "second-enter" })
+    assert.doesNotMatch(secondGuidance, /First private maintenance discussion/)
+    h.addText("second-interior", "Second private maintenance discussion.")
+    const active = await h.render()
+    assert.doesNotMatch(visibleText(active), /First private maintenance discussion/)
+    assert.match(visibleText(active), /Second private maintenance discussion/)
+    assert.match(visibleText(active), /Ordinary text between transactions/)
+    modelToolPart(active, "first-enter")
+    const oldLeave = modelToolPart(active, "first-leave")
+    assert.ok(oldLeave.state.status === "completed")
+    assert.equal(oldLeave.state.output, firstReceipt)
+
+    await h.run("leave_housekeeping", {}, { callID: "second-leave" })
+    const completed = structuredClone(h.history)
+    for (let render = 0; render < 2; render++) {
+        const projected = await h.render()
+        assert.doesNotMatch(visibleText(projected), /First private|Second private/)
+        assert.match(visibleText(projected), /Ordinary text between transactions/)
+        for (const callID of ["first-enter", "first-leave", "second-enter", "second-leave"]) {
+            modelToolPart(projected, callID)
+            assert.equal(
+                projected
+                    .flatMap((message) => message.parts)
+                    .filter((part) => part.type === "tool" && part.callID === callID).length,
+                1,
+            )
+        }
+    }
+    h.setHistory(
+        completed.filter(
+            (message) =>
+                !message.parts.some(
+                    (part) => part.type === "tool" && part.callID === "second-leave",
+                ),
+        ),
+    )
+    const reopened = await h.render()
+    assert.doesNotMatch(visibleText(reopened), /First private maintenance discussion/)
+    assert.match(visibleText(reopened), /Second private maintenance discussion/)
+    modelToolPart(reopened, "first-enter")
+    modelToolPart(reopened, "first-leave")
+
+    h.setHistory(completed)
+    assert.doesNotMatch(visibleText(await h.render()), /First private|Second private/)
+    h.assertSessionReads()
+})
+
+test("chat transform reconciles part-level leave removal, earlier draft history, and unrevert", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    h.addText("surviving-boundary-message", "Ordinary text before the transaction.")
+    const beforeEntry = structuredClone(h.history)
+    const mixed = h.history.at(-1)!
+    await h.run("enter_housekeeping", {}, { messageID: mixed.info.id, callID: "revert-enter" })
+    await h.run(
+        "edit_memo",
+        { oldString: "", newString: "Draft memo first." },
+        {
+            messageID: mixed.info.id,
+            callID: "revert-edit-first",
+        },
+    )
+    mixed.parts.push(
+        ...ordinaryMessage(
+            h.sessionID,
+            mixed.info.id,
+            "assistant",
+            "Surviving private draft work.",
+        ).parts.map((part) => ({ ...part, id: "surviving-draft-text" })),
+    )
+    const earlierDraft = structuredClone(h.history)
+    await h.run(
+        "edit_memo",
+        { oldString: "first", newString: "second" },
+        {
+            messageID: mixed.info.id,
+            callID: "revert-edit-second",
+        },
+    )
+    const receipt = await h.run(
+        "leave_housekeeping",
+        {},
+        {
+            messageID: mixed.info.id,
+            callID: "revert-leave",
+        },
+    )
+    const completed = structuredClone(h.history)
+    assert.doesNotMatch(visibleText(await h.render()), /Surviving private draft work/)
+
+    h.setHistory(
+        completed.map((message) => ({
+            ...message,
+            parts: message.parts.filter(
+                (part) => part.type !== "tool" || part.callID !== "revert-leave",
+            ),
+        })),
+    )
+    const reopened = await h.render()
+    assert.ok(reopened.some((message) => message.info.id === mixed.info.id))
+    assert.match(visibleText(reopened), /Surviving private draft work/)
+    assert.ok(
+        !reopened
+            .flatMap((message) => message.parts)
+            .some((part) => part.type === "tool" && part.callID === "revert-leave"),
+    )
+    assert.equal(await h.readMemo(), "Draft memo second.")
+    await assert.rejects(h.enter(), /already|recursive|active/i)
+
+    h.setHistory(earlierDraft)
+    assert.match(visibleText(await h.render()), /Surviving private draft work/)
+    assert.equal(await h.readMemo(), "Draft memo first.")
+
+    h.setHistory(beforeEntry)
+    assert.doesNotMatch(visibleText(await h.render()), /Surviving private draft work/)
+    assert.doesNotMatch(await h.readMemo(), /Draft memo/)
+
+    h.setHistory(completed)
+    for (let render = 0; render < 2; render++) {
+        const restored = await h.render()
+        assert.doesNotMatch(visibleText(restored), /Surviving private draft work/)
+        assert.match(visibleText(restored), /Ordinary text before the transaction/)
+        const leave = modelToolPart(restored, "revert-leave")
+        assert.ok(leave.state.status === "completed")
+        assert.equal(leave.state.output, receipt)
+        assert.equal(
+            restored
+                .flatMap((message) => message.parts)
+                .filter((part) => part.type === "tool" && part.callID === "revert-leave").length,
+            1,
+        )
+    }
+    assert.equal(await h.readMemo(), "Draft memo second.")
+    h.assertSessionReads()
+})
+
+test("reverting housekeeping transactions follows surviving transcript prefixes", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h, "Original committed summary.")
+    const original = structuredClone(h.history)
+
+    await h.run("enter_housekeeping", {}, { callID: "a-enter" })
+    await h.run("edit_memo", { oldString: "", newString: "Memo A." }, { callID: "a-memo" })
+    await h.run("rewrite_summary", { blockId: 1, summary: "Summary A." }, { callID: "a-rewrite" })
+    await h.run("leave_housekeeping", {}, { callID: "a-leave" })
+    const transactionA = structuredClone(h.history)
+
+    await h.run("enter_housekeeping", {}, { callID: "b-enter" })
+    await h.run(
+        "edit_memo",
+        { oldString: "Memo A.", newString: "Memo A and B." },
+        { callID: "b-memo" },
+    )
+    await h.run("rewrite_summary", { blockId: 1, summary: "Summary B." }, { callID: "b-rewrite" })
+    const bLeave = await h.run("leave_housekeeping", {}, { callID: "b-leave" })
+    const bothCommitted = structuredClone(h.history)
+    const bVersions = await h.versions(1)
+
+    h.setHistory(
+        bothCommitted.filter(
+            (message) =>
+                !message.parts.some((part) => part.type === "tool" && part.callID === "b-leave"),
+        ),
+    )
+    const reopenedB = await h.render()
+    assert.match(visibleText(reopenedB), /Summary A\./)
+    assert.doesNotMatch(visibleText(reopenedB), /Summary B\./)
+    assert.equal(await h.readMemo(), "Memo A and B.")
+    assert.match(await h.versions(1), /Summary B\./)
+    await assert.rejects(h.guard("read"), /housekeeping/i)
+
+    h.setHistory(transactionA)
+    const revertedB = await h.render()
+    assert.match(visibleText(revertedB), /Summary A\./)
+    assert.doesNotMatch(visibleText(revertedB), /Summary B\./)
+    assert.equal(await h.readMemo(), "Memo A.")
+    assert.doesNotMatch(await h.versions(1), /Summary B\./)
+
+    h.setHistory(original)
+    const revertedBoth = await h.render()
+    assert.match(visibleText(revertedBoth), /Original committed summary\./)
+    assert.doesNotMatch(visibleText(revertedBoth), /Summary A\.|Summary B\./)
+    assert.equal(await h.readMemo(), "(memo is empty)")
+
+    h.setHistory(bothCommitted)
+    for (let render = 0; render < 2; render++) {
+        const restored = await h.render()
+        assert.match(visibleText(restored), /Summary B\./)
+        assert.equal(await h.readMemo(), "Memo A and B.")
+        assert.equal(await h.versions(1), bVersions)
+        const leave = modelToolPart(restored, "b-leave")
+        assert.ok(leave.state.status === "completed")
+        assert.equal(leave.state.output, bLeave)
+        assert.equal(
+            restored
+                .flatMap((message) => message.parts)
+                .filter((part) => part.type === "tool" && part.callID === "b-leave").length,
+            1,
+        )
+    }
+    h.assertSessionReads()
+})
+
+test("reverting housekeeping preserves an unrelated surviving command revision", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h, "Committed parser summary.")
+    await h.command("edit 1 Unrelated-command-revision.")
+    assert.match(await h.versions(1, 1), /Unrelated-command-revision\./)
+    const beforeTransaction = structuredClone(h.history)
+
+    await h.enter()
+    await h.run("rewrite_summary", { blockId: 1, summary: "Staged transaction rewrite." })
+    await h.leave()
+    const committed = structuredClone(h.history)
+
+    h.setHistory(beforeTransaction)
+    await h.render()
+
+    assert.match(await visibleText(await h.render()), /Unrelated-command-revision\./)
+    assert.equal(await h.readMemo(), "(memo is empty)")
+    h.setHistory(committed)
+    await h.render()
+    assert.match(await h.versions(1, 1), /Unrelated-command-revision\./)
+    h.assertSessionReads()
+})
+
+test("reopened transaction keeps newly staged edits across repeated reconciliation renders", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    h.addText("reopen-anchor", "Ordinary work survives beside housekeeping.")
+    const messageID = h.history.at(-1)!.info.id
+    await h.run("enter_housekeeping", {}, { messageID, callID: "reopen-entry" })
+    await h.run(
+        "edit_memo",
+        { oldString: "", newString: "First draft." },
+        { messageID, callID: "reopen-first" },
+    )
+    await h.run("leave_housekeeping", {}, { messageID, callID: "reopen-leave" })
+    const completed = structuredClone(h.history)
+    h.setHistory(
+        completed.map((message) => ({
+            ...message,
+            parts: message.parts.filter(
+                (part) => part.type !== "tool" || part.callID !== "reopen-leave",
+            ),
+        })),
+    )
+
+    await h.render()
+    assert.equal(await h.readMemo(), "First draft.")
+    await h.run(
+        "edit_memo",
+        { oldString: "First", newString: "Reopened" },
+        { messageID, callID: "reopen-second" },
+    )
+    for (let index = 0; index < 3; index++) {
+        await h.render()
+        assert.equal(await h.readMemo(), "Reopened draft.")
+    }
+    await h.leave()
+    h.assertSessionReads()
+})
+
+test("host compaction without transaction calls does not reconcile them as reverted", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { oldString: "", newString: "Survives compaction." })
+    const compacted = ordinaryMessage(
+        h.sessionID,
+        "compacted-summary",
+        "assistant",
+        "Compacted context.",
+    )
+    compacted.info = {
+        ...compacted.info,
+        summary: true,
+        time: { created: 100 },
+    } as WithParts["info"]
+    h.setHistory([compacted])
+
+    await h.render()
+
+    assert.equal(await h.readMemo(), "Survives compaction.")
+    await assert.rejects(h.guard("read"), /housekeeping/i)
+    await h.leave()
+    h.assertSessionReads()
 })

@@ -1,6 +1,6 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
-import { saveSessionState } from "./state/persistence"
+import { runHousekeepingMutation } from "./housekeeping/state"
 
 export function createEditMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
@@ -21,45 +21,58 @@ THE FORMAT
             newString: tool.schema.string().describe("Replacement text"),
             replaceAll: tool.schema.boolean().describe("Replace all occurrences (default false)"),
         },
-        async execute(args) {
-            const input = args as { oldString: string; newString: string; replaceAll?: boolean }
-            if (input.oldString === input.newString) {
-                throw new Error(
-                    `oldString and newString must differ (both are ${JSON.stringify(input.oldString)})`,
-                )
-            }
-            const current = ctx.state.memo ?? ""
-            if (input.replaceAll) {
-                if (!current.includes(input.oldString)) {
-                    throw new Error(
-                        `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
-                        `Match oldString exactly — watch for leading/trailing whitespace, ` +
-                        `line breaks, and indentation. If you are confused about which ` +
-                        `version you are looking at, call read_memo to see the current content.`,
-                    )
-                }
-                ctx.state.memo = current.split(input.oldString).join(input.newString)
-            } else {
-                const idx = current.indexOf(input.oldString)
-                if (idx === -1) {
-                    throw new Error(
-                        `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
-                        `Match oldString exactly — watch for leading/trailing whitespace, ` +
-                        `line breaks, and indentation. If you are confused about which ` +
-                        `version you are looking at, call read_memo to see the current content.`,
-                    )
-                }
-                ctx.state.memo =
-                    current.slice(0, idx) +
-                    input.newString +
-                    current.slice(idx + input.oldString.length)
-            }
-            const trimmed = ctx.state.memo.trim()
-            ctx.state.memo = trimmed.length > 0 ? trimmed : null
-            await saveSessionState(ctx.state, ctx.logger)
-            return ctx.state.memo
-                ? `Memo edited (${ctx.state.memo.length} chars).`
-                : "Memo cleared."
+        async execute(args, toolCtx) {
+            return runHousekeepingMutation(
+                ctx,
+                toolCtx,
+                "edit_memo",
+                args,
+                async (operationCtx) => {
+                    const input = args as {
+                        oldString: string
+                        newString: string
+                        replaceAll?: boolean
+                    }
+                    if (input.oldString === input.newString) {
+                        throw new Error(
+                            `oldString and newString must differ (both are ${JSON.stringify(input.oldString)})`,
+                        )
+                    }
+                    const current = operationCtx.state.memo ?? ""
+                    if (input.replaceAll) {
+                        if (!current.includes(input.oldString)) {
+                            throw new Error(
+                                `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
+                                    `Match oldString exactly — watch for leading/trailing whitespace, ` +
+                                    `line breaks, and indentation. If you are confused about which ` +
+                                    `version you are looking at, call read_memo to see the current content.`,
+                            )
+                        }
+                        operationCtx.state.memo = current
+                            .split(input.oldString)
+                            .join(input.newString)
+                    } else {
+                        const idx = current.indexOf(input.oldString)
+                        if (idx === -1) {
+                            throw new Error(
+                                `Old string ${JSON.stringify(input.oldString)} not found in memo. ` +
+                                    `Match oldString exactly — watch for leading/trailing whitespace, ` +
+                                    `line breaks, and indentation. If you are confused about which ` +
+                                    `version you are looking at, call read_memo to see the current content.`,
+                            )
+                        }
+                        operationCtx.state.memo =
+                            current.slice(0, idx) +
+                            input.newString +
+                            current.slice(idx + input.oldString.length)
+                    }
+                    const trimmed = operationCtx.state.memo.trim()
+                    operationCtx.state.memo = trimmed.length > 0 ? trimmed : null
+                    return operationCtx.state.memo
+                        ? `Memo edited (${operationCtx.state.memo.length} chars).`
+                        : "Memo cleared."
+                },
+            )
         },
     })
 }

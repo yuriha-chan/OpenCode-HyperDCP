@@ -44,6 +44,9 @@ function activeSummaryFor(block: {
         return block.summaryVersions[idx - 2]
     }
     return block.summary
+        .replace(/^\[Compressed conversation section\]\s*/, "")
+        .replace(/\s*<dcp-message-id[^>]*>b\d+<\/dcp-message-id>\s*$/, "")
+        .trim()
 }
 
 export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<void> {
@@ -94,7 +97,8 @@ export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<vo
         const lines: string[] = []
         lines.push(`Block #${block.blockId} versions:`)
         lines.push(`  0 disabled: (summary pruned)`)
-        lines.push(`  1 v1 (${countTokens(block.summary)} tok): ${truncate(block.summary, 120)}`)
+        const original = activeSummaryFor({ ...block, activeVersionIndex: 1 })
+        lines.push(`  1 v1 (${countTokens(original)} tok): ${truncate(original, 120)}`)
 
         versions.forEach((v, i) => {
             lines.push(`  ${i + 2} v${i + 2} (${countTokens(v)} tok): ${truncate(v, 120)}`)

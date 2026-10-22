@@ -372,7 +372,7 @@ test("message mode marks compress tool messages as high priority even when short
     )
 })
 
-test("message-mode nudges append to existing text parts and list only earlier visible high-priority message IDs", () => {
+test("message-mode nudges append to existing text without candidate lists", () => {
     const sessionID = "ses_message_priority_nudges"
     const messages: WithParts[] = [
         buildMessage("msg-user-1", "user", sessionID, repeatedWord("alpha", 6000), 1),
@@ -413,14 +413,16 @@ test("message-mode nudges append to existing text parts and list only earlier vi
     const injectedNudge = messages[2]?.parts[0]
     assert.equal(injectedNudge?.type, "text")
     assert.match((injectedNudge as any).text, /\n\n<dcp-system-reminder>Base context nudge/)
-    assert.match((injectedNudge as any).text, /Message priority context:/)
-    assert.match((injectedNudge as any).text, /High-priority message IDs before this point: m0001/)
+    assert.doesNotMatch(
+        (injectedNudge as any).text,
+        /Message priority context:|High-priority|m0001/,
+    )
     assert.doesNotMatch((injectedNudge as any).text, /m0002/)
     assert.doesNotMatch((injectedNudge as any).text, /m0003/)
     assert.doesNotMatch((injectedNudge as any).text, /m0004/)
 })
 
-test("message-mode nudges exclude protected user messages from priority guidance", () => {
+test("message-mode nudges omit both protected and unprotected candidate details", () => {
     const sessionID = "ses_message_blocked_priority_nudges"
     const messages: WithParts[] = [
         buildMessage("msg-user-1", "user", sessionID, repeatedWord("alpha", 6000), 1),
@@ -453,7 +455,8 @@ test("message-mode nudges exclude protected user messages from priority guidance
 
     const injectedNudge = messages[2]?.parts[0]
     assert.equal(injectedNudge?.type, "text")
-    assert.match((injectedNudge as any).text, /High-priority message IDs before this point: m0002/)
+    assert.match((injectedNudge as any).text, /Base context nudge/)
+    assert.doesNotMatch((injectedNudge as any).text, /High-priority|m0002/)
     assert.doesNotMatch((injectedNudge as any).text, /m0001/)
 })
 
@@ -498,8 +501,10 @@ test("range-mode nudges append to existing text parts before tool outputs", () =
     assert.equal(injectedNudge?.type, "text")
     assert.equal(toolOutput?.type, "tool")
     assert.match((injectedNudge as any).text, /\n\n<dcp-system-reminder>Base context nudge/)
-    assert.match((injectedNudge as any).text, /Compressed block context:/)
-    assert.match((injectedNudge as any).text, /Active compressed blocks in this session: 1 \(b7\)/)
+    assert.doesNotMatch(
+        (injectedNudge as any).text,
+        /Compressed block context:|Active compressed blocks|b7/,
+    )
     assert.equal((toolOutput as any).state.output, "task output body")
 })
 

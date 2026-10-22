@@ -1,891 +1,511 @@
+import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test from "node:test"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
-import { mkdirSync } from "node:fs"
 import { createCompressMessageTool } from "../lib/compress/message"
-import { createSessionState, type WithParts } from "../lib/state"
-import type { PluginConfig } from "../lib/config"
-import { Logger } from "../lib/logger"
+import type { WithParts } from "../lib/state"
+import {
+    createHousekeepingHarness,
+    ordinaryMessage,
+    stageBlock,
+    visibleText,
+} from "./helpers/housekeeping"
 
-const testDataHome = join(tmpdir(), `opencode-dcp-message-tests-${process.pid}`)
-const testConfigHome = join(tmpdir(), `opencode-dcp-message-config-tests-${process.pid}`)
-
-process.env.XDG_DATA_HOME = testDataHome
-process.env.XDG_CONFIG_HOME = testConfigHome
-
-mkdirSync(testDataHome, { recursive: true })
-mkdirSync(testConfigHome, { recursive: true })
-
-function buildConfig(): PluginConfig {
-    return {
-        enabled: true,
-        debug: false,
-        pruneNotification: "off",
-        pruneNotificationType: "chat",
-        commands: {
-            enabled: true,
-            protectedTools: [],
-        },
-        manualMode: {
-            enabled: false,
-            automaticStrategies: true,
-        },
-        turnProtection: {
-            enabled: false,
-            turns: 4,
-        },
-        experimental: {
-            allowSubAgents: false,
-            customPrompts: false,
-        },
-        protectedFilePatterns: [],
-        compress: {
-            mode: "message",
-            permission: "allow",
-            showCompression: false,
-            maxContextLimit: 150000,
-            minContextLimit: 50000,
-            nudgeFrequency: 5,
-            iterationNudgeThreshold: 15,
-            nudgeForce: "soft",
-            protectedTools: ["task"],
-            protectTags: false,
-            protectUserMessages: false,
-            minCompressTokens: 0,
-        },
-        strategies: {
-            deduplication: {
-                enabled: true,
-                protectedTools: [],
-            },
-            purgeErrors: {
-                enabled: true,
-                turns: 4,
-                protectedTools: [],
-            },
-        },
-    }
-}
-
-function textPart(messageID: string, sessionID: string, id: string, text: string) {
-    return {
-        id,
-        messageID,
+function toolMessage(sessionID: string, id: string, tool: string, output: string): WithParts {
+    const message = ordinaryMessage(sessionID, id, "assistant", "I also ran a task tool")
+    message.parts.push({
+        id: `${id}-tool`,
+        messageID: id,
         sessionID,
-        type: "text" as const,
-        text,
-    }
-}
-
-function toolPart(
-    messageID: string,
-    sessionID: string,
-    callID: string,
-    toolName: string,
-    output: string,
-) {
-    return {
-        id: `${callID}-part`,
-        messageID,
-        sessionID,
-        type: "tool" as const,
-        tool: toolName,
-        callID,
+        type: "tool",
+        tool,
+        callID: `${id}-call`,
         state: {
-            status: "completed" as const,
+            status: "completed",
             input: { description: "demo" },
             output,
+            title: tool,
+            metadata: {},
+            time: { start: 1, end: 2 },
         },
-    }
+    })
+    return message
 }
 
-function buildMessages(sessionID: string): WithParts[] {
-    return [
-        {
-            info: {
-                id: "msg-user-1",
-                role: "user",
-                sessionID,
-                agent: "assistant",
-                model: {
-                    providerID: "anthropic",
-                    modelID: "claude-test",
-                },
-                time: { created: 1 },
-            } as WithParts["info"],
-            parts: [textPart("msg-user-1", sessionID, "part-1", "Investigate the issue")],
-        },
-        {
-            info: {
-                id: "msg-assistant-1",
-                role: "assistant",
-                sessionID,
-                agent: "assistant",
-                time: { created: 2 },
-            } as WithParts["info"],
-            parts: [textPart("msg-assistant-1", sessionID, "part-2", "I mapped the code path")],
-        },
-        {
-            info: {
-                id: "msg-assistant-2",
-                role: "assistant",
-                sessionID,
-                agent: "assistant",
-                time: { created: 3 },
-            } as WithParts["info"],
-            parts: [
-                textPart("msg-assistant-2", sessionID, "part-3", "I also ran a task tool"),
-                toolPart("msg-assistant-2", sessionID, "call-task-1", "task", "task output body"),
-            ],
-        },
-    ]
+function entry(messageId: string, summary = "Captured the code-path findings.") {
+    return { messageId, topic: "Code path note", summary }
 }
 
-test("compress message tool appends non-editable format extension", () => {
-    const tool = createCompressMessageTool({
-        client: {},
-        state: createSessionState(),
-        logger: new Logger(false),
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
+test("compress message tool appends non-editable format extension", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    const tool = createCompressMessageTool(h.ctx)
     assert.match(tool.description, /THE FORMAT OF COMPRESS/)
     assert.match(tool.description, /messageId: string/)
     assert.match(tool.description, /Raw message ID only: mNNNN/)
 })
 
-test("compress message mode batches individual message summaries", async () => {
-    const sessionID = `ses_message_compress_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
+test("compress message requires housekeeping entry before staging", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await assert.rejects(
+        stageBlock(h),
+        /enter_housekeeping|enter.*housekeeping|housekeeping.*mode/i,
+    )
+    assert.match(visibleText(await h.render()), /Investigate the parser boundary\./)
+    await assert.rejects(h.versions(), /block.*1.*not found/i)
+    await h.enter()
+    assert.match(await stageBlock(h), /stag/i)
+    await h.leave()
+    assert.match(visibleText(await h.render()), /Parser findings\./)
+    h.assertSessionReads()
+})
 
-    const result = await tool.execute(
-        {
+test("compress message stages individual summaries and protected tool output until leave", async (t) => {
+    const sessionID = "ses_message_batch"
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: [
+            ordinaryMessage(sessionID, "request", "user", "Investigate the issue"),
+            ordinaryMessage(sessionID, "finding", "assistant", "I mapped the code path"),
+            toolMessage(sessionID, "task-finding", "task", "task output body"),
+        ],
+        configure(config) {
+            config.compress.protectedTools = ["task"]
+        },
+    })
+    const guidance = await h.enter()
+    assert.match(guidance, /m0002/)
+    assert.match(
+        await h.run("compress", {
             topic: "Batch stale notes",
             content: [
-                {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
+                entry("m0002"),
                 {
                     messageId: "m0003",
                     topic: "Task output note",
-                    summary: "Captured the assistant's task-backed follow-up.",
+                    summary: "Task-backed follow-up.",
                 },
             ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message",
-        },
+        }),
+        /stag/i,
     )
-
-    assert.equal(result, "Compressed 2 messages into [Compressed conversation section].")
-    assert.equal(state.prune.messages.blocksById.size, 2)
-
-    const blocks = Array.from(state.prune.messages.blocksById.values()).sort(
-        (a, b) => a.blockId - b.blockId,
-    )
-
-    assert.equal(blocks[0]?.startId, "m0002")
-    assert.equal(blocks[0]?.endId, "m0002")
-    assert.equal(blocks[0]?.topic, "Code path note")
-    assert.equal(blocks[1]?.startId, "m0003")
-    assert.equal(blocks[1]?.endId, "m0003")
+    assert.match(await h.versions(1, 1), /Code path note[\s\S]*Captured the code-path findings\./)
+    const protectedSummary = await h.versions(2, 1)
+    assert.match(protectedSummary, /Task output note/)
     assert.match(
-        blocks[1]?.summary || "",
+        protectedSummary,
         /The following protected tools were used in this conversation as well:/,
     )
-    assert.match(blocks[1]?.summary || "", /Tool: task/)
-    assert.match(blocks[1]?.summary || "", /task output body/)
-})
-
-test("compress message mode appends protected prompt info", async () => {
-    const sessionID = `ses_message_protect_tag_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const user = rawMessages.find((message) => message.info.id === "msg-user-1")
-    const part = user?.parts[0]
-    if (part?.type === "text") {
-        part.text = "Investigate the issue. <protect>Always preserve release checklist.</protect>"
-    }
-
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const config = buildConfig()
-    config.compress.protectTags = true
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
-            topic: "Protected note",
-            content: [
-                {
-                    messageId: "m0001",
-                    topic: "User request note",
-                    summary: "Captured the user's investigation request.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-protect-tag",
-        },
-    )
-
-    const block = Array.from(state.prune.messages.blocksById.values())[0]
+    assert.match(protectedSummary, /Tool: task/)
+    assert.match(protectedSummary, /task output body/)
+    const staged = await h.render()
     assert.match(
-        block?.summary || "",
-        /The following protected prompt information was included in this conversation verbatim:/,
+        visibleText(staged.filter((message) => message.info.id === "finding")),
+        /I mapped the code path/,
     )
-    assert.match(block?.summary || "", /Always preserve release checklist\./)
-})
-
-test("compress message mode ignores protect tags on ignored user messages", async () => {
-    const sessionID = `ses_message_ignored_protect_tag_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const user = rawMessages.find((message) => message.info.id === "msg-user-1")
-    const part = user?.parts[0] as any
-    if (part?.type === "text") {
-        part.text = "Ignored notification. <protect>Do not preserve ignored note.</protect>"
-        part.ignored = true
-    }
-
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const config = buildConfig()
-    config.compress.protectTags = true
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
-            topic: "Ignored protected note",
-            content: [
-                {
-                    messageId: "m0001",
-                    topic: "Ignored note",
-                    summary: "Captured the ignored user message.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-ignored-protect-tag",
-        },
+    assert.match(
+        visibleText(staged.filter((message) => message.info.id === "task-finding")),
+        /I also ran a task tool/,
     )
-
-    const block = Array.from(state.prune.messages.blocksById.values())[0]
     assert.doesNotMatch(
-        block?.summary || "",
+        visibleText(
+            staged.filter((message) => !message.parts.some((part) => part.type === "tool")),
+        ),
+        /Captured the code-path findings\.|Task-backed follow-up\./,
+    )
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Captured the code-path findings\./)
+    assert.match(context, /Task-backed follow-up\./)
+    assert.match(context, /task output body/)
+    assert.doesNotMatch(context, /I mapped the code path|I also ran a task tool/)
+    assert.match(context, /Investigate the issue/)
+    h.assertSessionReads()
+})
+
+test("compress message appends protected prompt information to the staged summary", async (t) => {
+    const sessionID = "ses_message_protect_tag"
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: [
+            ordinaryMessage(
+                sessionID,
+                "request",
+                "user",
+                "Investigate the issue. <protect>Always preserve release checklist.</protect>",
+            ),
+        ],
+        configure(config) {
+            config.compress.protectTags = true
+        },
+    })
+    await h.enter()
+    await stageBlock(h, "Captured the investigation request.")
+    const summary = await h.versions(1, 1)
+    assert.match(
+        summary,
         /The following protected prompt information was included in this conversation verbatim:/,
     )
-    assert.doesNotMatch(block?.summary || "", /Do not preserve ignored note\./)
+    assert.match(summary, /Always preserve release checklist\./)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Captured the investigation request\./)
+    assert.match(context, /Always preserve release checklist\./)
+    assert.doesNotMatch(context, /Investigate the issue\./)
+    h.assertSessionReads()
 })
 
-test("compress message mode stores call id for later duration attachment", async () => {
-    const sessionID = `ses_message_compress_duration_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
-            topic: "Batch stale notes",
-            content: [
-                {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message",
-            callID: "call-1",
-        },
+test("compress message ignores protected tags on ignored user notifications", async (t) => {
+    const sessionID = "ses_message_ignored_tag"
+    const ignored = ordinaryMessage(
+        sessionID,
+        "ignored",
+        "user",
+        "Ignored notification. <protect>Do not preserve ignored note.</protect>",
     )
-
-    const block = Array.from(state.prune.messages.blocksById.values())[0]
-    assert.equal(block?.compressCallId, "call-1")
-    assert.equal(block?.durationMs, 0)
+    Object.assign(ignored.parts[0], { ignored: true })
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: [
+            ordinaryMessage(sessionID, "request", "user", "Investigate the issue"),
+            ignored,
+            ordinaryMessage(sessionID, "finding", "assistant", "I mapped the code path"),
+        ],
+        configure(config) {
+            config.compress.protectTags = true
+        },
+    })
+    await h.enter()
+    await h.run("compress", { topic: "Ignored notification", content: [entry("m0002")] })
+    const summary = await h.versions(1, 1)
+    assert.match(summary, /Captured the code-path findings\./)
+    assert.doesNotMatch(summary, /protected prompt information|Do not preserve ignored note\./)
+    const recalled = await h.run("recall_compressed", { action: "get", messageId: "m0002" })
+    assert.match(recalled, /I mapped the code path/)
+    assert.doesNotMatch(recalled, /Ignored notification/)
+    await h.leave()
+    assert.doesNotMatch(await h.versions(1, 1), /Do not preserve ignored note\./)
+    h.assertSessionReads()
 })
 
-test("compress message mode does not partially apply when preparation fails", async () => {
-    const sessionID = `ses_message_compress_prepare_fail_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const config = buildConfig()
-    config.experimental.allowSubAgents = true
+test("compress message retries the same host call without creating another staged block", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    const args = { topic: "Retry code path", content: [entry("m0002")] }
+    const identity = { messageID: "compression-retry", callID: "compression-call" }
+    const receipt = await h.run("compress", args, identity)
+    assert.match(receipt, /stag/i)
+    assert.equal(await h.run("compress", args, identity), receipt)
+    assert.match(await h.versions(1, 1), /Captured the code-path findings\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.equal(context.match(/Captured the code-path findings\./g)?.length, 1)
+    assert.doesNotMatch(context, /The parser accepts an empty record\./)
+    h.assertSessionReads()
+})
 
-    state.subAgentResultCache.get = (() => {
-        throw new Error("cache failure")
-    }) as typeof state.subAgentResultCache.get
-
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
+test("compress message does not partially stage when host preparation fails", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    await stageBlock(h, "Earlier successful staged summary.")
+    h.client.session.messages.mock.mockImplementationOnce(async () => {
+        throw new Error("session messages unavailable")
+    })
     await assert.rejects(
-        tool.execute(
-            {
-                topic: "Batch stale notes",
-                content: [
-                    {
-                        messageId: "m0002",
-                        topic: "Code path note",
-                        summary: "Captured the assistant's code-path findings.",
-                    },
-                    {
-                        messageId: "m0003",
-                        topic: "Task output note",
-                        summary: "Captured the assistant's task-backed follow-up.",
-                    },
-                ],
-            },
-            {
-                ask: async () => {},
-                metadata: () => {},
-                sessionID,
-                messageID: "msg-compress-message-prepare-fail",
-            },
-        ),
-        /cache failure/,
+        h.run("compress", {
+            topic: "Unavailable transcript",
+            content: [entry("m0002", "Failed first item."), entry("m0004", "Failed second item.")],
+        }),
+        /session messages unavailable/,
     )
-
-    assert.equal(state.prune.messages.blocksById.size, 0)
+    assert.match(await h.versions(1, 1), /Earlier successful staged summary\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Earlier successful staged summary\./)
+    assert.match(context, /The parser accepts an empty record\./)
+    assert.match(context, /Use the documented parser API\./)
+    assert.doesNotMatch(context, /Failed first item\.|Failed second item\./)
+    h.assertSessionReads()
 })
 
-test("compress message mode rejects compressed block ids", async () => {
-    const sessionID = `ses_message_compress_reject_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
+test("compress message rejects compressed block IDs without losing a draft block", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    await stageBlock(h)
     await assert.rejects(
-        tool.execute(
-            {
-                topic: "Reject block ids",
-                content: [
-                    {
-                        messageId: "b1",
-                        topic: "Invalid target",
-                        summary: "Should not be accepted.",
-                    },
-                ],
-            },
-            {
-                ask: async () => {},
-                metadata: () => {},
-                sessionID,
-                messageID: "msg-compress-message-reject",
-            },
-        ),
+        h.run("compress", {
+            topic: "Reject block IDs",
+            content: [entry("b1", "Rejected block target.")],
+        }),
         /Unable to compress any messages\. Found 1 issue:/,
     )
+    assert.match(await h.versions(1, 1), /Parser findings\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    assert.doesNotMatch(visibleText(await h.render()), /Rejected block target\./)
+    h.assertSessionReads()
 })
 
-test("compress message mode skips protected user message references", async () => {
-    const sessionID = `ses_message_compress_protected_user_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const config = buildConfig()
-    config.compress.protectUserMessages = true
-
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
+test("compress message skips protected user references while staging valid assistant entries", async (t) => {
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        configure(config) {
+            config.compress.protectUserMessages = true
         },
-        state,
-        logger,
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    const result = await tool.execute(
-        {
-            topic: "Protected user entries",
-            content: [
-                {
-                    messageId: "BLOCKED",
-                    topic: "Protected marker",
-                    summary: "Should be skipped.",
-                },
-                {
-                    messageId: "m0001",
-                    topic: "Hidden protected ref",
-                    summary: "Should also be skipped.",
-                },
-                {
-                    messageId: "m0002",
-                    topic: "Valid note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-protected-user",
-        },
-    )
-
-    assert.equal(state.prune.messages.blocksById.size, 1)
-    assert.match(result, /^Compressed 1 message into \[Compressed conversation section\]\./)
-    assert.match(result, /Skipped 2 issues:/)
-    assert.match(result, /tagged with `BLOCKED` are protected/)
-    assert.match(result, /messageId m0001 refers to a protected message/)
-})
-
-test("compress message mode allows messages containing compress tool parts", async () => {
-    const sessionID = `ses_message_compress_tool_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    rawMessages.push({
-        info: {
-            id: "msg-assistant-compress",
-            role: "assistant",
-            sessionID,
-            agent: "assistant",
-            time: { created: 4 },
-        } as WithParts["info"],
-        parts: [
-            {
-                id: "compress-part",
-                messageID: "msg-assistant-compress",
-                sessionID,
-                type: "tool" as const,
-                tool: "compress",
-                callID: "call-compress-1",
-                state: {
-                    status: "completed" as const,
-                    input: { topic: "Earlier compression" },
-                    output: "done",
-                },
-            },
+    })
+    await h.enter()
+    const receipt = await h.run("compress", {
+        topic: "Protected user entries",
+        content: [
+            entry("BLOCKED", "Rejected protected marker."),
+            entry("m0001", "Rejected hidden user reference."),
+            entry("m0002"),
         ],
     })
-
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    const result = await tool.execute(
-        {
-            topic: "Compress compress call",
-            content: [
-                {
-                    messageId: "m0004",
-                    topic: "Compress tool message",
-                    summary: "Captured the earlier compress tool call.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-allow-compress-tool",
-        },
+    assert.match(receipt, /stag/i)
+    assert.match(receipt, /Skipped 2 issues:/)
+    assert.match(receipt, /tagged with `BLOCKED` are protected/)
+    assert.match(receipt, /messageId m0001 refers to a protected message/)
+    assert.match(await h.versions(1, 1), /Captured the code-path findings\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Investigate the parser boundary\./)
+    assert.match(context, /Captured the code-path findings\./)
+    assert.doesNotMatch(
+        context,
+        /The parser accepts an empty record\.|Rejected protected marker\.|Rejected hidden user reference\./,
     )
-
-    assert.equal(result, "Compressed 1 message into [Compressed conversation section].")
-    assert.equal(state.prune.messages.blocksById.size, 1)
-    const block = Array.from(state.prune.messages.blocksById.values())[0]
-    assert.equal(block?.startId, "m0004")
+    h.assertSessionReads()
 })
 
-test("compress message mode sends one aggregated notification for batched messages", async () => {
-    const sessionID = `ses_message_compress_notify_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const config = buildConfig()
-    config.pruneNotification = "detailed"
-    config.pruneNotificationType = "toast"
-
-    const toastCalls: string[] = []
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-            tui: {
-                showToast: async ({ body }: { body: { message: string } }) => {
-                    toastCalls.push(body.message)
-                },
-            },
-        },
-        state,
-        logger,
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
-            topic: "Batch stale notes",
-            content: [
-                {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
-                {
-                    messageId: "m0003",
-                    topic: "Task output note",
-                    summary: "Captured the assistant's task-backed follow-up.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-notify",
-        },
-    )
-
-    assert.equal(toastCalls.length, 1)
-    assert.match(toastCalls[0] || "", /▣ DCP \| -[^,\n]+ removed, \+[^\s\n]+ summary/)
-    assert.match(toastCalls[0] || "", /Compression #1/)
-    assert.match(toastCalls[0] || "", /▣ Compression #1 -[^,\n]+ removed, \+[^\s\n]+ summary/)
-    assert.match(toastCalls[0] || "", /Topic: Batch stale notes/)
-    assert.match(toastCalls[0] || "", /Items: 2 messages/)
-})
-
-test("compress message mode skips messages that are already actively compressed", async () => {
-    const sessionID = `ses_message_compress_reuse_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
-            topic: "First pass",
-            content: [
-                {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-first-pass",
-        },
-    )
-
-    const result = await tool.execute(
-        {
-            topic: "Second pass",
-            content: [
-                {
-                    messageId: "m0002",
-                    topic: "Already compressed note",
-                    summary: "Should be skipped because it is already compressed.",
-                },
-                {
-                    messageId: "m0003",
-                    topic: "Task output note",
-                    summary: "Captured the assistant's task-backed follow-up.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-second-pass",
-        },
-    )
-
-    assert.equal(state.prune.messages.blocksById.size, 2)
-    assert.match(result, /^Compressed 1 message into \[Compressed conversation section\]\./)
-    assert.match(result, /Skipped 1 issue:/)
-    assert.match(result, /messageId m0002 is already part of an active compression\./)
-})
-
-test("compress message mode skips invalid batch entries and reports issues", async () => {
-    const sessionID = `ses_message_compress_partial_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    const result = await tool.execute(
-        {
-            topic: "Mixed entries",
-            content: [
-                {
-                    messageId: "b1",
-                    topic: "Invalid block id",
-                    summary: "Should be skipped.",
-                },
-                {
-                    messageId: "m0002",
-                    topic: "Valid note",
-                    summary: "Captured the assistant's code-path findings.",
-                },
-                {
-                    messageId: "m9999",
-                    topic: "Missing message",
-                    summary: "Should also be skipped.",
-                },
-                {
-                    messageId: "m0002",
-                    topic: "Duplicate valid note",
-                    summary: "Duplicate entry should be skipped.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-partial",
-        },
-    )
-
-    assert.equal(state.prune.messages.blocksById.size, 1)
-    assert.match(result, /^Compressed 1 message into \[Compressed conversation section\]\./)
-    assert.match(result, /Skipped 3 issues:/)
-    assert.match(result, /Block IDs like bN are not allowed/)
-    assert.match(result, /messageId m9999 is not available in the current conversation context/)
-    assert.match(result, /messageId m0002 was selected more than once in this batch\./)
-})
-
-test("compress message mode reports issues when every batch entry is skipped", async () => {
-    const sessionID = `ses_message_compress_all_invalid_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const tool = createCompressMessageTool({
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger,
-        config: buildConfig(),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressMessage: "", compressRange: "" }
-            },
-        },
-    } as any)
-
-    await assert.rejects(
-        tool.execute(
-            {
-                topic: "All invalid",
-                content: [
-                    {
-                        messageId: "b1",
-                        topic: "Invalid block id",
-                        summary: "Should be skipped.",
-                    },
-                    {
-                        messageId: "m9999",
-                        topic: "Missing message",
-                        summary: "Should also be skipped.",
-                    },
-                ],
-            },
-            {
-                ask: async () => {},
-                metadata: () => {},
+test("compress message supports historical compress tool parts outside housekeeping boundaries", async (t) => {
+    const sessionID = "ses_message_legacy_compress"
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: [
+            ordinaryMessage(sessionID, "request", "user", "Investigate the issue"),
+            toolMessage(
                 sessionID,
-                messageID: "msg-compress-message-all-invalid",
-            },
-        ),
+                "legacy-compression",
+                "compress",
+                "Historical compression result.",
+            ),
+        ],
+    })
+    await h.enter()
+    assert.match(
+        await h.run("compress", {
+            topic: "Historical tool message",
+            content: [entry("m0002", "Captured the historical compression call.")],
+        }),
+        /stag/i,
+    )
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Captured the historical compression call\./)
+    assert.doesNotMatch(context, /Historical compression result\./)
+    h.assertSessionReads()
+})
+
+test("compress message sends one aggregated notification only after leave", async (t) => {
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        configure(config) {
+            config.pruneNotification = "detailed"
+            config.pruneNotificationType = "toast"
+        },
+    })
+    const showToast = t.mock.fn(async (_input: { body: { message: string } }) => {})
+    Object.assign(h.client, { tui: { showToast } })
+    await h.enter()
+    await h.run("compress", {
+        topic: "Batch stale notes",
+        content: [entry("m0002"), entry("m0004", "Captured the documented API.")],
+    })
+    assert.equal(showToast.mock.callCount(), 0)
+    await h.leave()
+    assert.equal(showToast.mock.callCount(), 1)
+    const notification = showToast.mock.calls[0].arguments[0].body.message
+    assert.match(notification, /▣ DCP \| -[^,\n]+ removed, \+[^\s\n]+ summary/)
+    assert.match(notification, /Compression #1/)
+    assert.match(notification, /Topic: Batch stale notes/)
+    assert.match(notification, /Items: 2 messages/)
+    assert.match(await h.versions(2, 1), /Captured the documented API\./)
+    h.assertSessionReads()
+})
+
+test("compress message skips messages already covered by earlier staged compression", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    await h.run("compress", { topic: "First pass", content: [entry("m0002")] })
+    const receipt = await h.run("compress", {
+        topic: "Second pass",
+        content: [
+            entry("m0002", "Rejected repeated summary."),
+            entry("m0004", "Captured the documented API."),
+        ],
+    })
+    assert.match(receipt, /stag/i)
+    assert.match(receipt, /Skipped 1 issue:/)
+    assert.match(receipt, /messageId m0002 is already part of an active compression\./)
+    assert.match(await h.versions(1, 1), /Captured the code-path findings\./)
+    assert.match(await h.versions(2, 1), /Captured the documented API\./)
+    await assert.rejects(h.versions(3), /block.*3.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Captured the code-path findings\./)
+    assert.match(context, /Captured the documented API\./)
+    assert.doesNotMatch(
+        context,
+        /Rejected repeated summary\.|The parser accepts an empty record\.|Use the documented parser API\./,
+    )
+    h.assertSessionReads()
+})
+
+test("compress message skips invalid batch entries and reports each issue", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    const receipt = await h.run("compress", {
+        topic: "Mixed entries",
+        content: [
+            entry("b1", "Rejected block ID."),
+            entry("m0002"),
+            entry("m9999", "Rejected missing reference."),
+            entry("m0002", "Rejected duplicate."),
+        ],
+    })
+    assert.match(receipt, /stag/i)
+    assert.match(receipt, /Skipped 3 issues:/)
+    assert.match(receipt, /Block IDs like bN are not allowed/)
+    assert.match(receipt, /messageId m9999 is not available in the current conversation context/)
+    assert.match(receipt, /messageId m0002 was selected more than once in this batch\./)
+    assert.match(await h.versions(1, 1), /Captured the code-path findings\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Captured the code-path findings\./)
+    assert.match(context, /Use the documented parser API\./)
+    assert.doesNotMatch(
+        context,
+        /Rejected block ID\.|Rejected missing reference\.|Rejected duplicate\./,
+    )
+    h.assertSessionReads()
+})
+
+test("compress message reports all-invalid batches and can subsequently stage successfully", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    await assert.rejects(
+        h.run("compress", {
+            topic: "All invalid",
+            content: [entry("b1"), entry("m9999")],
+        }),
         /Unable to compress any messages\. Found 2 issues:/,
     )
+    await assert.rejects(h.versions(), /block.*1.*not found/i)
+    await stageBlock(h, "Valid retry summary.")
+    await h.leave()
+    assert.match(visibleText(await h.render()), /Valid retry summary\./)
+    h.assertSessionReads()
+})
 
-    assert.equal(state.prune.messages.blocksById.size, 0)
+test("compress message minimum-token checks skip only undersized entries", async (t) => {
+    const sessionID = "ses_message_min_tokens"
+    const h = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: [
+            ordinaryMessage(sessionID, "request", "user", "Investigate the parser."),
+            ordinaryMessage(
+                sessionID,
+                "long-finding",
+                "assistant",
+                "The parser accepts one record per line. ".repeat(100),
+            ),
+            ordinaryMessage(sessionID, "short-finding", "assistant", "Short finding."),
+        ],
+        configure(config) {
+            config.compress.minCompressTokens = 100
+        },
+    })
+    await h.enter()
+    const receipt = await h.run("compress", {
+        topic: "Minimum tokens",
+        content: [entry("m0002", "One record per line."), entry("m0003", "Rejected short item.")],
+    })
+    assert.match(receipt, /stag/i)
+    assert.match(receipt, /Skipped 1 issue:/)
+    assert.match(receipt, /m0003.*too small/i)
+    assert.match(await h.versions(1, 1), /One record per line\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /One record per line\./)
+    assert.match(context, /Short finding\./)
+    assert.doesNotMatch(context, /Rejected short item\.|The parser accepts one record per line\./)
+    h.assertSessionReads()
+})
+
+test("compress message preserves the draft when host permission is denied", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message", permission: "ask" })
+    await h.enter()
+    await stageBlock(h, "Earlier allowed summary.")
+    const callsBefore = h.ask.mock.callCount()
+    h.ask.mock.mockImplementationOnce(async () => {
+        throw new Error("Host denied compression")
+    })
+    await assert.rejects(
+        h.run("compress", {
+            topic: "Denied request",
+            content: [entry("m0002", "Denied summary.")],
+        }),
+        /Host denied compression/,
+    )
+    assert.deepEqual(h.ask.mock.calls[callsBefore].arguments[0], {
+        permission: "compress",
+        patterns: ["*"],
+        always: ["*"],
+        metadata: {},
+    })
+    assert.match(await h.versions(1, 1), /Earlier allowed summary\./)
+    await assert.rejects(h.versions(2), /block.*2.*not found/i)
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Earlier allowed summary\./)
+    assert.match(context, /The parser accepts an empty record\./)
+    assert.doesNotMatch(context, /Denied summary\./)
+    h.assertSessionReads()
+})
+
+test("message compression cannot assign aliases to housekeeping working messages", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    h.addText("working-note", "PRIVATE_MESSAGE_WORKING_NOTE")
+    await h.render()
+    await assert.rejects(
+        h.run("compress", { topic: "Ineligible working note", content: [entry("m0005")] }),
+        /not available|not found/i,
+    )
+    await h.leave()
+    h.addText("source-5", "Ordinary message after maintenance.", "user")
+    await h.render()
+    await h.enter()
+    const recalled = await h.run("recall_compressed", { action: "get", messageId: "m0005" })
+    assert.match(recalled, /Ordinary message after maintenance\./)
+    assert.doesNotMatch(recalled, /PRIVATE_MESSAGE_WORKING_NOTE/)
+    assert.match(
+        await h.run("compress", {
+            topic: "Ordinary follow-up",
+            content: [entry("m0005", "Post-maintenance findings.")],
+        }),
+        /stag/i,
+    )
+    await h.leave()
+    const context = visibleText(await h.render())
+    assert.match(context, /Post-maintenance findings\./)
+    assert.doesNotMatch(
+        context,
+        /PRIVATE_MESSAGE_WORKING_NOTE|Ordinary message after maintenance\./,
+    )
+    h.assertSessionReads()
 })

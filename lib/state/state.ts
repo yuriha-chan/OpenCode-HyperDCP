@@ -1,7 +1,7 @@
 import type { SessionState, ToolParameterEntry, WithParts } from "./types"
 import type { Logger } from "../logger"
 import { applyPendingCompressionDurations } from "../compress/timing"
-import { loadSessionState, saveSessionState } from "./persistence"
+import { loadSessionState, saveSessionState, restoreHousekeepingTransaction } from "./persistence"
 import {
     isSubAgentSession,
     findLastCompactionTimestamp,
@@ -22,11 +22,8 @@ export const checkSession = async (
     manualModeDefault: boolean,
 ): Promise<void> => {
     const lastUserMessage = getLastUserMessage(messages)
-    if (!lastUserMessage) {
-        return
-    }
-
-    const lastSessionId = lastUserMessage.info.sessionID
+    const lastSessionId = lastUserMessage?.info.sessionID ?? messages.at(-1)?.info.sessionID
+    if (!lastSessionId) return
 
     if (state.sessionId === null || state.sessionId !== lastSessionId) {
         logger.info(`Session changed: ${state.sessionId} -> ${lastSessionId}`)
@@ -106,6 +103,10 @@ export function createSessionState(): SessionState {
             directory: null,
         },
         autotoggle: false,
+        housekeeping: null,
+        housekeepingHistory: [],
+        revision: 0,
+        contentRevision: 0,
     }
 }
 
@@ -144,6 +145,10 @@ export function resetSessionState(state: SessionState): void {
     state.protectedRefs = new Set<string>()
     state.memo = null
     state.autotoggle = false
+    state.housekeeping = null
+    state.housekeepingHistory = []
+    state.revision = 0
+    state.contentRevision = 0
 }
 
 export async function ensureSessionInitialized(
@@ -195,6 +200,12 @@ export async function ensureSessionInitialized(
     state.protectedRefs = new Set(persisted.protectedRefs || [])
     state.memo = persisted.memo ?? null
     state.autotoggle = persisted.autotoggle === true
+    state.revision = persisted.revision ?? 0
+    state.contentRevision = persisted.contentRevision ?? 0
+    state.housekeeping = restoreHousekeepingTransaction(persisted.housekeeping)
+    state.housekeepingHistory = (persisted.housekeepingHistory ?? [])
+        .map(restoreHousekeepingTransaction)
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
     if (persisted.messageIds) {
         state.messageIds.byRawId = new Map(Object.entries(persisted.messageIds.byRawId))

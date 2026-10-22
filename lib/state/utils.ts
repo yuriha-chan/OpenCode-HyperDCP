@@ -284,9 +284,7 @@ export function loadPruneMessagesState(
         }
     }
 
-    if (
-        typeof persisted.lastSeenUserMessageId === "string"
-    ) {
+    if (typeof persisted.lastSeenUserMessageId === "string") {
         state.lastSeenUserMessageId = persisted.lastSeenUserMessageId
     }
 

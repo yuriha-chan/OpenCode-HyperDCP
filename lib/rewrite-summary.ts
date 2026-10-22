@@ -1,7 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import { REWRITE_SUMMARY, REWRITE_FORMAT_EXTENSION } from "./prompts/rewrite-summary"
-import { saveSessionState } from "./state/persistence"
+import { runHousekeepingMutation } from "./housekeeping/state"
+import { materializePendingSummary } from "./expand-block"
 
 interface RewriteSummaryArgs {
     blockId: number
@@ -25,31 +26,39 @@ export function createRewriteSummaryTool(ctx: ToolContext): ReturnType<typeof to
         description: (runtimePrompts as any).rewriteSummary + REWRITE_FORMAT_EXTENSION,
         args: buildSchema(),
         async execute(args, toolCtx) {
-            const input = args as RewriteSummaryArgs
+            return runHousekeepingMutation(
+                ctx,
+                toolCtx,
+                "rewrite_summary",
+                args,
+                async (operationCtx) => {
+                    const input = args as RewriteSummaryArgs
 
-            const block = ctx.state.prune.messages.blocksById.get(input.blockId)
-            if (!block) {
-                throw new Error(
-                    `Block ${input.blockId} not found. Use /dcp view to see available blocks.`,
-                )
-            }
+                    const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
+                    if (!block) {
+                        throw new Error(
+                            `Block ${input.blockId} not found. Use /dcp view to see available blocks.`,
+                        )
+                    }
 
-            const trimmed = input.summary.trim()
-            if (!trimmed) {
-                throw new Error("Summary must not be empty.")
-            }
+                    const trimmed = input.summary.trim()
+                    if (!trimmed) {
+                        throw new Error("Summary must not be empty.")
+                    }
 
-            if (!Array.isArray(block.summaryVersions)) {
-                block.summaryVersions = []
-            }
+                    materializePendingSummary(block)
 
-            block.summaryVersions.push(trimmed)
-            block.activeVersionIndex = block.summaryVersions.length + 1
+                    if (!Array.isArray(block.summaryVersions)) {
+                        block.summaryVersions = []
+                    }
 
-            await saveSessionState(ctx.state, ctx.logger)
+                    block.summaryVersions.push(trimmed)
+                    block.activeVersionIndex = block.summaryVersions.length + 1
 
-            const versionLabel = block.activeVersionIndex
-            return `Rewrote summary for block ${input.blockId} (v${versionLabel} now active). Previous versions can be toggled with /dcp toggle ${input.blockId}.`
+                    const versionLabel = block.activeVersionIndex
+                    return `Rewrote summary for block ${input.blockId} (v${versionLabel} now active). Previous versions can be toggled with /dcp toggle ${input.blockId}.`
+                },
+            )
         },
     })
 }

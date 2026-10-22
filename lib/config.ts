@@ -80,6 +80,7 @@ export interface PluginConfig {
         deduplication: Deduplication
         purgeErrors: PurgeErrors
     }
+    housekeeping: { allowedTools: string[] }
 }
 
 type CompressOverride = Partial<CompressConfig>
@@ -146,6 +147,8 @@ export const VALID_CONFIG_KEYS = new Set([
     "strategies.purgeErrors.enabled",
     "strategies.purgeErrors.turns",
     "strategies.purgeErrors.protectedTools",
+    "housekeeping",
+    "housekeeping.allowedTools",
 ])
 
 function getConfigKeyPaths(obj: Record<string, any>, prefix = ""): string[] {
@@ -184,6 +187,29 @@ interface ValidationError {
 
 export function validateConfigTypes(config: Record<string, any>): ValidationError[] {
     const errors: ValidationError[] = []
+
+    if (config.housekeeping !== undefined) {
+        const housekeeping = config.housekeeping
+        if (
+            typeof housekeeping !== "object" ||
+            housekeeping === null ||
+            Array.isArray(housekeeping)
+        ) {
+            errors.push({ key: "housekeeping", expected: "object", actual: typeof housekeeping })
+        } else if (
+            housekeeping.allowedTools !== undefined &&
+            (!Array.isArray(housekeeping.allowedTools) ||
+                !housekeeping.allowedTools.every(
+                    (entry: unknown) => typeof entry === "string" && entry.length > 0,
+                ))
+        ) {
+            errors.push({
+                key: "housekeeping.allowedTools",
+                expected: "string[]",
+                actual: "invalid entries",
+            })
+        }
+    }
 
     const validateProtectedTools = (
         key: string,
@@ -825,6 +851,7 @@ const defaultConfig: PluginConfig = {
             protectedTools: {},
         },
     },
+    housekeeping: { allowedTools: [] },
 }
 
 const GLOBAL_CONFIG_DIR = process.env.XDG_CONFIG_HOME
@@ -1054,6 +1081,7 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
                 ),
             },
         },
+        housekeeping: { allowedTools: [...config.housekeeping.allowedTools] },
     }
 }
 
@@ -1076,6 +1104,9 @@ function mergeLayer(config: PluginConfig, data: Record<string, any>): PluginConf
         ],
         compress: mergeCompress(config.compress, data.compress as CompressOverride),
         strategies: mergeStrategies(config.strategies, data.strategies as any),
+        housekeeping: {
+            allowedTools: data.housekeeping?.allowedTools ?? config.housekeeping.allowedTools,
+        },
     }
 }
 

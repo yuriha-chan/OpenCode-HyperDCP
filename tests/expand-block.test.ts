@@ -1,225 +1,267 @@
+import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test from "node:test"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
-import { mkdirSync } from "node:fs"
-import { createCompressRangeTool } from "../lib/compress/range"
-import { createExpandBlockTool } from "../lib/expand-block"
-import { createSessionState, type CompressionBlock, type WithParts } from "../lib/state"
-import type { PluginConfig } from "../lib/config"
-import { Logger } from "../lib/logger"
-import { syncCompressionBlocks } from "../lib/messages/sync"
-import { prune } from "../lib/messages/prune"
+import {
+    commitBlock,
+    createHousekeepingHarness,
+    stageBlock,
+    visibleText,
+    type HousekeepingHarness,
+} from "./helpers/housekeeping"
 
-const testDataHome = join(tmpdir(), `opencode-dcp-expand-tests-${process.pid}`)
-const testConfigHome = join(tmpdir(), `opencode-dcp-expand-config-tests-${process.pid}`)
-
-process.env.XDG_DATA_HOME = testDataHome
-process.env.XDG_CONFIG_HOME = testConfigHome
-
-mkdirSync(testDataHome, { recursive: true })
-mkdirSync(testConfigHome, { recursive: true })
-
-function buildConfig(): PluginConfig {
-    return {
-        enabled: true,
-        debug: false,
-        pruneNotification: "off",
-        pruneNotificationType: "chat",
-        commands: {
-            enabled: true,
-            protectedTools: [],
-        },
-        manualMode: {
-            enabled: false,
-            automaticStrategies: true,
-        },
-        turnProtection: {
-            enabled: false,
-            turns: 4,
-        },
-        experimental: {
-            allowSubAgents: true,
-            customPrompts: false,
-        },
-        protectedFilePatterns: [],
-        compress: {
-            mode: "range",
-            permission: "allow",
-            showCompression: false,
-            maxContextLimit: 150000,
-            minContextLimit: 50000,
-            nudgeFrequency: 5,
-            iterationNudgeThreshold: 15,
-            nudgeForce: "soft",
-            protectedTools: [],
-            protectTags: false,
-            protectUserMessages: false,
-            minCompressTokens: 0,
-        },
-        strategies: {
-            deduplication: {
-                enabled: true,
-                protectedTools: [],
-            },
-            purgeErrors: {
-                enabled: true,
-                turns: 4,
-                protectedTools: [],
-            },
-        },
-    }
+async function contextText(h: HousekeepingHarness): Promise<string> {
+    return visibleText(
+        (await h.render()).map((message) => ({
+            ...message,
+            parts: message.parts.filter((part) => part.type === "text"),
+        })),
+    )
 }
 
-function textPart(messageID: string, sessionID: string, id: string, text: string) {
-    return {
-        id,
-        messageID,
-        sessionID,
-        type: "text" as const,
-        text,
-    }
-}
+test("expand_block requires housekeeping and leaves ordinary messages uncompressed", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h)
 
-function buildMessages(sessionID: string): WithParts[] {
-    const messages: WithParts[] = []
-    for (let index = 1; index <= 6; index++) {
-        const messageID = `msg-${index}`
-        messages.push({
-            info: {
-                id: messageID,
-                role: index % 2 === 1 ? "user" : "assistant",
-                sessionID,
-                agent: "assistant",
-                ...(index % 2 === 1
-                    ? { model: { providerID: "anthropic", modelID: "claude-test" } }
-                    : {}),
-                time: { created: index },
-            } as WithParts["info"],
-            parts: [textPart(messageID, sessionID, `part-${index}`, `message ${index}`)],
-        })
-    }
+    await assert.rejects(
+        h.run("expand_block", { blockId: 1, endId: "m0004" }),
+        /enter_housekeeping/i,
+    )
 
-    messages.push({
-        info: {
-            id: "msg-compress",
-            role: "assistant",
-            sessionID,
-            agent: "assistant",
-            time: { created: 7 },
-        } as WithParts["info"],
-        parts: [textPart("msg-compress", sessionID, "part-compress", "compressed earlier range")],
+    const rendered = await h.render()
+    for (const id of ["source-3", "source-4"]) {
+        assert.ok(rendered.some((message) => message.info.id === id))
+    }
+    assert.match(await contextText(h), /Parser findings\./)
+    h.assertSessionReads()
+})
+
+for (const endId of ["m0003", "m0004"]) {
+    test(`expand_block stages coverage through ${endId} and replaces added messages with the summary on leave`, async (t) => {
+        const h = await createHousekeepingHarness(t)
+        await commitBlock(h)
+        await h.enter()
+
+        await h.run("expand_block", { blockId: 1, endId })
+
+        const before = await h.render()
+        for (const id of ["source-3", "source-4"]) {
+            assert.ok(before.some((message) => message.info.id === id))
+        }
+        assert.match(
+            await h.run("recall_compressed", {
+                action: "search",
+                blockId: 1,
+                query: "Keep the newline constraint",
+            }),
+            /Keep the newline constraint/,
+        )
+        assert.match(await contextText(h), /Parser findings\./)
+        await h.leave()
+
+        const after = await h.render()
+        for (const id of ["source-1", "source-2", "source-3"]) {
+            assert.ok(!after.some((message) => message.info.id === id))
+        }
+        assert.equal(
+            after.some((message) => message.info.id === "source-4"),
+            endId === "m0003",
+        )
+        const text = await contextText(h)
+        assert.match(text, /Parser findings\./)
+        assert.doesNotMatch(text, /Keep the newline constraint\./)
+        assert.equal(text.includes("Use the documented parser API."), endId === "m0003")
+        assert.match(await h.versions(), /1 version\(s\) available/)
+        h.assertSessionReads()
     })
-
-    return messages
 }
 
-function buildToolContext(
-    state: ReturnType<typeof createSessionState>,
-    config: PluginConfig,
-    rawMessages: WithParts[],
-) {
-    return {
-        client: {
-            session: {
-                messages: async () => ({ data: rawMessages }),
-                get: async () => ({ data: { parentID: null } }),
-            },
-        },
-        state,
-        logger: new Logger(false),
-        config,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressRange: "", compressMessage: "" }
-            },
-        },
-    } as any
-}
+test("successive expansions accumulate and commit together with an appended summary", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h)
+    await h.enter()
+    await h.run("expand_block", { blockId: 1, endId: "m0003" })
+    await h.run("append_summary", { blockId: 1, text: " Preserve the newline constraint." })
+    await h.run("expand_block", { blockId: 1, endId: "m0004" })
+    await h.run("append_summary", { blockId: 1, text: " Use the documented API." })
 
-const toolRunContext = {
-    ask: async () => {},
-    metadata: () => {},
-}
-
-test("expand_block covers newly added messages and prune removes them", async () => {
-    const sessionID = `ses_expand_block_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const config = buildConfig()
-    const ctx = buildToolContext(state, config, rawMessages)
-
-    const compressTool = createCompressRangeTool(ctx)
-    await compressTool.execute(
-        {
-            topic: "Initial range",
-            content: [
-                {
-                    startId: "m0001",
-                    endId: "m0003",
-                    summary: "Captured messages one through three.",
-                },
-            ],
-        },
-        {
-            ...toolRunContext,
-            sessionID,
-            messageID: "msg-compress",
-        },
+    const draft = await h.versions()
+    assert.match(
+        draft,
+        /Parser findings\. Preserve the newline constraint\. Use the documented API\./,
     )
+    const before = await h.render()
+    assert.ok(before.some((message) => message.info.id === "source-3"))
+    assert.ok(before.some((message) => message.info.id === "source-4"))
+    assert.doesNotMatch(await contextText(h), /Preserve the newline constraint\./)
 
-    const block = Array.from(state.prune.messages.blocksById.values())[0] as CompressionBlock
-    assert.ok(block)
-    assert.equal(state.prune.messages.byMessageId.get("msg-4"), undefined)
+    await h.leave()
 
-    const expandTool = createExpandBlockTool(ctx)
-    await expandTool.execute(
-        {
-            blockId: block.blockId,
-            endId: "m0006",
-        },
-        {
-            ...toolRunContext,
-            sessionID,
-            messageID: "msg-expand",
-        },
-    )
-
-    assert.deepEqual(block.effectiveMessageIds, [
-        "msg-1",
-        "msg-2",
-        "msg-3",
-        "msg-4",
-        "msg-5",
-        "msg-6",
-    ])
-
-    syncCompressionBlocks(state, ctx.logger, rawMessages)
-
-    for (const messageId of ["msg-4", "msg-5", "msg-6"]) {
-        const entry = state.prune.messages.byMessageId.get(messageId)
-        assert.ok(entry, `expected a byMessageId entry for ${messageId}`)
-        assert.ok(
-            entry.activeBlockIds.includes(block.blockId),
-            `expected ${messageId} to be actively covered by block ${block.blockId}`,
-        )
+    const after = await h.render()
+    for (const id of ["source-1", "source-2", "source-3", "source-4"]) {
+        assert.ok(!after.some((message) => message.info.id === id))
     }
-
-    const output = rawMessages.map(
-        (message) =>
-            ({
-                info: message.info,
-                parts: message.parts.map((part) => ({ ...part })),
-            }) as WithParts,
+    assert.match(
+        await contextText(h),
+        /Parser findings\. Preserve the newline constraint\. Use the documented API\./,
     )
-    prune(state, ctx.logger, config, output)
+    assert.match(await h.versions(), /Active version: v2\b/)
+    assert.match(await h.versions(), /2 version\(s\) available/)
+    h.assertSessionReads()
+})
 
-    const remainingIds = output.map((message) => message.info.id)
-    for (const messageId of ["msg-1", "msg-2", "msg-3", "msg-4", "msg-5", "msg-6"]) {
-        assert.ok(
-            !remainingIds.includes(messageId),
-            `expected ${messageId} to be replaced by the block summary`,
-        )
+test("a block staged in the current transaction can be expanded before leave", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+
+    await h.run("expand_block", { blockId: 1, endId: "m0004" })
+
+    const before = await h.render()
+    for (const id of ["source-1", "source-2", "source-3", "source-4"]) {
+        assert.ok(before.some((message) => message.info.id === id))
     }
+    assert.doesNotMatch(await contextText(h), /Parser findings\./)
+    await h.leave()
+
+    const after = await h.render()
+    for (const id of ["source-1", "source-2", "source-3", "source-4"]) {
+        assert.ok(!after.some((message) => message.info.id === id))
+    }
+    assert.match(await contextText(h), /Parser findings\./)
+    h.assertSessionReads()
+})
+
+test("expand retries after restart return the recorded result without duplicating coverage", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h)
+    await h.enter()
+    const args = { blockId: 1, endId: "m0003" }
+    const first = await h.run("expand_block", args, { callID: "expand-retry" })
+    await h.restart()
+    assert.equal(await h.run("expand_block", args, { callID: "expand-retry" }), first)
+    await h.run("append_summary", { blockId: 1, text: " Retried expansion." })
+    await h.leave()
+    assert.match(await h.versions(1, 2), /Retried expansion\./)
+    h.assertSessionReads()
+})
+
+for (const { name, args, error } of [
+    { name: "unknown block", args: { blockId: 999, endId: "m0004" }, error: /block.*not found/i },
+    {
+        name: "unknown message reference",
+        args: { blockId: 1, endId: "m9999" },
+        error: /message|reference|boundary/i,
+    },
+    {
+        name: "malformed reference",
+        args: { blockId: 1, endId: "not-a-reference" },
+        error: /reference|boundary/i,
+    },
+    {
+        name: "block reference instead of a message",
+        args: { blockId: 1, endId: "b1" },
+        error: /reference|boundary/i,
+    },
+]) {
+    test(`expand_block rejects ${name} and preserves earlier draft coverage and summary edits`, async (t) => {
+        const h = await createHousekeepingHarness(t)
+        await commitBlock(h)
+        await h.enter()
+        await h.run("expand_block", { blockId: 1, endId: "m0003" })
+        await h.run("append_summary", { blockId: 1, text: " Keep staged details." })
+        const before = await h.versions()
+
+        await assert.rejects(h.run("expand_block", args), error)
+
+        assert.equal(await h.versions(), before)
+        const staged = await h.render()
+        assert.ok(staged.some((message) => message.info.id === "source-3"))
+        assert.ok(staged.some((message) => message.info.id === "source-4"))
+        await h.leave()
+
+        const after = await h.render()
+        assert.ok(!after.some((message) => message.info.id === "source-3"))
+        assert.ok(after.some((message) => message.info.id === "source-4"))
+        assert.match(await contextText(h), /Parser findings\. Keep staged details\./)
+        assert.match(await h.versions(), /Active version: v2\b/)
+        h.assertSessionReads()
+    })
+}
+
+test("expand_block rejects overlap with another staged block and leaves both drafts usable", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h)
+    await h.enter()
+    await h.run("expand_block", { blockId: 1, endId: "m0003" })
+    await h.run("append_summary", { blockId: 1, text: " Keep staged details." })
+    await stageBlock(h, "Documented API findings.", "m0004", "m0004")
+    const firstBefore = await h.versions(1)
+    const secondBefore = await h.versions(2)
+
+    await assert.rejects(h.run("expand_block", { blockId: 1, endId: "m0004" }), /overlap/i)
+
+    assert.equal(await h.versions(1), firstBefore)
+    assert.equal(await h.versions(2), secondBefore)
+    assert.match(
+        await h.run("recall_compressed", {
+            action: "search",
+            blockId: 1,
+            query: "Keep the newline constraint",
+        }),
+        /Keep the newline constraint/,
+    )
+    assert.match(
+        await h.run("recall_compressed", {
+            action: "search",
+            blockId: 1,
+            query: "Use the documented parser API",
+        }),
+        /No matches found/i,
+    )
+    await h.run("rewrite_summary", { blockId: 2, summary: "Retained API findings." })
+    await h.leave()
+
+    const after = await h.render()
+    for (const id of ["source-1", "source-2", "source-3", "source-4"]) {
+        assert.ok(!after.some((message) => message.info.id === id))
+    }
+    const text = await contextText(h)
+    assert.match(text, /Parser findings\. Keep staged details\./)
+    assert.match(text, /Retained API findings\./)
+    assert.match(await h.versions(1), /Active version: v2\b/)
+    assert.match(await h.versions(2), /Active version: v2\b/)
+    h.assertSessionReads()
+})
+
+test("expand_block rejects overlap with a committed block without publishing prior staged edits", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await stageBlock(h, "Documented API findings.", "m0004", "m0004")
+    await h.leave()
+    await h.enter()
+    await h.run("append_summary", { blockId: 1, text: " Retained pending detail." })
+    const firstBefore = await h.versions(1)
+    const secondBefore = await h.versions(2)
+
+    await assert.rejects(h.run("expand_block", { blockId: 1, endId: "m0004" }), /overlap/i)
+
+    assert.equal(await h.versions(1), firstBefore)
+    assert.equal(await h.versions(2), secondBefore)
+    assert.match(
+        await h.run("recall_compressed", {
+            action: "search",
+            blockId: 1,
+            query: "Use the documented parser API",
+        }),
+        /No matches found/i,
+    )
+    assert.ok((await h.render()).some((message) => message.info.id === "source-3"))
+    assert.doesNotMatch(await contextText(h), /Retained pending detail\./)
+    await h.leave()
+
+    assert.ok((await h.render()).some((message) => message.info.id === "source-3"))
+    assert.match(await contextText(h), /Parser findings\. Retained pending detail\./)
+    assert.match(await contextText(h), /Documented API findings\./)
+    h.assertSessionReads()
 })

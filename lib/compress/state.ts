@@ -50,11 +50,7 @@ export function attachCompressionDuration(
     return updates
 }
 
-export function wrapCompressedSummary(
-    blockId: number,
-    summary: string,
-    range?: string,
-): string {
+export function wrapCompressedSummary(blockId: number, summary: string, range?: string): string {
     const header = COMPRESSED_BLOCK_HEADER
     const attrs = range ? { range } : undefined
     const footer = formatMessageIdTag(formatBlockRef(blockId), attrs)
@@ -89,8 +85,10 @@ export function applyCompressionState(
         selection.messageIds = onChainMessageIds
     }
 
+    const consumed = [...new Set(consumedBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
     for (const block of messagesState.blocksById.values()) {
         if (!block.active) continue
+        if (consumed.includes(block.blockId)) continue
         for (const msgId of selection.messageIds) {
             if (block.effectiveMessageIds.includes(msgId)) {
                 throw new Error(
@@ -101,7 +99,6 @@ export function applyCompressionState(
         }
     }
 
-    const consumed = [...new Set(consumedBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
     const included = [...consumed]
 
     const effectiveMessageIds = new Set<string>(selection.messageIds)
@@ -178,6 +175,23 @@ export function applyCompressionState(
     messagesState.blocksById.set(blockId, block)
     messagesState.activeBlockIds.add(blockId)
     messagesState.activeByAnchorMessageId.set(anchorMessageId, blockId)
+
+    for (const consumedBlockId of consumed) {
+        const consumedBlock = messagesState.blocksById.get(consumedBlockId)
+        if (!consumedBlock) continue
+        consumedBlock.active = false
+        consumedBlock.deactivatedAt = createdAt
+        messagesState.activeBlockIds.delete(consumedBlockId)
+        if (
+            messagesState.activeByAnchorMessageId.get(consumedBlock.anchorMessageId) ===
+            consumedBlockId
+        ) {
+            messagesState.activeByAnchorMessageId.delete(consumedBlock.anchorMessageId)
+        }
+        for (const entry of messagesState.byMessageId.values()) {
+            entry.activeBlockIds = entry.activeBlockIds.filter((id) => id !== consumedBlockId)
+        }
+    }
 
     for (const messageId of selection.messageIds) {
         const tokenCount = selection.messageTokenById.get(messageId) || 0

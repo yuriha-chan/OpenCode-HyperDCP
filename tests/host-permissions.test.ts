@@ -1,10 +1,90 @@
+import "./helpers/storage-env"
 import assert from "node:assert/strict"
-import test from "node:test"
+import { mkdir, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import test, { type TestContext } from "node:test"
+import server from "../index"
+import { createHousekeepingHarness } from "./helpers/housekeeping"
 import {
     compressDisabledByOpencode,
     hasExplicitToolPermission,
     resolveEffectiveCompressPermission,
 } from "../lib/host-permissions"
+
+async function createServerHooks(t: TestContext, permission = "allow") {
+    const h = await createHousekeepingHarness(t)
+    await mkdir(join(h.root, ".opencode"))
+    await writeFile(
+        join(h.root, ".opencode", "dcp.json"),
+        JSON.stringify({
+            enabled: true,
+            autoUpdate: false,
+            debug: false,
+            compress: { permission },
+            experimental: { customPrompts: false },
+        }),
+    )
+    const hooks = await server({ client: h.client, directory: h.root } as any)
+    return { h, hooks }
+}
+
+test("server registers housekeeping boundaries and the host execution guard, and abolishes save_summary", async (t) => {
+    const { hooks } = await createServerHooks(t)
+    assert.equal(typeof hooks.tool?.enter_housekeeping?.execute, "function")
+    assert.equal(typeof hooks.tool?.leave_housekeeping?.execute, "function")
+    assert.equal(typeof hooks["tool.execute.before"], "function")
+    assert.equal(hooks.tool?.save_summary, undefined)
+    for (const name of [
+        "compress",
+        "edit_memo",
+        "read_memo",
+        "rewrite_summary",
+        "expand_block",
+        "edit_summary",
+        "append_summary",
+        "toggle_summary_version",
+        "fetch_summary_versions",
+        "recall_compressed",
+    ]) {
+        assert.equal(typeof hooks.tool?.[name]?.execute, "function", name)
+    }
+})
+
+test("server publishes boundary tools as primary tools and uses leave instead of save_summary", async (t) => {
+    const { hooks } = await createServerHooks(t)
+    const config: any = { experimental: { primary_tools: ["read"] } }
+    await hooks.config!(config)
+    assert.ok(config.experimental.primary_tools.includes("read"))
+    assert.ok(config.experimental.primary_tools.includes("enter_housekeeping"))
+    assert.ok(config.experimental.primary_tools.includes("leave_housekeeping"))
+    assert.ok(!config.experimental.primary_tools.includes("save_summary"))
+    assert.equal(config.permission.save_summary, undefined)
+    assert.equal(config.permission.enter_housekeeping, "allow")
+    assert.equal(config.permission.leave_housekeeping, "allow")
+})
+
+for (const permission of ["ask", "deny"]) {
+    test(`server preserves explicit ${permission} permission for both housekeeping boundaries`, async (t) => {
+        const { hooks } = await createServerHooks(t)
+        const config: any = {
+            permission: { enter_housekeeping: permission, leave_housekeeping: permission },
+        }
+        await hooks.config!(config)
+        assert.equal(config.permission.enter_housekeeping, permission)
+        assert.equal(config.permission.leave_housekeeping, permission)
+        assert.equal(config.permission.save_summary, undefined)
+    })
+}
+
+test("initially denied compression does not publish an entry tool that enables mutations", async (t) => {
+    const { hooks } = await createServerHooks(t, "deny")
+    assert.equal(hooks.tool?.compress, undefined)
+    assert.equal(hooks.tool?.enter_housekeeping, undefined)
+    const config: any = {}
+    await hooks.config!(config)
+    assert.ok(!(config.experimental?.primary_tools ?? []).includes("enter_housekeeping"))
+    assert.equal(hooks.tool?.save_summary, undefined)
+})
 
 test("wildcard deny disables compress", () => {
     assert.equal(compressDisabledByOpencode({ "*": "deny" }), true)

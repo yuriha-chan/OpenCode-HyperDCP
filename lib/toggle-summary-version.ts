@@ -1,7 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import type { CompressionBlock } from "./state/types"
-import { saveSessionState } from "./state/persistence"
+import { runHousekeepingMutation } from "./housekeeping/state"
+import { materializePendingSummary } from "./expand-block"
 
 interface ToggleSummaryVersionArgs {
     blockId: number
@@ -44,31 +45,52 @@ THE FORMAT
   version: number     // Target version: 0=disabled, 1=original, 2+=rewrite
 }`,
         args: {
-            blockId: tool.schema.number().describe("Block ID whose summary version to switch (e.g. 3)"),
-            version: tool.schema.number().describe("Target version: 0=disabled, 1=original, 2+=rewrite"),
+            blockId: tool.schema
+                .number()
+                .describe("Block ID whose summary version to switch (e.g. 3)"),
+            version: tool.schema
+                .number()
+                .describe("Target version: 0=disabled, 1=original, 2+=rewrite"),
         },
-        async execute(args) {
-            const input = args as ToggleSummaryVersionArgs
+        async execute(args, toolCtx) {
+            return runHousekeepingMutation(
+                ctx,
+                toolCtx,
+                "toggle_summary_version",
+                args,
+                async (operationCtx) => {
+                    const input = args as ToggleSummaryVersionArgs
 
-            if (!ctx.state.autotoggle) {
-                throw new Error(
-                    "Autotoggle is disabled. Run /dcp autotoggle on to allow the LLM to toggle summary versions.",
-                )
-            }
+                    if (!operationCtx.state.autotoggle) {
+                        throw new Error(
+                            "Autotoggle is disabled. Run /dcp autotoggle on to allow the LLM to toggle summary versions.",
+                        )
+                    }
 
-            const block = ctx.state.prune.messages.blocksById.get(input.blockId)
-            if (!block) {
-                throw new Error(
-                    `Block ${input.blockId} not found. Use fetch_summary_versions to inspect blocks.`,
-                )
-            }
+                    const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
+                    if (!block) {
+                        throw new Error(
+                            `Block ${input.blockId} not found. Use fetch_summary_versions to inspect blocks.`,
+                        )
+                    }
 
-            const newIndex = validateVersion(block, input.version)
-            block.activeVersionIndex = newIndex
+                    const validationBlock =
+                        block.pendingEditBuffer === undefined
+                            ? block
+                            : {
+                                  ...block,
+                                  summaryVersions: [
+                                      ...block.summaryVersions,
+                                      block.pendingEditBuffer.trim(),
+                                  ],
+                              }
+                    const newIndex = validateVersion(validationBlock, input.version)
+                    materializePendingSummary(block)
+                    block.activeVersionIndex = newIndex
 
-            await saveSessionState(ctx.state, ctx.logger)
-
-            return `Block #${block.blockId} summary set to ${versionLabel(newIndex)}.`
+                    return `Block #${block.blockId} summary set to ${versionLabel(newIndex)}.`
+                },
+            )
         },
     })
 }

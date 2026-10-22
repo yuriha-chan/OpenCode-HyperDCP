@@ -12,6 +12,7 @@ import {
     wrapCompressedSummary,
 } from "./state"
 import type { CompressMessageToolArgs } from "./types"
+import { runHousekeepingMutation } from "../housekeeping/state"
 
 function buildSchema() {
     return {
@@ -46,111 +47,126 @@ export function createCompressMessageTool(ctx: ToolContext): ReturnType<typeof t
         description: runtimePrompts.compressMessage + MESSAGE_FORMAT_EXTENSION,
         args: buildSchema(),
         async execute(args, toolCtx) {
-            const input = args as CompressMessageToolArgs
-            validateArgs(input)
-            const callId =
-                typeof (toolCtx as unknown as { callID?: unknown }).callID === "string"
-                    ? (toolCtx as unknown as { callID: string }).callID
-                    : undefined
-
-            const { rawMessages, searchContext } = await prepareSession(
-                ctx,
-                toolCtx,
-                `Compress Message: ${input.topic}`,
-            )
-            const { plans, skippedIssues, skippedCount } = resolveMessages(
-                input,
-                searchContext,
-                ctx.state,
-                ctx.config,
-            )
-
-            if (plans.length === 0 && skippedCount > 0) {
-                throw new Error(formatIssues(skippedIssues, skippedCount))
-            }
-
-            const notifications: NotificationEntry[] = []
-
-            const preparedPlans: Array<{
-                plan: (typeof plans)[number]
-                summaryWithTools: string
-            }> = []
-
-            for (const plan of plans) {
-                const summaryWithPromptInfo = appendProtectedPromptInfo(
-                    plan.entry.summary,
-                    plan.selection,
+            return runHousekeepingMutation(ctx, toolCtx, "compress", args, async (operationCtx) => {
+                const input = args as CompressMessageToolArgs
+                validateArgs(input)
+                const callId =
+                    typeof (toolCtx as unknown as { callID?: unknown }).callID === "string"
+                        ? (toolCtx as unknown as { callID: string }).callID
+                        : undefined
+                const { rawMessages, searchContext } = await prepareSession(
+                    operationCtx,
+                    toolCtx,
+                    `Compress Message: ${input.topic}`,
+                )
+                const { plans, skippedIssues, skippedCount } = resolveMessages(
+                    input,
                     searchContext,
-                    ctx.state,
-                    ctx.config.compress.protectTags,
+                    operationCtx.state,
+                    operationCtx.config,
                 )
 
-                const summaryWithTools = await appendProtectedTools(
-                    ctx.client,
-                    ctx.state,
-                    ctx.config.experimental.allowSubAgents,
-                    summaryWithPromptInfo,
-                    plan.selection,
-                    searchContext,
-                    ctx.config.compress.protectedTools,
-                    ctx.config.protectedFilePatterns,
-                )
-
-                preparedPlans.push({
-                    plan,
-                    summaryWithTools,
-                })
-            }
-
-            const runId = allocateRunId(ctx.state)
-            const preExistingActiveMessages = new Set<string>()
-            for (const [msgId, entry] of ctx.state.prune.messages.byMessageId) {
-                if (entry.activeBlockIds.length > 0) {
-                    preExistingActiveMessages.add(msgId)
+                if (plans.length === 0 && skippedCount > 0) {
+                    throw new Error(formatIssues(skippedIssues, skippedCount))
                 }
-            }
 
-            for (const { plan, summaryWithTools } of preparedPlans) {
-                const blockId = allocateBlockId(ctx.state)
-                const storedSummary = wrapCompressedSummary(
-                    blockId,
-                    summaryWithTools,
-                    plan.entry.messageId,
-                )
-                const summaryTokens = countTokens(storedSummary)
+                const notifications: NotificationEntry[] = []
 
-                applyCompressionState(
-                    ctx.state,
-                    {
-                        topic: plan.entry.topic,
-                        batchTopic: input.topic,
-                        startId: plan.entry.messageId,
-                        endId: plan.entry.messageId,
-                        mode: "message",
+                const preparedPlans: Array<{
+                    plan: (typeof plans)[number]
+                    summaryWithTools: string
+                }> = []
+
+                for (const plan of plans) {
+                    const summaryWithPromptInfo = appendProtectedPromptInfo(
+                        plan.entry.summary,
+                        plan.selection,
+                        searchContext,
+                        operationCtx.state,
+                        operationCtx.config.compress.protectTags,
+                    )
+
+                    const summaryWithTools = await appendProtectedTools(
+                        operationCtx.client,
+                        operationCtx.state,
+                        operationCtx.config.experimental.allowSubAgents,
+                        summaryWithPromptInfo,
+                        plan.selection,
+                        searchContext,
+                        operationCtx.config.compress.protectedTools,
+                        operationCtx.config.protectedFilePatterns,
+                    )
+
+                    preparedPlans.push({
+                        plan,
+                        summaryWithTools,
+                    })
+                }
+
+                const runId = allocateRunId(operationCtx.state)
+                const preExistingActiveMessages = new Set<string>()
+                for (const [msgId, entry] of operationCtx.state.prune.messages.byMessageId) {
+                    if (entry.activeBlockIds.length > 0) {
+                        preExistingActiveMessages.add(msgId)
+                    }
+                }
+
+                for (const { plan, summaryWithTools } of preparedPlans) {
+                    const blockId = allocateBlockId(operationCtx.state)
+                    const storedSummary = wrapCompressedSummary(
+                        blockId,
+                        summaryWithTools,
+                        plan.entry.messageId,
+                    )
+                    const summaryTokens = countTokens(storedSummary)
+
+                    applyCompressionState(
+                        operationCtx.state,
+                        {
+                            topic: plan.entry.topic,
+                            batchTopic: input.topic,
+                            startId: plan.entry.messageId,
+                            endId: plan.entry.messageId,
+                            mode: "message",
+                            runId,
+                            compressMessageId: toolCtx.messageID,
+                            compressCallId: callId,
+                            summaryTokens,
+                        },
+                        plan.selection,
+                        plan.anchorMessageId,
+                        blockId,
+                        storedSummary,
+                        [],
+                        preExistingActiveMessages,
+                    )
+
+                    notifications.push({
+                        blockId,
                         runId,
-                        compressMessageId: toolCtx.messageID,
-                        compressCallId: callId,
+                        summary: summaryWithTools,
                         summaryTokens,
-                    },
-                    plan.selection,
-                    plan.anchorMessageId,
-                    blockId,
-                    storedSummary,
-                    [],
-                    preExistingActiveMessages,
+                    })
+                }
+
+                await finalizeSession(
+                    operationCtx,
+                    toolCtx,
+                    rawMessages,
+                    notifications,
+                    input.topic,
                 )
+                const result = `Staged ${formatResult(plans.length, skippedIssues, skippedCount)}`
+                if (operationCtx.state.housekeeping)
+                    operationCtx.state.housekeeping.notifications = [
+                        ...(operationCtx.state.housekeeping.notifications ?? []),
+                        ...notifications,
+                    ]
+                if (operationCtx.state.housekeeping)
+                    operationCtx.state.housekeeping.batchTopic = input.topic
 
-                notifications.push({
-                    blockId,
-                    runId,
-                    summary: summaryWithTools,
-                    summaryTokens,
-                })
-            }
-
-            await finalizeSession(ctx, toolCtx, rawMessages, notifications, input.topic)
-
-            return formatResult(plans.length, skippedIssues, skippedCount)
+                return result
+            })
         },
     })
 }

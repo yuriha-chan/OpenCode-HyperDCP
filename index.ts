@@ -7,8 +7,6 @@ import {
     createExpandBlockTool,
     createEditSummaryTool,
     createAppendSummaryTool,
-    createSaveSummaryTool,
-    autoSavePendingBuffers,
 } from "./lib/expand-block"
 import {
     compressDisabledByOpencode,
@@ -31,6 +29,8 @@ import { createReadMemoTool } from "./lib/read-memo"
 import { createFetchSummaryVersionsTool } from "./lib/fetch-summary-versions"
 import { createToggleSummaryVersionTool } from "./lib/toggle-summary-version"
 import { startAutoUpdate } from "./lib/update"
+import { createEnterHousekeepingTool, createLeaveHousekeepingTool } from "./lib/housekeeping/tools"
+import { createToolExecuteBeforeHandler } from "./lib/housekeeping/guard"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -91,8 +91,11 @@ const server: Plugin = (async (ctx) => {
             hostPermissions,
         ),
         event: createEventHandler(state, logger),
+        "tool.execute.before": createToolExecuteBeforeHandler(compressToolContext),
         tool: {
             ...(config.compress.permission !== "deny" && {
+                enter_housekeeping: createEnterHousekeepingTool(compressToolContext),
+                leave_housekeeping: createLeaveHousekeepingTool(compressToolContext),
                 compress:
                     config.compress.mode === "message"
                         ? createCompressMessageTool(compressToolContext)
@@ -102,7 +105,6 @@ const server: Plugin = (async (ctx) => {
                 expand_block: createExpandBlockTool(compressToolContext),
                 edit_summary: createEditSummaryTool(compressToolContext),
                 append_summary: createAppendSummaryTool(compressToolContext),
-                save_summary: createSaveSummaryTool(compressToolContext),
                 fetch_summary_versions: createFetchSummaryVersionsTool(compressToolContext),
                 toggle_summary_version: createToggleSummaryVersionTool(compressToolContext),
                 edit_memo: createEditMemoTool(compressToolContext),
@@ -127,13 +129,13 @@ const server: Plugin = (async (ctx) => {
 
             const toolsToAdd: string[] = []
             if (config.compress.permission !== "deny" && !config.experimental.allowSubAgents) {
+                toolsToAdd.push("enter_housekeeping", "leave_housekeeping")
                 toolsToAdd.push("compress")
                 toolsToAdd.push("recall_compressed")
                 toolsToAdd.push("rewrite_summary")
                 toolsToAdd.push("expand_block")
                 toolsToAdd.push("edit_summary")
                 toolsToAdd.push("append_summary")
-                toolsToAdd.push("save_summary")
                 toolsToAdd.push("fetch_summary_versions")
                 toolsToAdd.push("toggle_summary_version")
                 toolsToAdd.push("edit_memo")
@@ -172,7 +174,13 @@ const server: Plugin = (async (ctx) => {
                 } as typeof permission
             }
 
-            const expandTools = ["expand_block", "edit_summary", "append_summary", "save_summary", "fetch_summary_versions", "toggle_summary_version"]
+            const expandTools = [
+                "expand_block",
+                "edit_summary",
+                "append_summary",
+                "fetch_summary_versions",
+                "toggle_summary_version",
+            ]
             for (const toolName of expandTools) {
                 if (!hasExplicitToolPermission(opencodeConfig.permission, toolName)) {
                     const permission = opencodeConfig.permission ?? {}
@@ -197,6 +205,16 @@ const server: Plugin = (async (ctx) => {
                     ...permission,
                     read_memo: "allow",
                 } as typeof permission
+            }
+
+            for (const toolName of ["enter_housekeeping", "leave_housekeeping"]) {
+                if (!hasExplicitToolPermission(opencodeConfig.permission, toolName)) {
+                    const permission = opencodeConfig.permission ?? {}
+                    opencodeConfig.permission = {
+                        ...permission,
+                        [toolName]: "allow",
+                    } as typeof permission
+                }
             }
 
             hostPermissions.global = opencodeConfig.permission

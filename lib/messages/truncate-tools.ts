@@ -32,6 +32,12 @@ export function truncateToolOutputs(config: PluginConfig, messages: WithParts[])
             if (part.type !== "tool") continue
             const toolPart = part as any
             if (toolPart.state?.status !== "completed") continue
+            if (
+                toolPart.state?.title === "Housekeeping entry" ||
+                toolPart.state?.title === "Housekeeping receipt"
+            ) {
+                continue
+            }
             if (typeof toolPart.state?.output !== "string") continue
 
             const output: string = toolPart.state.output

@@ -1,295 +1,136 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
-import { mkdirSync } from "node:fs"
-import { createCompressMessageTool } from "../lib/compress/message"
-import { createCompressRangeTool } from "../lib/compress/range"
-import { handleDecompressCommand } from "../lib/commands/decompress"
-import { handleRecompressCommand } from "../lib/commands/recompress"
-import { createSessionState, type WithParts } from "../lib/state"
-import type { PluginConfig } from "../lib/config"
-import { Logger } from "../lib/logger"
+import { createHousekeepingHarness, visibleText } from "./helpers/housekeeping"
 
-const testDataHome = join(tmpdir(), `opencode-dcp-compression-groups-${process.pid}`)
-const testConfigHome = join(tmpdir(), `opencode-dcp-compression-groups-config-${process.pid}`)
-
-process.env.XDG_DATA_HOME = testDataHome
-process.env.XDG_CONFIG_HOME = testConfigHome
-
-mkdirSync(testDataHome, { recursive: true })
-mkdirSync(testConfigHome, { recursive: true })
-
-function buildConfig(mode: "message" | "range"): PluginConfig {
-    return {
-        enabled: true,
-        debug: false,
-        pruneNotification: "off",
-        pruneNotificationType: "chat",
-        commands: {
-            enabled: true,
-            protectedTools: [],
-        },
-        manualMode: {
-            enabled: false,
-            automaticStrategies: true,
-        },
-        turnProtection: {
-            enabled: false,
-            turns: 4,
-        },
-        experimental: {
-            allowSubAgents: false,
-            customPrompts: false,
-        },
-        protectedFilePatterns: [],
-        compress: {
-            mode,
-            permission: "allow",
-            showCompression: false,
-            maxContextLimit: 150000,
-            minContextLimit: 50000,
-            nudgeFrequency: 5,
-            iterationNudgeThreshold: 15,
-            nudgeForce: "soft",
-            protectedTools: ["task"],
-            protectTags: false,
-            protectUserMessages: false,
-            minCompressTokens: 0,
-        },
-        strategies: {
-            deduplication: {
-                enabled: true,
-                protectedTools: [],
-            },
-            purgeErrors: {
-                enabled: true,
-                turns: 4,
-                protectedTools: [],
-            },
-        },
-    }
-}
-
-function textPart(messageID: string, sessionID: string, id: string, text: string) {
-    return {
-        id,
-        messageID,
-        sessionID,
-        type: "text" as const,
-        text,
-    }
-}
-
-function toolPart(
-    messageID: string,
-    sessionID: string,
-    callID: string,
-    toolName: string,
-    output: string,
-) {
-    return {
-        id: `${callID}-part`,
-        messageID,
-        sessionID,
-        type: "tool" as const,
-        tool: toolName,
-        callID,
-        state: {
-            status: "completed" as const,
-            input: { description: "demo" },
-            output,
-        },
-    }
-}
-
-function buildMessages(sessionID: string): WithParts[] {
-    return [
-        {
-            info: {
-                id: "msg-user-1",
-                role: "user",
-                sessionID,
-                agent: "assistant",
-                model: {
-                    providerID: "anthropic",
-                    modelID: "claude-test",
+test("compression notifications increment by tool call across range and message modes", async (t) => {
+    for (const mode of ["range", "message"] as const) {
+        await t.test(mode, async (t) => {
+            const h = await createHousekeepingHarness(t, {
+                mode,
+                configure(config) {
+                    config.pruneNotification = "detailed"
+                    config.pruneNotificationType = "toast"
                 },
-                time: { created: 1 },
-            } as WithParts["info"],
-            parts: [textPart("msg-user-1", sessionID, "part-1", "Investigate the issue")],
-        },
-        {
-            info: {
-                id: "msg-assistant-1",
-                role: "assistant",
-                sessionID,
-                agent: "assistant",
-                time: { created: 2 },
-            } as WithParts["info"],
-            parts: [textPart("msg-assistant-1", sessionID, "part-2", "I mapped the code path")],
-        },
-        {
-            info: {
-                id: "msg-assistant-2",
-                role: "assistant",
-                sessionID,
-                agent: "assistant",
-                time: { created: 3 },
-            } as WithParts["info"],
-            parts: [
-                textPart("msg-assistant-2", sessionID, "part-3", "I also ran a task tool"),
-                toolPart("msg-assistant-2", sessionID, "call-task-1", "task", "task output body"),
-            ],
-        },
-    ]
-}
-
-function appendOriginMessage(rawMessages: WithParts[], sessionID: string, messageID: string): void {
-    rawMessages.push({
-        info: {
-            id: messageID,
-            role: "assistant",
-            sessionID,
-            agent: "assistant",
-            time: { created: rawMessages.length + 1 },
-        } as WithParts["info"],
-        parts: [textPart(messageID, sessionID, `${messageID}-part`, "compress tool output")],
-    })
-}
-
-test("compression notifications increment by tool call across range and message tools", async () => {
-    const sessionID = `ses_compression_notifications_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const toastCalls: string[] = []
-    const client = {
-        session: {
-            messages: async () => ({ data: rawMessages }),
-            get: async () => ({ data: { parentID: null } }),
-        },
-        tui: {
-            showToast: async ({ body }: { body: { message: string } }) => {
-                toastCalls.push(body.message)
-            },
-        },
+            })
+            const showToast = t.mock.fn(async (_input: { body: { message: string } }) => {})
+            Object.assign(h.client, { tui: { showToast } })
+            for (const [index, reference] of ["m0001", "m0002"].entries()) {
+                await h.enter()
+                const content =
+                    mode === "range"
+                        ? [
+                              {
+                                  startId: reference,
+                                  endId: reference,
+                                  summary: `Summary ${index + 1}.`,
+                              },
+                          ]
+                        : [
+                              {
+                                  messageId: reference,
+                                  topic: `Topic ${index + 1}`,
+                                  summary: `Summary ${index + 1}.`,
+                              },
+                          ]
+                assert.match(
+                    await h.run("compress", {
+                        topic: `Batch ${index + 1}`,
+                        content,
+                    }),
+                    /stag/i,
+                )
+                assert.equal(showToast.mock.callCount(), index)
+                const stagedContext = visibleText(await h.render())
+                assert.doesNotMatch(stagedContext, new RegExp(`Summary ${index + 1}\\.`))
+                await h.leave()
+                assert.equal(showToast.mock.callCount(), index + 1)
+                assert.match(
+                    showToast.mock.calls[index].arguments[0].body.message,
+                    new RegExp(`Compression #${index + 1}`),
+                )
+            }
+            h.assertSessionReads()
+        })
     }
-
-    const rangeConfig = buildConfig("range")
-    rangeConfig.pruneNotification = "detailed"
-    rangeConfig.pruneNotificationType = "toast"
-    const messageConfig = buildConfig("message")
-    messageConfig.pruneNotification = "detailed"
-    messageConfig.pruneNotificationType = "toast"
-
-    const rangeTool = createCompressRangeTool({
-        client,
-        state,
-        logger,
-        config: rangeConfig,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressRange: "", compressMessage: "" }
-            },
-        },
-    } as any)
-
-    await rangeTool.execute(
-        {
-            topic: "Range batch",
-            content: [
-                {
-                    startId: "m0001",
-                    endId: "m0001",
-                    summary: "Captured the opening user request.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-range-origin",
-        },
-    )
-
-    appendOriginMessage(rawMessages, sessionID, "msg-compress-range-origin")
-
-    const messageTool = createCompressMessageTool({
-        client,
-        state,
-        logger,
-        config: messageConfig,
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressRange: "", compressMessage: "" }
-            },
-        },
-    } as any)
-
-    await messageTool.execute(
-        {
-            topic: "Message batch",
-            content: [
-                {
-                    messageId: "m0002",
-                    topic: "Code path note",
-                    summary: "Captured the assistant code-path findings.",
-                },
-                {
-                    messageId: "m0003",
-                    topic: "Task output note",
-                    summary: "Captured the assistant task-backed follow-up.",
-                },
-            ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-origin",
-        },
-    )
-
-    assert.equal(toastCalls.length, 2)
-    assert.match(toastCalls[0] || "", /Compression #1/)
-    assert.match(toastCalls[1] || "", /Compression #2/)
 })
 
-test("decompress groups batched message compressions by tool call", async () => {
-    const sessionID = `ses_message_grouped_decompress_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const ignoredMessages: string[] = []
-    const client = {
-        session: {
-            messages: async () => ({ data: rawMessages }),
-            get: async () => ({ data: { parentID: null } }),
-            prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
-                ignoredMessages.push(body.parts[0]?.text || "")
-            },
+test("compression notifications increment across range then message tools in one session", async (t) => {
+    const rangeHarness = await createHousekeepingHarness(t, {
+        mode: "range",
+        configure(config) {
+            config.pruneNotification = "detailed"
+            config.pruneNotificationType = "toast"
         },
-    }
+    })
+    const showToast = t.mock.fn(async (_input: { body: { message: string } }) => {})
+    Object.assign(rangeHarness.client, { tui: { showToast } })
 
-    const tool = createCompressMessageTool({
-        client,
-        state,
-        logger,
-        config: buildConfig("message"),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressRange: "", compressMessage: "" }
-            },
+    await rangeHarness.enter()
+    assert.match(
+        await rangeHarness.run("compress", {
+            topic: "Range note",
+            content: [{ startId: "m0001", endId: "m0001", summary: "Range summary." }],
+        }),
+        /stag/i,
+    )
+    assert.equal(showToast.mock.callCount(), 0)
+    assert.doesNotMatch(visibleText(await rangeHarness.render()), /Range summary\./)
+    const rangeReceipt = await rangeHarness.leave()
+    assert.match(rangeReceipt, /committed b\d+ v\d+/i)
+    assert.equal(showToast.mock.callCount(), 1)
+    assert.match(showToast.mock.calls[0].arguments[0].body.message, /Compression #1/)
+
+    const messageHarness = await createHousekeepingHarness(t, {
+        mode: "message",
+        messages: structuredClone(rangeHarness.history),
+        configure(config) {
+            config.pruneNotification = "detailed"
+            config.pruneNotificationType = "toast"
         },
-    } as any)
+    })
+    assert.equal(messageHarness.sessionID, rangeHarness.sessionID)
+    messageHarness.ctx.state = rangeHarness.ctx.state
+    Object.assign(messageHarness.client, { tui: { showToast } })
 
-    await tool.execute(
+    await messageHarness.run(
+        "enter_housekeeping",
+        {},
         {
+            callID: "message-phase-enter",
+            messageID: "message-phase-entry",
+        },
+    )
+    assert.match(
+        await messageHarness.run(
+            "compress",
+            {
+                topic: "Message note",
+                content: [
+                    { messageId: "m0002", topic: "Message note", summary: "Message summary." },
+                ],
+            },
+            { callID: "message-phase-compress", messageID: "message-phase-compression" },
+        ),
+        /stag/i,
+    )
+    assert.equal(showToast.mock.callCount(), 1)
+    assert.doesNotMatch(visibleText(await messageHarness.render()), /Message summary\./)
+    const messageReceipt = await messageHarness.run(
+        "leave_housekeeping",
+        {},
+        { callID: "message-phase-leave", messageID: "message-phase-exit" },
+    )
+    assert.match(messageReceipt, /committed b\d+ v\d+/i)
+    assert.equal(showToast.mock.callCount(), 2)
+    assert.match(showToast.mock.calls[1].arguments[0].body.message, /Compression #2/)
+    rangeHarness.assertSessionReads()
+})
+
+test("decompress groups and recompresses batched message compressions by tool call", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "message" })
+    await h.enter()
+    assert.match(
+        await h.run("compress", {
             topic: "Batch stale notes",
             content: [
                 {
@@ -303,93 +144,69 @@ test("decompress groups batched message compressions by tool call", async () => 
                     summary: "Captured the assistant task-backed follow-up.",
                 },
             ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-message-group",
-        },
+        }),
+        /stag/i,
     )
+    const stagedContext = visibleText(await h.render())
+    assert.match(stagedContext, /The parser accepts an empty record\./)
+    assert.match(stagedContext, /Keep the newline constraint\./)
+    assert.match(stagedContext, /Use the documented parser API\./)
+    assert.doesNotMatch(stagedContext, /Captured the assistant code-path findings\./)
+    assert.doesNotMatch(stagedContext, /Captured the assistant task-backed follow-up\./)
+    await h.leave()
 
-    appendOriginMessage(rawMessages, sessionID, "msg-compress-message-group")
+    const committedContext = visibleText(await h.render())
+    assert.match(committedContext, /Captured the assistant code-path findings\./)
+    assert.match(committedContext, /Captured the assistant task-backed follow-up\./)
+    assert.doesNotMatch(committedContext, /The parser accepts an empty record\./)
+    assert.doesNotMatch(committedContext, /Keep the newline constraint\./)
+    assert.match(committedContext, /Use the documented parser API\./)
 
-    const blocks = Array.from(state.prune.messages.blocksById.values()).sort(
-        (a, b) => a.blockId - b.blockId,
+    let promptCount = h.client.session.prompt.mock.callCount()
+    await h.command("decompress")
+    assert.equal(h.client.session.prompt.mock.callCount(), ++promptCount)
+    const groupedList = h.client.session.prompt.mock.calls.at(-1)?.arguments[0].body as {
+        parts: Array<{ text: string }>
+    }
+    assert.match(
+        groupedList.parts[0]?.text ?? "",
+        /Compression #1 - 2 messages - Batch stale notes/,
     )
-    assert.equal(blocks.length, 2)
-    assert.equal(blocks[0]?.runId, blocks[1]?.runId)
-    assert.equal(blocks[0]?.batchTopic, "Batch stale notes")
+    assert.doesNotMatch(groupedList.parts[0]?.text ?? "", /Code path note/)
 
-    await handleDecompressCommand({
-        client,
-        state,
-        logger,
-        sessionId: sessionID,
-        messages: rawMessages,
-        args: [],
-    })
+    await h.command("decompress 1")
+    assert.equal(h.client.session.prompt.mock.callCount(), ++promptCount)
+    const decompressedMessage = h.client.session.prompt.mock.calls.at(-1)?.arguments[0].body as {
+        parts: Array<{ text: string }>
+    }
+    assert.match(decompressedMessage.parts[0]?.text ?? "", /Restored compression 1\./)
+    const restoredContext = visibleText(await h.render())
+    assert.match(restoredContext, /The parser accepts an empty record\./)
+    assert.match(restoredContext, /Keep the newline constraint\./)
+    assert.match(restoredContext, /Use the documented parser API\./)
+    assert.doesNotMatch(restoredContext, /Captured the assistant code-path findings\./)
+    assert.doesNotMatch(restoredContext, /Captured the assistant task-backed follow-up\./)
 
-    const groupedListMessage = ignoredMessages.pop() || ""
-    assert.match(groupedListMessage, /Compression #1 - 2 messages - Batch stale notes/)
-    assert.doesNotMatch(groupedListMessage, /Code path note/)
-
-    await handleDecompressCommand({
-        client,
-        state,
-        logger,
-        sessionId: sessionID,
-        messages: rawMessages,
-        args: [String(blocks[0]?.blockId || 1)],
-    })
-
-    assert.ok(blocks.every((block) => block.deactivatedByUser))
-    assert.ok(blocks.every((block) => !block.active))
-
-    await handleRecompressCommand({
-        client,
-        state,
-        logger,
-        sessionId: sessionID,
-        messages: rawMessages,
-        args: [String(blocks[0]?.blockId || 1)],
-    })
-
-    assert.ok(blocks.every((block) => !block.deactivatedByUser))
-    assert.ok(blocks.every((block) => block.active))
+    await h.command("recompress 1")
+    assert.equal(h.client.session.prompt.mock.callCount(), ++promptCount)
+    const recompressedMessage = h.client.session.prompt.mock.calls.at(-1)?.arguments[0].body as {
+        parts: Array<{ text: string }>
+    }
+    assert.match(recompressedMessage.parts[0]?.text ?? "", /Re-applied compression 1\./)
+    const recompressedContext = visibleText(await h.render())
+    assert.match(recompressedContext, /Captured the assistant code-path findings\./)
+    assert.match(recompressedContext, /Captured the assistant task-backed follow-up\./)
+    assert.doesNotMatch(recompressedContext, /The parser accepts an empty record\./)
+    assert.doesNotMatch(recompressedContext, /Keep the newline constraint\./)
+    assert.match(recompressedContext, /Use the documented parser API\./)
+    h.assertSessionReads()
 })
 
-test("decompress keeps batched ranges individually restorable", async () => {
-    const sessionID = `ses_range_individual_decompress_${Date.now()}`
-    const rawMessages = buildMessages(sessionID)
-    const state = createSessionState()
-    const logger = new Logger(false)
-    const ignoredMessages: string[] = []
-    const client = {
-        session: {
-            messages: async () => ({ data: rawMessages }),
-            get: async () => ({ data: { parentID: null } }),
-            prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
-                ignoredMessages.push(body.parts[0]?.text || "")
-            },
-        },
-    }
-
-    const tool = createCompressRangeTool({
-        client,
-        state,
-        logger,
-        config: buildConfig("range"),
-        prompts: {
-            reload() {},
-            getRuntimePrompts() {
-                return { compressRange: "", compressMessage: "" }
-            },
-        },
-    } as any)
-
-    await tool.execute(
-        {
+test("decompress keeps batched ranges individually restorable", async (t) => {
+    const h = await createHousekeepingHarness(t, { mode: "range" })
+    await h.enter()
+    assert.match(
+        await h.run("compress", {
             topic: "Batch stale notes",
             content: [
                 {
@@ -403,47 +220,47 @@ test("decompress keeps batched ranges individually restorable", async () => {
                     summary: "Captured the assistant code-path findings.",
                 },
             ],
-        },
-        {
-            ask: async () => {},
-            metadata: () => {},
-            sessionID,
-            messageID: "msg-compress-range-group",
-        },
+        }),
+        /stag/i,
+    )
+    const stagedContext = visibleText(await h.render())
+    assert.match(stagedContext, /Investigate the parser boundary\./)
+    assert.match(stagedContext, /The parser accepts an empty record\./)
+    assert.doesNotMatch(stagedContext, /Captured the opening user request\./)
+    assert.doesNotMatch(stagedContext, /Captured the assistant code-path findings\./)
+    await h.leave()
+
+    const committedContext = visibleText(await h.render())
+    assert.match(committedContext, /Captured the opening user request\./)
+    assert.match(committedContext, /Captured the assistant code-path findings\./)
+    assert.doesNotMatch(committedContext, /Investigate the parser boundary\./)
+    assert.doesNotMatch(committedContext, /The parser accepts an empty record\./)
+
+    let promptCount = h.client.session.prompt.mock.callCount()
+    await h.command("decompress")
+    assert.equal(h.client.session.prompt.mock.callCount(), ++promptCount)
+    const availableRanges = h.client.session.prompt.mock.calls.at(-1)?.arguments[0].body as {
+        parts: Array<{ text: string }>
+    }
+    assert.match(
+        availableRanges.parts[0]?.text ?? "",
+        /1 \(.+\)\s+Compression #1 - Batch stale notes/,
+    )
+    assert.match(
+        availableRanges.parts[0]?.text ?? "",
+        /2 \(.+\)\s+Compression #1 - Batch stale notes/,
     )
 
-    appendOriginMessage(rawMessages, sessionID, "msg-compress-range-group")
-
-    const blocks = Array.from(state.prune.messages.blocksById.values()).sort(
-        (a, b) => a.blockId - b.blockId,
-    )
-    assert.equal(blocks.length, 2)
-    assert.equal(blocks[0]?.runId, blocks[1]?.runId)
-
-    await handleDecompressCommand({
-        client,
-        state,
-        logger,
-        sessionId: sessionID,
-        messages: rawMessages,
-        args: [],
-    })
-
-    const listMessage = ignoredMessages.pop() || ""
-    assert.match(listMessage, /1 \(.+\)\s+Compression #1 - Batch stale notes/)
-    assert.match(listMessage, /2 \(.+\)\s+Compression #1 - Batch stale notes/)
-
-    await handleDecompressCommand({
-        client,
-        state,
-        logger,
-        sessionId: sessionID,
-        messages: rawMessages,
-        args: [String(blocks[0]?.blockId || 1)],
-    })
-
-    assert.equal(blocks[0]?.deactivatedByUser, true)
-    assert.equal(blocks[0]?.active, false)
-    assert.equal(blocks[1]?.active, true)
-    assert.equal(blocks[1]?.deactivatedByUser, false)
+    await h.command("decompress 1")
+    assert.equal(h.client.session.prompt.mock.callCount(), ++promptCount)
+    const decompressedRange = h.client.session.prompt.mock.calls.at(-1)?.arguments[0].body as {
+        parts: Array<{ text: string }>
+    }
+    assert.match(decompressedRange.parts[0]?.text ?? "", /Restored compression 1\./)
+    const oneRestored = visibleText(await h.render())
+    assert.match(oneRestored, /Investigate the parser boundary\./)
+    assert.match(oneRestored, /Captured the assistant code-path findings\./)
+    assert.doesNotMatch(oneRestored, /Captured the opening user request\./)
+    assert.doesNotMatch(oneRestored, /The parser accepts an empty record\./)
+    h.assertSessionReads()
 })

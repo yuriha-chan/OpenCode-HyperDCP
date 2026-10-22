@@ -12,7 +12,6 @@ import {
     messageHasCompress,
 } from "../query"
 import { saveSessionState } from "../../state/persistence"
-import { findUncoveredRanges, formatUncoveredRanges } from "../uncovered"
 import {
     appendToTextPart,
     appendToLastTextPart,
@@ -40,6 +39,8 @@ export const injectCompressNudges = (
     compressionPriorities?: CompressionPriorityMap,
     uncoveredMessages: WithParts[] = messages,
 ): void => {
+    if (state.housekeeping) return
+    if (!prompts.contextLimitNudge && !prompts.turnNudge && !prompts.iterationNudge) return
     if (compressPermission(state, config) === "deny") {
         return
     }
@@ -137,14 +138,7 @@ export const injectCompressNudges = (
         }
     }
 
-    const uncoveredRanges = findUncoveredRanges(state, uncoveredMessages)
-    const uncoveredText = formatUncoveredRanges(uncoveredRanges, state.prune.messages.blocksById)
     const nudgedPrompts = { ...prompts }
-    if (uncoveredText) {
-        nudgedPrompts.contextLimitNudge += "\n\n" + uncoveredText
-        nudgedPrompts.turnNudge += "\n\n" + uncoveredText
-        nudgedPrompts.iterationNudge += "\n\n" + uncoveredText
-    }
 
     applyAnchoredNudges(state, config, messages, nudgedPrompts, compressionPriorities)
 
@@ -159,10 +153,17 @@ export const injectMessageIds = (
     messages: WithParts[],
     compressionPriorities?: CompressionPriorityMap,
 ): void => {
+    if (state.housekeeping) return
     if (compressPermission(state, config) === "deny") {
         return
     }
 
+    const boundaryCalls = new Set(
+        state.housekeepingHistory.flatMap((transaction) => [
+            transaction.entryCallId,
+            ...(transaction.completed ? [transaction.completed.leaveCallId] : []),
+        ]),
+    )
     for (const message of messages) {
         if (isIgnoredUserMessage(message)) {
             continue
@@ -183,6 +184,13 @@ export const injectMessageIds = (
             isBlockedMessage ? "BLOCKED" : messageRef,
             priority ? { priority } : undefined,
         )
+
+        if (message.parts.some((part) => part.type === "tool" && boundaryCalls.has(part.callID))) {
+            for (const part of message.parts) {
+                if (part.type === "text") appendToTextPart(part, tag)
+            }
+            continue
+        }
 
         if (message.info.role === "user") {
             let injected = false

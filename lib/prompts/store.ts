@@ -7,6 +7,7 @@ import { COMPRESS_RANGE as COMPRESS_RANGE_PROMPT } from "./compress-range"
 import { COMPRESS_MESSAGE as COMPRESS_MESSAGE_PROMPT } from "./compress-message"
 import { RECALL_COMPRESSED as RECALL_COMPRESSED_PROMPT } from "./recall"
 import { REWRITE_SUMMARY as REWRITE_SUMMARY_PROMPT } from "./rewrite-summary"
+import { HOUSEKEEPING_GUIDANCE } from "./housekeeping-guidance"
 import { CONTEXT_LIMIT_NUDGE } from "./context-limit-nudge"
 import { TURN_NUDGE } from "./turn-nudge"
 import { ITERATION_NUDGE } from "./iteration-nudge"
@@ -18,6 +19,7 @@ export type PromptKey =
     | "compress-message"
     | "recall"
     | "rewrite-summary"
+    | "housekeeping-guidance"
     | "context-limit-nudge"
     | "turn-nudge"
     | "iteration-nudge"
@@ -28,6 +30,7 @@ type EditablePromptField =
     | "compressMessage"
     | "recallCompressed"
     | "rewriteSummary"
+    | "housekeepingGuidance"
     | "contextLimitNudge"
     | "turnNudge"
     | "iterationNudge"
@@ -58,6 +61,7 @@ export interface RuntimePrompts {
     compressMessage: string
     recallCompressed: string
     rewriteSummary: string
+    housekeepingGuidance: string
     contextLimitNudge: string
     turnNudge: string
     iterationNudge: string
@@ -107,6 +111,14 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
         runtimeField: "rewriteSummary",
     },
     {
+        key: "housekeeping-guidance",
+        fileName: "housekeeping-guidance.md",
+        label: "Housekeeping Guidance",
+        description: "Entry guidance for transactional context maintenance",
+        usage: "Returned by enter_housekeeping",
+        runtimeField: "housekeepingGuidance",
+    },
+    {
         key: "context-limit-nudge",
         fileName: "context-limit-nudge.md",
         label: "Context Limit Nudge",
@@ -136,6 +148,7 @@ export const PROMPT_KEYS: PromptKey[] = [
     "system",
     "compress-range",
     "compress-message",
+    "housekeeping-guidance",
     "context-limit-nudge",
     "turn-nudge",
     "iteration-nudge",
@@ -153,6 +166,7 @@ const BUNDLED_EDITABLE_PROMPTS: Record<EditablePromptField, string> = {
     compressMessage: COMPRESS_MESSAGE_PROMPT,
     recallCompressed: RECALL_COMPRESSED_PROMPT,
     rewriteSummary: REWRITE_SUMMARY_PROMPT,
+    housekeepingGuidance: HOUSEKEEPING_GUIDANCE,
     contextLimitNudge: CONTEXT_LIMIT_NUDGE,
     turnNudge: TURN_NUDGE,
     iterationNudge: ITERATION_NUDGE,
@@ -170,6 +184,7 @@ function createBundledRuntimePrompts(): RuntimePrompts {
         compressMessage: BUNDLED_EDITABLE_PROMPTS.compressMessage,
         recallCompressed: BUNDLED_EDITABLE_PROMPTS.recallCompressed,
         rewriteSummary: BUNDLED_EDITABLE_PROMPTS.rewriteSummary,
+        housekeepingGuidance: BUNDLED_EDITABLE_PROMPTS.housekeepingGuidance,
         contextLimitNudge: BUNDLED_EDITABLE_PROMPTS.contextLimitNudge,
         turnNudge: BUNDLED_EDITABLE_PROMPTS.turnNudge,
         iterationNudge: BUNDLED_EDITABLE_PROMPTS.iterationNudge,

@@ -1,11 +1,3 @@
 export const ITERATION_NUDGE = `<dcp-system-reminder>
-You've been iterating for a while after the last user message.
-
-If there is a closed portion that is unlikely to be referenced immediately (for example, finished research before implementation), start the compress tool on it now.
-
-COMPRESS FLOW
-1. Use 'edit_memo' to update the memo. Review user requests on procedures and your command execution formats and extract anything other than content — working commands (concrete shell invocations that work technically in this environment — both on-demand and in agentic loops), user constraints, tooling preferences. If not applicable, skip.
-2. Select the message ranges to compress. Divide a range into multiple ranges if the range includes multiple topics.
-3. For each range, use 'compress' tool to compress the selected message range into the summary. If the selected range is the continuation of the previous block about the same topic, you can call 'expand_block', 'edit_summary' / 'append_summary' and 'save_summary' for the existing block instead of creating new summary block.
-</dcp-system-reminder>
-`
+You have been iterating for a while since the last user message. If a closed portion is unlikely to be referenced immediately, such as finished research before implementation, call enter_housekeeping for candidates and guidance. Complete and review the entire maintenance pass before calling leave_housekeeping once to apply all changes. Keep active context uncompressed.
+</dcp-system-reminder>`

@@ -2,11 +2,15 @@ import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import type { WithParts } from "./state"
 import { RECALL_COMPRESSED, RECALL_FORMAT_EXTENSION } from "./prompts/recall"
-import { fetchSessionMessages } from "./compress/search"
 import { parseMessageRef } from "./message-ids"
+import { filterMessages } from "./messages/shape"
 import { isIgnoredUserMessage } from "./messages/query"
 import { countAllMessageTokens } from "./token-utils"
 import { formatTokenCount } from "./ui/utils"
+import { eligibleConversationMessages, projectEligibleSourceMessages } from "./housekeeping/history"
+import { draftState } from "./housekeeping/state"
+import { loadAndReconcileSession } from "./housekeeping/state"
+import { withSessionCoordinator } from "./housekeeping/coordinator"
 
 interface RecallArgs {
     action: "get" | "search"
@@ -110,12 +114,30 @@ function collectMessageIdsForMessageRange(
     startRef: string,
     endRef: string,
 ): string[] {
-    const startRawId = resolveRefToRawId(ctx, startRef)
-    const endRawId = resolveRefToRawId(ctx, endRef)
+    const startIndex = parseMessageRef(startRef)
+    const endIndex = parseMessageRef(endRef)
+    if (startIndex === null) throw new Error(`Invalid message reference: ${startRef}`)
+    if (endIndex === null) throw new Error(`Invalid message reference: ${endRef}`)
+    const selectableIndexes = new Map<number, number>()
+    for (let index = 0; index < messages.length; index++) {
+        const message = messages[index]
+        if (!message || isIgnoredUserMessage(message)) continue
+        const ref = ctx.state.messageIds.byRawId.get(message.info.id)
+        const refIndex = ref ? parseMessageRef(ref) : null
+        if (refIndex !== null) selectableIndexes.set(refIndex, index)
+    }
 
-    const startIdx = findMessageIndex(messages, startRawId)
-    const endIdx = findMessageIndex(messages, endRawId)
-    if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) return []
+    const available = [...selectableIndexes.keys()].sort((left, right) => left - right)
+    const resolvedStart = available.find((index) => index >= startIndex)
+    const resolvedEnd = available.findLast((index) => index <= endIndex)
+    if (resolvedStart === undefined || resolvedEnd === undefined) {
+        throw new Error("Message range has no selectable references in the requested direction.")
+    }
+    const startIdx = selectableIndexes.get(resolvedStart)!
+    const endIdx = selectableIndexes.get(resolvedEnd)!
+    if (startIdx > endIdx) {
+        throw new Error(`Message range is reversed: ${startRef} must not follow ${endRef}.`)
+    }
 
     const ids: string[] = []
     for (let i = startIdx; i <= endIdx; i++) {
@@ -127,7 +149,12 @@ function collectMessageIdsForMessageRange(
     return ids
 }
 
-function searchMessages(messages: WithParts[], messageIds: Set<string>, query: string, byRawId: Map<string, string>): string {
+function searchMessages(
+    messages: WithParts[],
+    messageIds: Set<string>,
+    query: string,
+    byRawId: Map<string, string>,
+): string {
     let pattern: RegExp
     try {
         pattern = new RegExp(query, "i")
@@ -191,18 +218,30 @@ export function createRecallCompressedTool(ctx: ToolContext): ReturnType<typeof 
         args: buildSchema(),
         async execute(args, toolCtx) {
             const input = args as RecallArgs
+            return withSessionCoordinator(ctx.state, async () => {
+                const sessionMessages = await loadAndReconcileSession(ctx, toolCtx.sessionID)
+                const messages = filterMessages(sessionMessages)
+                const historicalMessages = eligibleConversationMessages(
+                    messages,
+                    ctx.state.housekeepingHistory,
+                )
+                const operationCtx = ctx.state.housekeeping
+                    ? { ...ctx, state: draftState(ctx.state) as typeof ctx.state }
+                    : ctx
+                const rawMessages = ctx.state.housekeeping
+                    ? projectEligibleSourceMessages(historicalMessages, ctx.state.housekeeping)
+                    : historicalMessages
 
-            const rawMessages = await fetchSessionMessages(ctx.client, toolCtx.sessionID)
+                if (input.action === "get") {
+                    return handleGet(operationCtx, rawMessages, input)
+                }
 
-            if (input.action === "get") {
-                return handleGet(ctx, rawMessages, input)
-            }
+                if (input.action === "search") {
+                    return handleSearch(operationCtx, rawMessages, input)
+                }
 
-            if (input.action === "search") {
-                return handleSearch(ctx, rawMessages, input)
-            }
-
-            throw new Error(`Unknown action: ${input.action}`)
+                throw new Error(`Unknown action: ${input.action}`)
+            })
         },
     })
 }
@@ -229,14 +268,14 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
     } else if (input.blockId !== undefined) {
         throw new Error(
             `Cannot use blockId with action "get". ` +
-            `Use fetch_summary_versions to inspect a block's summary, ` +
-            `or provide a messageId (e.g. "m0100") to retrieve raw messages.`,
+                `Use fetch_summary_versions to inspect a block's summary, ` +
+                `or provide a messageId (e.g. "m0100") to retrieve raw messages.`,
         )
     } else {
         throw new Error(
             `Provide a messageId (e.g. "m0100") or ` +
-            `messageIdStart/messageIdEnd to retrieve raw messages. ` +
-            `To inspect a block summary use fetch_summary_versions.`,
+                `messageIdStart/messageIdEnd to retrieve raw messages. ` +
+                `To inspect a block summary use fetch_summary_versions.`,
         )
     }
 

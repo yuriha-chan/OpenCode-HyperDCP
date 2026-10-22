@@ -20,7 +20,7 @@ export function renderMessagePriorityGuidance(priorityLabel: string, refs: strin
     return [
         "Message priority context:",
         "- Higher-priority older messages consume more context and should be compressed right away if it is safe to do so.",
-        `- ${priorityLabel}-priority message IDs before this point: ${refList}`,
+        `- ${priorityLabel}-priority message IDs available at entry: ${refList}`,
     ].join("\n")
 }
 

@@ -124,4 +124,68 @@ export interface SessionState {
     memo: string | null
     debug: DebugState
     autotoggle: boolean
+    revision: number
+    contentRevision: number
+    housekeeping: HousekeepingTransaction | null
+    housekeepingHistory: HousekeepingTransaction[]
+}
+
+export interface HousekeepingDraft {
+    prune: Prune
+    stats: SessionStats
+    memo: string | null
+    nudges: Nudges
+}
+
+export interface HousekeepingSourcePart {
+    messageId: string
+    partId: string
+}
+
+export interface HousekeepingOperation {
+    callId: string
+    messageId: string
+    partId: string | null
+    tool: string
+    input: unknown
+    result: string
+}
+
+export interface HousekeepingOperationResult {
+    result: string
+}
+
+export interface HousekeepingTransaction {
+    id: string
+    sessionId: string
+    entryMessageId: string
+    entryPartId: string | null
+    entryCallId: string
+    entryCreatedAt: number
+    sourceParts: HousekeepingSourcePart[]
+    baseRevision: number
+    base: HousekeepingDraft
+    draft: HousekeepingDraft
+    operations: Record<string, string>
+    operationResults: Record<string, HousekeepingOperationResult>
+    operationRecords: HousekeepingOperation[]
+    entryGuidance?: string
+    notifications?: Array<{
+        blockId: number
+        runId: number
+        summary: string
+        summaryTokens: number
+    }>
+    batchTopic?: string
+    operationOrder: string[]
+    operationDrafts: Record<string, HousekeepingDraft>
+    reverted?: boolean
+    completed?: {
+        leaveMessageId: string
+        leavePartId: string | null
+        leaveCallId: string
+        receipt: string
+        commitRevision: number
+        committedDraft: HousekeepingDraft
+    }
 }

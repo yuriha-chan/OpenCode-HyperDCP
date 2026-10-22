@@ -10,6 +10,7 @@ import type { ToolContext } from "./types"
 import { buildSearchContext, fetchSessionMessages } from "./search"
 import type { SearchContext } from "./types"
 import { applyPendingCompressionDurations } from "./timing"
+import { projectEligibleSourceMessages } from "../housekeeping/history"
 
 interface RunContext {
     ask(input: {
@@ -65,14 +66,19 @@ export async function prepareSession(
         ctx.config.manualMode.enabled,
     )
 
-    assignMessageRefs(ctx.state, rawMessages)
+    const eligibleMessages = ctx.state.housekeeping
+        ? projectEligibleSourceMessages(rawMessages, ctx.state.housekeeping)
+        : rawMessages
+    if (!ctx.state.housekeeping) assignMessageRefs(ctx.state, eligibleMessages)
 
-    deduplicate(ctx.state, ctx.logger, ctx.config, rawMessages)
-    purgeErrors(ctx.state, ctx.logger, ctx.config, rawMessages)
+    if (!ctx.state.housekeeping) {
+        deduplicate(ctx.state, ctx.logger, ctx.config, eligibleMessages)
+        purgeErrors(ctx.state, ctx.logger, ctx.config, eligibleMessages)
+    }
 
     return {
-        rawMessages,
-        searchContext: buildSearchContext(ctx.state, rawMessages),
+        rawMessages: eligibleMessages,
+        searchContext: buildSearchContext(ctx.state, eligibleMessages),
     }
 }
 
@@ -83,6 +89,7 @@ export async function finalizeSession(
     entries: NotificationEntry[],
     batchTopic: string | undefined,
 ): Promise<void> {
+    if (ctx.state.housekeeping) return
     if (ctx.state.manualMode !== "compress-pending") {
         ctx.state.manualMode = ctx.state.manualMode ? "active" : false
     }

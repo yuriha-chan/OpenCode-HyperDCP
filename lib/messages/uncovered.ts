@@ -2,9 +2,9 @@ import type { SessionState, WithParts } from "../state"
 import type { CompressionBlock } from "../state/types"
 import { isIgnoredUserMessage } from "../messages/query"
 import { countAllMessageTokens } from "../token-utils"
-import { assignMessageRefs } from "../message-ids"
 import { formatTokenCount } from "../ui/utils"
 import { onChainCoverage } from "./coverage"
+import { eligibleConversationMessages } from "../housekeeping/history"
 
 function refToNumber(ref: string): number {
     const m = ref.match(/^m(\d+)$/)
@@ -16,8 +16,8 @@ function findAdjacentBlocks(
     rangeStart: string,
     rangeEnd: string,
 ): { preceding: CompressionBlock | null; following: CompressionBlock | null } {
-    let preceding: CompressionBlock | null = null  // latest (largest endId < rangeStart)
-    let following: CompressionBlock | null = null  // earliest (smallest startId > rangeEnd)
+    let preceding: CompressionBlock | null = null // latest (largest endId < rangeStart)
+    let following: CompressionBlock | null = null // earliest (smallest startId > rangeEnd)
     const rangeStartNum = refToNumber(rangeStart)
     const rangeEndNum = refToNumber(rangeEnd)
 
@@ -57,8 +57,7 @@ export function findUncoveredRanges(
     state: SessionState,
     activeMessages: WithParts[],
 ): UncoveredRange[] {
-    assignMessageRefs(state, activeMessages)
-
+    activeMessages = eligibleConversationMessages(activeMessages, state.housekeepingHistory)
     const activeSet = new Set<string>()
     for (const message of activeMessages) {
         if (isIgnoredUserMessage(message)) continue
@@ -131,12 +130,11 @@ export function formatUncoveredRanges(
     lines.push("UNCOVERED MESSAGE RANGES (not in any active compression block):")
 
     for (const range of ranges) {
-        const tokenStr = formatTokenCount(range.tokenEstimate, true /* compact — formatTokenCount already appends "tokens" in non-compact mode */)
-        const { preceding, following } = findAdjacentBlocks(
-            blocksById,
-            range.startId,
-            range.endId,
+        const tokenStr = formatTokenCount(
+            range.tokenEstimate,
+            true /* compact — formatTokenCount already appends "tokens" in non-compact mode */,
         )
+        const { preceding, following } = findAdjacentBlocks(blocksById, range.startId, range.endId)
 
         const parts: string[] = []
         if (range.startId && range.endId) {
