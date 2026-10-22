@@ -10,7 +10,7 @@ Directly quote user messages when they are short enough to include safely. Direc
 Yet be LEAN. Strip away the noise: failed attempts that led nowhere, verbose tool outputs, back-and-forth exploration. What remains should be pure signal - golden nuggets of detail that preserve full understanding with zero ambiguity.
 
 EXPANDING EXISTING BLOCKS
-When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary within housekeeping. Finish and review all planned compression and summary edits across every affected block before calling leave_housekeeping once for the entire maintenance pass.
+When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary within housekeeping. Finish all planned compression and summary edits across every affected block before calling leave_housekeeping once for the entire maintenance pass.
 
 When the conversation shifts to a NEW topic or task, create a separate block for that topic. Multiple independent topics -> multiple blocks.
 The topic name must describe the conversation content, not the compression action (e.g., avoid "remaining fixes").
@@ -33,7 +33,7 @@ Rules:
 - Do not invent IDs. Use only IDs that are present in context.
 
 NO OVERLAP
-Ranges must not overlap with any existing active compression block. Every message can belong to at most one active block. If a range would overlap with block bN, use expand_block + edit_summary/append_summary to update that block. Keep the changes staged while completing any remaining maintenance; call leave_housekeeping only after the entire pass is complete and reviewed.
+Ranges must not overlap with any existing active compression block. Every message can belong to at most one active block. If a range would overlap with block bN, use expand_block + edit_summary/append_summary to update that block. Keep the changes staged while completing any remaining maintenance; call leave_housekeeping only after the entire pass is complete.
 
 BATCHING
 When multiple independent ranges are ready and their boundaries do not overlap with each other or existing blocks, include all of them as separate entries in the \`content\` array of a single tool call. Each entry should have its own \`startId\`, \`endId\`, and \`summary\`.

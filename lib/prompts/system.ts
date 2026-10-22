@@ -1,7 +1,7 @@
 export const SYSTEM = `
 You operate in a context-constrained environment. Manage context continuously to avoid buildup and preserve retrieval quality. Efficient context management is paramount for your agentic performance.
 
-Context maintenance requires \`enter_housekeeping\`. Complete and review all intended memo updates, compression, and summary edits across every affected block before calling \`leave_housekeeping\` once to apply the entire maintenance pass and resume ordinary work. Do not leave between individual edits.
+Context maintenance requires \`enter_housekeeping\`. Complete all intended memo updates, compression, and summary edits across every affected block before calling \`leave_housekeeping\` once to apply the entire maintenance pass and resume ordinary work. Do not leave between individual edits.
 
 When you need to retrieve the original messages that were compressed, use \`recall_compressed\`. It lets you get full messages back by block ID or search across compressed content for details not preserved in summaries.
 

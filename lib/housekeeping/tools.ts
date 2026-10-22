@@ -45,7 +45,7 @@ function completedEntry(
 export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
         description:
-            "Enter housekeeping mode and return eligible ranges and maintenance guidance. Keep the mode active for the entire maintenance pass: memo updates, planned compression, and all summary edits across affected blocks. Call leave_housekeeping only after completing and reviewing the whole accumulated draft.",
+            "Enter housekeeping mode and return eligible ranges and maintenance guidance. Keep the mode active for the entire maintenance pass: memo updates, planned compression, and all summary edits across affected blocks. Call leave_housekeeping only after completing all intended changes.",
         args: {},
         async execute(_args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext
@@ -62,7 +62,7 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 if (active && active.entryCallId === callId) {
                     return (
                         active.entryGuidance ??
-                        "Housekeeping is active. Complete and review all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once for the whole maintenance pass."
+                        "Housekeeping is active. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once for the whole maintenance pass."
                     )
                 }
                 if (active) {
@@ -155,7 +155,7 @@ function buildCommitReceipt(
 export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
         description:
-            "Commit the complete accumulated housekeeping draft and exit the mode. Call this only as the FINAL step of the entire maintenance pass. A memo edit or one summary edit is not a reason to leave while planned compression or further summary edits remain. Finish all intended compression, expansions, rewrites, version changes, and edits across every affected block first; inspect the accumulated draft with read_memo and fetch_summary_versions as applicable, and preserve essential findings from housekeeping. Then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks.",
+            "Commit the accumulated housekeeping draft and exit the mode. Finish all intended memo updates, compression, expansions, rewrites, version changes, and summary edits first. Preserve essential findings from housekeeping, then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks. Reading back the draft is optional.",
         args: {},
         async execute(_args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext

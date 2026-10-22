@@ -244,11 +244,6 @@ export function buildEntryGuidance(
                       .map((entry) => entry.ref),
               )
             : ""
-    const visibleRefs = ranges.length
-        ? messages
-              .map((message) => state.messageIds.byRawId.get(message.info.id))
-              .filter((ref): ref is string => ref !== undefined)
-        : []
     return [
         "HOUSEKEEPING ENTRY",
         registeredGuidance.trim(),
@@ -256,11 +251,8 @@ export function buildEntryGuidance(
         priorityGuidance,
         rangeText ||
             "No eligible uncovered ranges are available. Memo and summary maintenance can still be performed.",
-        ...(visibleRefs.length
-            ? [`Eligible message references: ${[...new Set(visibleRefs)].join(", ")}.`]
-            : []),
         `Eligible messages: ${sourceMessageIds.length}; estimated tokens: ${ranges.reduce((sum, range) => sum + range.tokenEstimate, 0)}.`,
-        "Use compress, edit_memo, edit_summary, append_summary, rewrite_summary, toggle_summary_version, and expand_block to stage changes. Inspect draft state with read_memo and fetch_summary_versions. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once to publish the accumulated draft.",
+        "Use compress, edit_memo, edit_summary, append_summary, rewrite_summary, toggle_summary_version, and expand_block to stage changes. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once to publish the accumulated draft.",
     ]
         .filter(Boolean)
         .join("\n\n")

@@ -28,7 +28,7 @@ const COMPRESS_TRIGGER_PROMPT = [
     "2. Use 'edit_memo' to update the memo. Review user requests on procedures and your command execution formats and extract anything other than content — command patterns, user constraints, tooling preferences. If not applicable, skip. Continue the maintenance pass after this step.",
     "3. Select the completed conversation ranges to compress. Divide a range into multiple ranges if the range includes multiple topics.",
     "4. For each range, use 'compress' to stage a high-fidelity technical summary. For an existing topic, use 'expand_block' and complete its summary edits. Keep all changes staged while processing the remaining ranges and blocks.",
-    "5. Only after all intended memo updates, compression, and summary edits across every affected block are complete and reviewed, call leave_housekeeping once to publish the entire maintenance pass.",
+    "5. After all intended memo updates, compression, and summary edits across every affected block are complete, call leave_housekeeping once to publish the entire maintenance pass.",
     "Follow the active compress mode, preserve all critical implementation details, and choose safe targets.",
     "Return after successful leave with a brief explanation of what content was compressed.",
 ].join("\n\n")

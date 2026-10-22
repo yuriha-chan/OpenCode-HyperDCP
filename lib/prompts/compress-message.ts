@@ -11,7 +11,7 @@ Yet be LEAN. Strip away the noise: failed attempts that led nowhere, verbose too
 If a message contains no significant technical decisions, code changes, or user requirements, produce a minimal one-line summary rather than a detailed one.
 
 EXPANDING EXISTING BLOCKS
-When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary within housekeeping. Finish and review all planned compression and summary edits across every affected block before calling leave_housekeeping once for the entire maintenance pass.
+When the messages continue a topic already covered by an active compressed block, use expand_block + edit_summary/append_summary within housekeeping. Finish all planned compression and summary edits across every affected block before calling leave_housekeeping once for the entire maintenance pass.
 
 When the conversation shifts to a NEW topic or task, create a separate block for that topic. Multiple independent topics -> multiple blocks.
 The topic name must describe the conversation content, not the compression action (e.g., avoid "remaining fixes").
@@ -36,7 +36,7 @@ Rules:
 - Do not invent IDs. Use only IDs that are present in context.
 
 NO OVERLAP
-Messages must not overlap with any existing active compression block. Every message can belong to at most one active block. If a message is already in block bN, use expand_block + edit_summary/append_summary to update that block. Keep the changes staged while completing any remaining maintenance; call leave_housekeeping only after the entire pass is complete and reviewed.
+Messages must not overlap with any existing active compression block. Every message can belong to at most one active block. If a message is already in block bN, use expand_block + edit_summary/append_summary to update that block. Keep the changes staged while completing any remaining maintenance; call leave_housekeeping only after the entire pass is complete.
 
 BATCHING
 Select MANY messages in a single tool call when they are safe to compress.
