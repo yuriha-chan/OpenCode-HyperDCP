@@ -158,7 +158,12 @@ export function createChatMessageTransformHandler(
 
             syncCompressionBlocks(state, logger, output.messages)
 
-            output.messages = projectHousekeepingHistory(output.messages, state.housekeepingHistory)
+            const newMessages = projectHousekeepingHistory(
+                output.messages,
+                state.housekeepingHistory,
+            )
+            output.messages.length = 0
+            output.messages.push(...newMessages)
 
             syncCompressPermissionState(state, config, hostPermissions, output.messages)
 
