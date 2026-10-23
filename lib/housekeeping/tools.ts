@@ -14,6 +14,7 @@ import { withSessionCoordinator } from "./coordinator"
 import { loadAndReconcileSession } from "./state"
 import { buildEntryGuidance, cloneDraft, publishDraft } from "./state"
 import type { HousekeepingTransaction } from "../state"
+import type { Memo } from "../memo"
 import type { ToolExecutionContext } from "./types"
 
 async function loadSessionMessages(ctx: ToolContext, sessionID: string): Promise<WithParts[]> {
@@ -40,6 +41,41 @@ function completedEntry(
                   transaction.entryCallId === callId && transaction.entryMessageId === messageId,
           )
         : undefined
+}
+
+function replaceTodoStatus(memo: Memo | null, todos: unknown[]): Memo {
+    const updated = structuredClone(memo ?? [])
+    const topicIndex = updated.findIndex(
+        (item) => typeof item !== "string" && item.topic === "Todo status",
+    )
+    const section = { topic: "Todo status", items: todos.length ? [JSON.stringify(todos)] : [] }
+    if (topicIndex < 0) updated.push(section)
+    else updated[topicIndex] = section
+    return updated
+}
+
+async function fetchTodoItems(ctx: ToolContext, sessionID: string): Promise<unknown[] | undefined> {
+    try {
+        const response = await ctx.client.session.todo({ path: { id: sessionID } })
+        if (response?.error) {
+            ctx.logger.warn("Failed to fetch todo status for housekeeping entry", {
+                error: String(response.error),
+            })
+            return undefined
+        }
+        if (!Array.isArray(response?.data)) {
+            ctx.logger.warn("Failed to fetch todo status for housekeeping entry", {
+                error: "Todo response data is missing or is not an array",
+            })
+            return undefined
+        }
+        return response.data
+    } catch (error) {
+        ctx.logger.warn("Failed to fetch todo status for housekeeping entry", {
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+    }
 }
 
 export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {
@@ -76,6 +112,8 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 if (ctx.config.compress.permission === "deny") {
                     throw new Error("Compression permission is denied.")
                 }
+
+                const todos = await fetchTodoItems(ctx, toolContext.sessionID)
 
                 const priorWork = projectHousekeepingHistory(
                     messages,
@@ -119,6 +157,8 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     operationOrder: [],
                     operationDrafts: {},
                 }
+                if (todos !== undefined)
+                    transaction.draft.memo = replaceTodoStatus(transaction.draft.memo, todos)
                 candidateState.housekeeping = transaction
                 candidateState.housekeepingHistory = [
                     ...candidateState.housekeepingHistory,

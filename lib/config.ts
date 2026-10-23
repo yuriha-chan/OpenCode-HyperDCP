@@ -98,7 +98,7 @@ const DEFAULT_PROTECTED_TOOLS = [
     "edit",
 ]
 
-const COMPRESS_DEFAULT_PROTECTED_TOOLS = ["task", "skill", "todowrite", "todoread"]
+const COMPRESS_DEFAULT_PROTECTED_TOOLS = ["task", "skill"]
 
 export const VALID_CONFIG_KEYS = new Set([
     "$schema",

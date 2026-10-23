@@ -38,6 +38,7 @@ export interface HarnessOptions {
     allowSubAgents?: boolean
     configure?: (config: PluginConfig) => void
     sharedState?: SessionState
+    todo?: () => Promise<{ data?: unknown; error?: unknown }>
 }
 
 export function ordinaryMessage(
@@ -128,11 +129,12 @@ export async function createHousekeepingHarness(t: TestContext, options: Harness
     const get = t.mock.fn(async (_input: { path: { id: string } }) => ({
         data: { id: sessionID, parentID: options.parentID },
     }))
+    const todo = t.mock.fn(options.todo ?? (async () => ({ data: undefined })))
     const prompt = t.mock.fn(async (_input: { path: { id: string }; body: unknown }) => ({
         data: {},
     }))
     const ask = t.mock.fn(async (_input: { permission: string }) => {})
-    const client = { session: { messages, get, prompt } }
+    const client = { session: { messages, get, prompt, todo } }
     const logger = new Logger(false)
     const prompts = new PromptStore(logger, root, false)
     const ctx: ToolContext = {
@@ -271,6 +273,7 @@ export async function createHousekeepingHarness(t: TestContext, options: Harness
         root,
         sessionID,
         client,
+        todo,
         ask,
         run,
         render,

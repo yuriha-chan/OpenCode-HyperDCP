@@ -3,9 +3,10 @@ import assert from "node:assert/strict"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import test from "node:test"
 import { tool } from "@opencode-ai/plugin"
-import { getInvalidConfigKeys, validateConfigTypes } from "../lib/config"
+import { getConfig, getInvalidConfigKeys, validateConfigTypes } from "../lib/config"
 import { renderMemo, type Memo } from "../lib/memo"
 import { getSessionFilePath } from "../lib/paths"
+import { resolveProtectedTool } from "../lib/protected-tools"
 import { createEditMemoTool } from "../lib/set-memo"
 import type { PersistedSessionState } from "../lib/state/persistence"
 import { createSessionState } from "../lib/state"
@@ -177,6 +178,7 @@ test("leave reports an unchanged empty memo", async (t) => {
 
 test("retrying identical boundary calls is idempotent while a distinct second entry rejects", async (t) => {
     const h = await createHousekeepingHarness(t)
+    h.todo.mock.mockImplementation(async () => ({ data: [{ id: "todo-entry" }] }))
     const entryID = { callID: "enter-retry", messageID: "enter-retry-message" }
     const exitID = { callID: "leave-retry", messageID: "leave-retry-message" }
     const guidance = await h.run("enter_housekeeping", {}, entryID)
@@ -187,10 +189,180 @@ test("retrying identical boundary calls is idempotent while a distinct second en
     const receipt = await h.run("leave_housekeeping", {}, exitID)
 
     assert.equal(await h.run("leave_housekeeping", {}, exitID), receipt)
-    assert.equal(await h.readMemo(), "- Exactly once.")
+    assert.equal(await h.run("enter_housekeeping", {}, entryID), guidance)
+    assert.equal(await h.readMemo(), '- Exactly once.\n# Todo status\n- [{"id":"todo-entry"}]')
+    assert.equal(h.todo.mock.callCount(), 1)
+    assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
     await assert.rejects(h.leave(), /not.*housekeeping|enter_housekeeping|no.*active/i)
     h.assertSessionReads()
 })
+
+test("entry stores the complete todo response as one topic item for a null memo", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    const todos = [
+        {
+            id: "todo-001",
+            content: "Review the deployment checklist",
+            status: "pending",
+            priority: "high",
+            metadata: { owner: "alex", labels: ["release", "ops"], estimate: 3 },
+        },
+        {
+            id: "todo-001",
+            content: "Review the deployment checklist",
+            status: "pending",
+            priority: "high",
+            metadata: { owner: "alex", labels: ["release", "ops"], estimate: 3 },
+        },
+        {
+            id: "todo-002",
+            content: "Update the API documentation",
+            status: "in_progress",
+            priority: "medium",
+            metadata: { owner: "sam", startedAt: "2025-01-15T09:30:00Z" },
+        },
+        {
+            id: "todo-003",
+            content: "Add request validation",
+            status: "completed",
+            priority: "low",
+            metadata: { owner: "lee", completedAt: "2025-01-14T16:45:00Z" },
+        },
+        {
+            id: "todo-004",
+            content: "Retire the legacy webhook",
+            status: "cancelled",
+            priority: "medium",
+            metadata: { owner: "alex", cancellationReason: "replaced by event stream" },
+        },
+    ]
+    h.todo.mock.mockImplementationOnce(async () => ({ data: todos }))
+
+    await h.enter()
+
+    const todoItem = `- ${JSON.stringify(todos)}`
+    assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
+    assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
+    await h.leave()
+    assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
+    await h.restart()
+    assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
+})
+
+test("entry replaces the positioned todo topic and its nested notes only in the draft", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        content: { topic: "Before", items: ["keep before"] },
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        content: {
+            topic: "Todo status",
+            items: ["old todo", { topic: "Old notes", items: ["remove this"] }],
+        },
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        content: { topic: "After", items: ["keep after"] },
+    })
+    await h.leave()
+    h.todo.mock.mockImplementationOnce(async () => ({ data: [{ id: "fresh", status: "pending" }] }))
+
+    await h.enter()
+
+    const expected =
+        '# Before\n- keep before\n# Todo status\n- [{"id":"fresh","status":"pending"}]\n# After\n- keep after'
+    assert.equal(await h.readMemo(), expected)
+    const injected = (await h.render())
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.text.startsWith("[Memo]\n"))
+        .map((part) => part.text)
+    assert.deepEqual(injected, [
+        "[Memo]\n# Before\n- keep before\n# Todo status\n- old todo\n## Old notes\n- remove this\n# After\n- keep after",
+    ])
+    await h.leave()
+    assert.equal(await h.readMemo(), expected)
+    await h.restart()
+    assert.equal(await h.readMemo(), expected)
+})
+
+test("an empty todo response clears the existing topic while retaining its position", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        content: { topic: "Before", items: ["keep"] },
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        content: { topic: "Todo status", items: ["old"] },
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        content: { topic: "After", items: ["keep"] },
+    })
+    await h.leave()
+    h.todo.mock.mockImplementationOnce(async () => ({ data: [] }))
+
+    await h.enter()
+
+    assert.equal(await h.readMemo(), "# Before\n- keep\n# Todo status\n# After\n- keep")
+    await h.leave()
+    await h.restart()
+    assert.equal(await h.readMemo(), "# Before\n- keep\n# Todo status\n# After\n- keep")
+})
+
+test("public entry with empty todo data retains an empty topic for a null memo", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    h.todo.mock.mockImplementationOnce(async () => ({ data: [] }))
+
+    await h.run("enter_housekeeping")
+
+    assert.equal(await h.readMemo(), "# Todo status")
+    await h.run("leave_housekeeping")
+    await h.restart()
+    assert.equal(await h.readMemo(), "# Todo status")
+})
+
+for (const { name, configure } of [
+    {
+        name: "a rejected todo request",
+        configure: (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) =>
+            h.todo.mock.mockImplementationOnce(async () => {
+                throw new Error("todo request failed")
+            }),
+    },
+    {
+        name: "a todo API error response",
+        configure: (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) =>
+            h.todo.mock.mockImplementationOnce(async () => ({
+                error: new Error("todo API failed"),
+            })),
+    },
+    {
+        name: "a todo response without data",
+        configure: (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) =>
+            h.todo.mock.mockImplementationOnce(async () => ({ data: undefined })),
+    },
+]) {
+    test(`failed ${name} leaves the memo untouched and permits entry`, async (t) => {
+        const h = await createHousekeepingHarness(t)
+        await h.enter()
+        await h.run("edit_memo", { action: "append", content: "Existing memo." })
+        await h.leave()
+        configure(h)
+
+        await h.enter()
+
+        assert.equal(await h.readMemo(), "- Existing memo.")
+        assert.equal(h.todo.mock.callCount(), 2)
+        await h.leave()
+        await h.restart()
+        assert.equal(await h.readMemo(), "- Existing memo.")
+    })
+}
 
 test("read_memo reports empty after removing the last topic and committing", async (t) => {
     const h = await createHousekeepingHarness(t)
@@ -963,6 +1135,53 @@ test("housekeeping exceptions are recognized by the public configuration validat
         assert.deepEqual(getInvalidConfigKeys(input), [])
         assert.deepEqual(validateConfigTypes(input), [])
     }
+})
+
+test("public configuration defaults and explicit compression tool protections", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    const ctx = { ...h.ctx, directory: h.root } as any
+    const defaults = getConfig(ctx)
+
+    assert.deepEqual(Object.keys(defaults.compress.protectedTools), ["task", "skill"])
+    assert.deepEqual(Object.keys(defaults.commands.protectedTools), [
+        "task",
+        "skill",
+        "todowrite",
+        "todoread",
+        "compress",
+        "batch",
+        "plan_enter",
+        "plan_exit",
+        "write",
+        "edit",
+    ])
+
+    await mkdir(`${h.root}/.opencode`, { recursive: true })
+    const configPath = `${h.root}/.opencode/dcp.jsonc`
+    await writeFile(
+        configPath,
+        JSON.stringify({
+            compress: {
+                protectedTools: {
+                    todoread: { keepLast: 2 },
+                    todowrite: { truncateSize: 100 },
+                },
+            },
+        }),
+        "utf-8",
+    )
+
+    const configured = getConfig(ctx)
+    assert.deepEqual(configured.compress.protectedTools.todoread, { keepLast: 2 })
+    assert.deepEqual(configured.compress.protectedTools.todowrite, { truncateSize: 100 })
+    assert.equal(
+        resolveProtectedTool(configured.compress.protectedTools, "todoread")?.protect,
+        true,
+    )
+    assert.equal(
+        resolveProtectedTool(configured.compress.protectedTools, "todowrite")?.protect,
+        true,
+    )
 })
 
 for (const allowedTools of ["read", null, [1], ["read", false]]) {
