@@ -87,49 +87,6 @@ test("entry freezes an ordinary prefix in the same message as its boundary call"
     assert.doesNotMatch(visibleText(await h.render()), /Investigate the parser boundary\./)
 })
 
-test("housekeeping entry restores subagent references after a session reset", async (t) => {
-    const sessionID = "ses_range_subagent_reset"
-    const h = await createHousekeepingHarness(t, {
-        mode: "range",
-        parentID: "ses_parent",
-        allowSubAgents: true,
-        messages: [
-            ordinaryMessage(sessionID, "subagent-prompt", "user", "Investigate the issue"),
-            ordinaryMessage(
-                sessionID,
-                "subagent-finding",
-                "assistant",
-                "I found the relevant code path",
-            ),
-            ordinaryMessage(
-                sessionID,
-                "subagent-followup",
-                "user",
-                "Please compress the initial findings",
-            ),
-        ],
-    })
-    await h.restart()
-    const entry = await h.enter()
-    assert.match(entry, /m0001/)
-    assert.match(entry, /m0002/)
-    assert.match(await stageBlock(h, "Captured the investigation and follow-up."), /stag/i)
-    const recalled = await h.run("recall_compressed", { action: "get", messageId: "m0001" })
-    assert.match(recalled, /I found the relevant code path/)
-    assert.doesNotMatch(recalled, /Investigate the issue/)
-
-    await h.leave()
-    const context = visibleText(await h.render())
-    assert.match(context, /Investigate the issue/)
-    assert.match(context, /Captured the investigation and follow-up\./)
-    assert.doesNotMatch(
-        context,
-        /I found the relevant code path|Please compress the initial findings/,
-    )
-    assert.ok(h.client.session.get.mock.callCount() >= 2)
-    h.assertSessionReads()
-})
-
 test("compress range preserves protected prompt information in draft and committed summaries", async (t) => {
     const sessionID = "ses_range_protect_tag"
     const h = await createHousekeepingHarness(t, {

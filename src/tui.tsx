@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { getSessionFilePath } from "../lib/paths"
+import { renderStoredMemo } from "./memo"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
 import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
 
@@ -142,7 +143,7 @@ function readMemo(sessionId: string): string | null {
         const path = getSessionFilePath(sessionId)
         const content = readFileSync(path, "utf-8")
         const state = JSON.parse(content)
-        return typeof state?.memo === "string" ? state.memo : null
+        return renderStoredMemo(state?.memo)
     } catch {
         return null
     }

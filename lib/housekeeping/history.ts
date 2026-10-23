@@ -488,7 +488,8 @@ export function applyDraftDelta(
     )
     target.stats.pruneTokenCounter += to.stats.pruneTokenCounter - from.stats.pruneTokenCounter
     target.stats.totalPruneTokens += to.stats.totalPruneTokens - from.stats.totalPruneTokens
-    if (target.memo === from.memo) target.memo = to.memo
+    if (JSON.stringify(target.memo) === JSON.stringify(from.memo))
+        target.memo = structuredClone(to.memo)
     mergeSetDelta(
         target.nudges.contextLimitAnchors,
         from.nudges.contextLimitAnchors,

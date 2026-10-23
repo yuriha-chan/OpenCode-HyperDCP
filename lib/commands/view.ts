@@ -3,6 +3,7 @@ import type { CompressionBlock, SessionState, WithParts } from "../state"
 import { syncCompressionBlocks } from "../messages"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
+import { renderMemo } from "../memo"
 import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount, truncate } from "../ui/utils"
 import { countTokens } from "../token-utils"
@@ -175,7 +176,7 @@ export async function handleViewCommand(ctx: ViewCommandContext): Promise<void> 
 
     if (!targetArg) {
         const availableTargets = getActiveCompressionTargets(messagesState)
-        const message = formatListView(availableTargets, state.memo)
+        const message = formatListView(availableTargets, state.memo ? renderMemo(state.memo) : null)
         await sendIgnoredMessage(client, sessionId, message, params, logger)
         return
     }

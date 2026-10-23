@@ -148,7 +148,12 @@ function buildCommitReceipt(
     const affected = changed.length
         ? changed.map((block) => `b${block.blockId} v${block.activeVersionIndex}`).join(", ")
         : "no blocks"
-    const memo = candidate.memo === base.memo ? "unchanged" : candidate.memo ? "updated" : "cleared"
+    const memo =
+        JSON.stringify(candidate.memo) === JSON.stringify(base.memo)
+            ? "unchanged"
+            : candidate.memo
+              ? "updated"
+              : "cleared"
     return `Housekeeping complete: committed ${affected}; memo ${memo}.`
 }
 

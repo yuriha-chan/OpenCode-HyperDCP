@@ -1,5 +1,6 @@
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
+import { parseMemo, renderMemo } from "../memo"
 import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
 
@@ -24,10 +25,11 @@ export async function handleMemoCommand(ctx: MemoCommandContext, args: string[])
 
     if (subcommand === "set") {
         const content = args.slice(1).join(" ").trim()
-        state.memo = content.length > 0 ? content : null
+        const memo = parseMemo(content)
+        state.memo = memo.length > 0 ? memo : null
         const params = getCurrentParams(state, messages, logger)
         const msg = state.memo
-            ? `Memo set (${state.memo.length} chars). Use /dcp memo show to view.`
+            ? `Memo set (${renderMemo(state.memo).length} chars). Use /dcp memo show to view.`
             : "Memo cleared."
         await sendIgnoredMessage(client, sessionId, msg, params, logger)
         return
@@ -45,5 +47,5 @@ export async function handleMemoCommand(ctx: MemoCommandContext, args: string[])
         )
         return
     }
-    await sendIgnoredMessage(client, sessionId, `[Memo]\n${state.memo}`, params, logger)
+    await sendIgnoredMessage(client, sessionId, `[Memo]\n${renderMemo(state.memo)}`, params, logger)
 }

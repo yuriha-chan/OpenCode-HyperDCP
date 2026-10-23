@@ -8,6 +8,7 @@ import { handleEditCommand } from "../lib/commands/edit"
 import { createSessionState, type WithParts } from "../lib/state"
 import type { PluginConfig } from "../lib/config"
 import { Logger } from "../lib/logger"
+import type { Memo } from "../lib/memo"
 
 const testDataHome = join(tmpdir(), `opencode-dcp-commands-view-edit-${process.pid}`)
 const testConfigHome = join(tmpdir(), `opencode-dcp-commands-view-edit-config-${process.pid}`)
@@ -227,14 +228,27 @@ test("/dcp view with no args lists available compressions with summaries", async
     const rawMessages = buildMessages(sessionID)
     const state = createSessionState()
     const logger = new Logger(false)
-    const ignoredMessages: string[] = []
+    const sentPrompts: Array<{ sessionID: string; text: string }> = []
+    state.memo = [
+        "Remember this",
+        {
+            topic: "Workflow",
+            items: ["Run the checks", { topic: "Empty subsection", items: [] }],
+        },
+    ]
 
     const client = {
         session: {
             messages: async () => ({ data: rawMessages }),
             get: async () => ({ data: { parentID: null } }),
-            prompt: async ({ body }: { body: { parts: Array<{ text: string }> } }) => {
-                ignoredMessages.push(body.parts[0]?.text || "")
+            prompt: async ({
+                path,
+                body,
+            }: {
+                path: { id: string }
+                body: { parts: Array<{ text: string }> }
+            }) => {
+                sentPrompts.push({ sessionID: path.id, text: body.parts[0]?.text || "" })
             },
         },
     }
@@ -261,12 +275,64 @@ test("/dcp view with no args lists available compressions with summaries", async
         args: [],
     })
 
-    const output = ignoredMessages.join("\n")
+    assert.equal(sentPrompts.length, 1, "should send one response prompt")
+    assert.equal(sentPrompts[0]?.sessionID, sessionID, "should send the response to this session")
+    const output = sentPrompts[0]?.text || ""
     assert.match(output, /Auth System/)
     assert.match(output, /Database Layer/)
     assert.match(output, /Summary of auth/)
     assert.match(output, /Summary of db/)
     assert.match(output, /1 \(/, "should show block ID")
+    const renderedMemo = "- Remember this\n# Workflow\n- Run the checks\n## Empty subsection"
+    assert.ok(output.includes(renderedMemo), "should show the memo as rendered Markdown")
+    assert.ok(
+        output.includes(`  ${renderedMemo.length} chars`),
+        "should count rendered memo characters",
+    )
+})
+
+test("/dcp view with no compressions handles null and empty memos", async () => {
+    const memos: (Memo | null)[] = [null, []]
+    for (const memo of memos) {
+        const sessionID = `ses_view_empty_memo_${Date.now()}_${memo === null ? "null" : "empty"}`
+        const rawMessages = buildMessages(sessionID)
+        const state = createSessionState()
+        state.memo = memo
+        const logger = new Logger(false)
+        const sentPrompts: Array<{ sessionID: string; text: string }> = []
+
+        const client = {
+            session: {
+                messages: async () => ({ data: rawMessages }),
+                get: async () => ({ data: { parentID: null } }),
+                prompt: async ({
+                    path,
+                    body,
+                }: {
+                    path: { id: string }
+                    body: { parts: Array<{ text: string }> }
+                }) => {
+                    sentPrompts.push({
+                        sessionID: path.id,
+                        text: body.parts[0]?.text || "",
+                    })
+                },
+            },
+        }
+
+        await handleViewCommand({
+            client,
+            state,
+            logger,
+            sessionId: sessionID,
+            messages: rawMessages,
+            args: [],
+        })
+
+        assert.equal(sentPrompts.length, 1, "should send one response prompt")
+        assert.equal(sentPrompts[0]?.sessionID, sessionID)
+        assert.match(sentPrompts[0]?.text || "", /No active compressions or memo to view\./)
+    }
 })
 
 test("/dcp view with non-numeric arg shows error", async () => {

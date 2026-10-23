@@ -23,6 +23,7 @@ import {
     type HousekeepingDraftViewMarker,
 } from "../housekeeping/coordinator"
 import { withSessionCoordinator } from "../housekeeping/coordinator"
+import { parseMemo, validateMemo, type Memo } from "../memo"
 
 /** Prune state as stored on disk */
 export interface PersistedPruneMessagesState {
@@ -58,7 +59,7 @@ export interface PersistedSessionState {
     nudges: PersistedNudges
     stats: SessionStats
     protectedRefs?: string[]
-    memo?: string | null
+    memo?: string | Memo | null
     messageIds?: PersistedMessageIds
     autotoggle?: boolean
     revision?: number
@@ -67,6 +68,8 @@ export interface PersistedSessionState {
     housekeeping?: Record<string, unknown> | null
     housekeepingHistory?: Array<Record<string, unknown>>
 }
+
+type LoadedSessionState = Omit<PersistedSessionState, "memo"> & { memo?: Memo | null }
 
 const writeQueues = new Map<string, Promise<void>>()
 const persistedRevisions = new Map<string, number>()
@@ -108,6 +111,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+function decodePersistedMemo(value: unknown): Memo | null {
+    if (value === undefined || value === null) return null
+    if (typeof value === "string") {
+        const memo = parseMemo(value)
+        return memo.length ? memo : null
+    }
+    try {
+        validateMemo(value)
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(`Invalid persisted memo: ${detail}`)
+    }
+    return value.length ? value : null
+}
+
 function restoreDraft(value: unknown): HousekeepingTransaction["draft"] | null {
     if (!isRecord(value) || !isRecord(value.prune) || !isRecord(value.nudges)) return null
     if (
@@ -116,7 +134,13 @@ function restoreDraft(value: unknown): HousekeepingTransaction["draft"] | null {
         typeof value.stats.totalPruneTokens !== "number"
     )
         return null
-    if (value.memo !== null && typeof value.memo !== "string") return null
+    let memo: Memo | null
+    try {
+        memo = decodePersistedMemo(value.memo)
+    } catch (error) {
+        if (error instanceof Error) return null
+        throw error
+    }
     const asStringArray = (input: unknown): string[] | null =>
         Array.isArray(input) && input.every((entry) => typeof entry === "string") ? input : null
     const contextLimitAnchors = asStringArray(value.nudges.contextLimitAnchors)
@@ -137,7 +161,7 @@ function restoreDraft(value: unknown): HousekeepingTransaction["draft"] | null {
             pruneTokenCounter: value.stats.pruneTokenCounter,
             totalPruneTokens: value.stats.totalPruneTokens,
         },
-        memo: value.memo,
+        memo,
         nudges: {
             contextLimitAnchors: new Set(contextLimitAnchors),
             turnNudgeAnchors: new Set(turnNudgeAnchors),
@@ -413,7 +437,7 @@ export async function saveSessionStateStrict(
 export async function loadSessionState(
     sessionId: string,
     logger: Logger,
-): Promise<PersistedSessionState | null> {
+): Promise<LoadedSessionState | null> {
     try {
         const filePath = getSessionFilePath(sessionId)
 
@@ -440,6 +464,10 @@ export async function loadSessionState(
             })
             return null
         }
+
+        const memo = decodePersistedMemo(state.memo)
+        state.memo = memo
+        const loadedState: LoadedSessionState = Object.assign(state, { memo })
 
         const rawContextLimitAnchors = Array.isArray(state.nudges.contextLimitAnchors)
             ? state.nudges.contextLimitAnchors
@@ -493,7 +521,7 @@ export async function loadSessionState(
             sessionId: sessionId,
         })
 
-        return state
+        return loadedState
     } catch (error: any) {
         logger.warn("Failed to load session state", {
             sessionId: sessionId,

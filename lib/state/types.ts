@@ -1,5 +1,6 @@
 import type { CompressionTimingState } from "../compress/timing"
 import { Message, Part } from "@opencode-ai/sdk/v2"
+import type { Memo } from "../memo"
 
 export interface WithParts {
     info: Message
@@ -121,7 +122,7 @@ export interface SessionState {
     modelContextLimit: number | undefined
     systemPromptTokens: number | undefined
     protectedRefs: Set<string>
-    memo: string | null
+    memo: Memo | null
     debug: DebugState
     autotoggle: boolean
     revision: number
@@ -133,7 +134,7 @@ export interface SessionState {
 export interface HousekeepingDraft {
     prune: Prune
     stats: SessionStats
-    memo: string | null
+    memo: Memo | null
     nudges: Nudges
 }
 

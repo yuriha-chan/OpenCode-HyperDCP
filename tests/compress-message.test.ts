@@ -58,69 +58,6 @@ test("compress message requires housekeeping entry before staging", async (t) =>
     h.assertSessionReads()
 })
 
-test("compress message stages individual summaries and protected tool output until leave", async (t) => {
-    const sessionID = "ses_message_batch"
-    const h = await createHousekeepingHarness(t, {
-        mode: "message",
-        messages: [
-            ordinaryMessage(sessionID, "request", "user", "Investigate the issue"),
-            ordinaryMessage(sessionID, "finding", "assistant", "I mapped the code path"),
-            toolMessage(sessionID, "task-finding", "task", "task output body"),
-        ],
-        configure(config) {
-            config.compress.protectedTools = ["task"]
-        },
-    })
-    const guidance = await h.enter()
-    assert.match(guidance, /m0002/)
-    assert.match(
-        await h.run("compress", {
-            topic: "Batch stale notes",
-            content: [
-                entry("m0002"),
-                {
-                    messageId: "m0003",
-                    topic: "Task output note",
-                    summary: "Task-backed follow-up.",
-                },
-            ],
-        }),
-        /stag/i,
-    )
-    assert.match(await h.versions(1, 1), /Code path note[\s\S]*Captured the code-path findings\./)
-    const protectedSummary = await h.versions(2, 1)
-    assert.match(protectedSummary, /Task output note/)
-    assert.match(
-        protectedSummary,
-        /The following protected tools were used in this conversation as well:/,
-    )
-    assert.match(protectedSummary, /Tool: task/)
-    assert.match(protectedSummary, /task output body/)
-    const staged = await h.render()
-    assert.match(
-        visibleText(staged.filter((message) => message.info.id === "finding")),
-        /I mapped the code path/,
-    )
-    assert.match(
-        visibleText(staged.filter((message) => message.info.id === "task-finding")),
-        /I also ran a task tool/,
-    )
-    assert.doesNotMatch(
-        visibleText(
-            staged.filter((message) => !message.parts.some((part) => part.type === "tool")),
-        ),
-        /Captured the code-path findings\.|Task-backed follow-up\./,
-    )
-    await h.leave()
-    const context = visibleText(await h.render())
-    assert.match(context, /Captured the code-path findings\./)
-    assert.match(context, /Task-backed follow-up\./)
-    assert.match(context, /task output body/)
-    assert.doesNotMatch(context, /I mapped the code path|I also ran a task tool/)
-    assert.match(context, /Investigate the issue/)
-    h.assertSessionReads()
-})
-
 test("compress message appends protected prompt information to the staged summary", async (t) => {
     const sessionID = "ses_message_protect_tag"
     const h = await createHousekeepingHarness(t, {

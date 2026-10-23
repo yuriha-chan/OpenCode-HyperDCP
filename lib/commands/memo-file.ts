@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { saveSessionState } from "../state/persistence"
+import { parseMemo, renderMemo } from "../memo"
 import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
 
@@ -22,13 +23,7 @@ export async function handleMemoFileCommand(ctx: MemoFileCommandContext): Promis
     const filePath = args[0]
 
     if (!filePath) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Usage: /dcp memo-file <path>",
-            params,
-            logger,
-        )
+        await sendIgnoredMessage(client, sessionId, "Usage: /dcp memo-file <path>", params, logger)
         return
     }
 
@@ -46,29 +41,21 @@ export async function handleMemoFileCommand(ctx: MemoFileCommandContext): Promis
         return
     }
 
-    const trimmed = content.trim()
-    if (!trimmed) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Edited memo is empty; nothing applied.",
-            params,
-            logger,
-        )
-        return
-    }
-
-    state.memo = trimmed
+    const memo = parseMemo(content.trim())
+    state.memo = memo.length > 0 ? memo : null
 
     await saveSessionState(state, logger)
 
+    const rendered = state.memo ? renderMemo(state.memo) : ""
     await sendIgnoredMessage(
         client,
         sessionId,
-        `Memo updated (${state.memo.length} chars).`,
+        state.memo
+            ? `Memo updated (${rendered.length} chars).`
+            : "Edited memo is empty; memo cleared.",
         params,
         logger,
     )
 
-    logger.info("Memo-file command completed", { length: state.memo.length })
+    logger.info("Memo-file command completed", { length: rendered.length })
 }

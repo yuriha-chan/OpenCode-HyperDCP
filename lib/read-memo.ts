@@ -3,6 +3,7 @@ import type { ToolContext } from "./compress/types"
 import { draftState } from "./housekeeping/state"
 import { loadAndReconcileSession } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
+import { renderMemo } from "./memo"
 
 export function createReadMemoTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
@@ -16,10 +17,9 @@ No arguments needed — returns the full current memo text verbatim.`,
             return withSessionCoordinator(ctx.state, async () => {
                 await loadAndReconcileSession(ctx, toolContext.sessionID)
                 const memo = (ctx.state.housekeeping ? draftState(ctx.state) : ctx.state).memo
-                if (memo && memo.trim().length > 0) {
-                    return memo
-                }
-                return "(memo is empty)"
+                if (!memo) return "(memo is empty)"
+                const rendered = renderMemo(memo)
+                return rendered.trim().length > 0 ? rendered : "(memo is empty)"
             })
         },
     })

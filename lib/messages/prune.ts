@@ -2,6 +2,7 @@ import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import { isMessageCompacted } from "../state/utils"
+import { renderMemo } from "../memo"
 import { createSyntheticUserMessage, replaceBlockIdsWithBlocked } from "./utils"
 import { getLastUserMessage } from "./query"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
@@ -162,9 +163,11 @@ const filterCompressedRanges = (
     config: PluginConfig,
     messages: WithParts[],
 ): void => {
+    const memoContent = state.memo ? renderMemo(state.memo) : ""
     if (
         state.prune.messages.byMessageId.size === 0 &&
-        state.prune.messages.activeByAnchorMessageId.size === 0
+        state.prune.messages.activeByAnchorMessageId.size === 0 &&
+        memoContent.length === 0
     ) {
         return
     }
@@ -245,12 +248,12 @@ const filterCompressedRanges = (
     }
 
     // Inject memo after the last block summary
-    if (state.memo && state.memo.length > 0) {
+    if (memoContent.length > 0) {
         const userMessage = getLastUserMessage(messages)
         if (userMessage) {
             const memoMsg = createSyntheticUserMessage(
                 userMessage,
-                `[Memo]\n${state.memo}`,
+                `[Memo]\n${memoContent}`,
                 "dcp_memo",
             )
             if (lastBlockIndex >= 0) {
