@@ -14,7 +14,7 @@ test("returns null for absent and unsupported non-array memo values", () => {
     }
 })
 
-test("renders a structured memo with nested headers and unindented bullets", () => {
+test("renders a structured memo with nested headers and plain text items", () => {
     assert.equal(
         renderStoredMemo([
             "root note",
@@ -30,11 +30,11 @@ test("renders a structured memo with nested headers and unindented bullets", () 
             },
         ]),
         [
-            "- root note",
+            "root note",
             "# Environment",
-            "- constraint",
+            "constraint",
             "## Working Commands",
-            "- npm run typecheck",
+            "npm run typecheck",
         ].join("\n"),
     )
 })
@@ -47,10 +47,10 @@ test("preserves multiline strings and emits empty sections", () => {
             { topic: "Nested empty", items: [{ topic: "Child", items: [] }] },
         ]),
         [
-            "- first line",
-            "  second line",
-            "  ",
-            "  last line",
+            "first line",
+            "second line",
+            "",
+            "last line",
             "# Empty",
             "# Nested empty",
             "## Child",

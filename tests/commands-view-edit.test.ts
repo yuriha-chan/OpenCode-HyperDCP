@@ -283,7 +283,7 @@ test("/dcp view with no args lists available compressions with summaries", async
     assert.match(output, /Summary of auth/)
     assert.match(output, /Summary of db/)
     assert.match(output, /1 \(/, "should show block ID")
-    const renderedMemo = "- Remember this\n# Workflow\n- Run the checks\n## Empty subsection"
+    const renderedMemo = "Remember this\n# Workflow\nRun the checks\n## Empty subsection"
     assert.ok(output.includes(renderedMemo), "should show the memo as rendered Markdown")
     assert.ok(
         output.includes(`  ${renderedMemo.length} chars`),

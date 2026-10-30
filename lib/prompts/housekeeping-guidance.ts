@@ -18,6 +18,9 @@ Bad example — it pretends to be epistemic knowledge, but is not reusable in la
 ## The Issue Ticket #455 is finished in commit e4f8321643
 #455 "timeout configuration interface should show restart prompt dialogue" is duly implemented and closed. Test passed 201/201, lint & typecheck no error.
 
+Memo maintenance
+Retain useful existing entries; remove or clear only content that is superseded, redundant, or no longer applicable. Keep independent observations in separate textItems and batch related additions in one append call. Supply topics as structured objects using topicTitle, textItems, and nested topics. Each textItems entry is a plain-text string; embedded newlines split it into separate items.
+
 MAINTENANCE WORKFLOW
 1. If applicable, use edit_memo to preserve durable procedural constraints, user preferences, and working commands (including exact flags, arguments, and command order). Keep reusable procedures in the memo and task-specific findings in summaries. Use read_memo only when unsure of the memo's current state, and fetch_summary_versions only when you need existing summary text or version history. Draft inspection is not required.
 2. Review the uncovered ranges, active blocks, and message priorities below. Start with older, resolved history and batch as much safely closed, stale material as possible in one pass. These lists describe availability, not a recommendation to compress everything: listed messages are not automatically safe to compress. Keep active work, unresolved questions, and exact source material needed for the next steps uncompressed. Respect protected sources.

@@ -130,7 +130,7 @@ test("/dcp memo-file applies file content to the memo", async () => {
         args: [path],
     })
 
-    assert.deepEqual(state.memo, ["Remember the plan\nsecond line"])
+    assert.deepEqual(state.memo, ["Remember the plan", "second line"])
     const output = ignoredMessages.pop() || ""
     assert.match(output, /memo updated/i)
     assertPromptCall(promptCalls, sessionID, /memo updated/i)
@@ -319,7 +319,7 @@ test("/dcp memo set repairs malformed headings without restoring the previous me
     assertPromptCall(promptCalls, sessionID, /Memo set/i)
 })
 
-test("/dcp memo show renders nested headings and unindented bullets", async () => {
+test("/dcp memo show renders nested headings and plain text items", async () => {
     const sessionID = `ses_memo_show_${Date.now()}`
     const state = createSessionState()
     state.sessionId = sessionID
@@ -339,10 +339,7 @@ test("/dcp memo show renders nested headings and unindented bullets", async () =
 
     assert.equal(promptCalls.length, 1)
     assert.equal(promptCalls[0]?.path?.id, sessionID)
-    assert.equal(
-        promptCalls[0]?.body.parts[0]?.text,
-        "[Memo]\n# Plan\n- first\n## Details\n- second",
-    )
+    assert.equal(promptCalls[0]?.body.parts[0]?.text, "[Memo]\n# Plan\nfirst\n## Details\nsecond")
 })
 
 test("memo-file parses and replaces a structured memo instead of merging old content", async () => {

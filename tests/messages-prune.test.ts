@@ -264,7 +264,7 @@ test("prune places multiple summaries and the memo after the last summary", () =
 
     const first = syntheticMessages(messages, "first summary")
     const second = syntheticMessages(messages, "second summary")
-    const memo = syntheticMessages(messages, "[Memo]\n- Remember alpha")
+    const memo = syntheticMessages(messages, "[Memo]\nRemember alpha")
     assert.equal(first.length, 1)
     assert.equal(second.length, 1)
     assert.equal(memo.length, 1)
@@ -295,7 +295,7 @@ test("prune unshifts the memo when no summary is injected", () => {
 
     runPrune(state, messages)
 
-    const memo = syntheticMessages(messages, "[Memo]\n- Remember beta")
+    const memo = syntheticMessages(messages, "[Memo]\nRemember beta")
     assert.equal(memo.length, 1)
     assert.equal(syntheticModel(memo[0]!), "model-1")
     assert.deepEqual(

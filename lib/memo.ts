@@ -219,7 +219,11 @@ export function parseMemo(markdown: string): Memo {
 
     const currentItems = (): Memo => stack.at(-1)?.section.items ?? root
     const flushText = () => {
-        if (currentText.length) addParsedString(currentItems(), currentText.join("\n"))
+        if (textType === "paragraph") {
+            for (const line of currentText) addParsedString(currentItems(), line)
+        } else if (currentText.length) {
+            addParsedString(currentItems(), currentText.join("\n"))
+        }
         currentText = []
         textType = null
         pendingBulletBlanks = 0
@@ -330,11 +334,7 @@ export function renderMemo(memo: Memo): string {
     const renderItems = (items: Memo, depth: number) => {
         for (const item of items) {
             if (typeof item === "string") {
-                const contentLines = item.split("\n")
-                lines.push(`- ${contentLines[0]}`)
-                for (const continuation of contentLines.slice(1)) {
-                    lines.push(`  ${continuation}`)
-                }
+                lines.push(item)
             } else {
                 lines.push(`${"#".repeat(depth + 1)} ${item.topic}`)
                 renderItems(item.items, depth + 1)

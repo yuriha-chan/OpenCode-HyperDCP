@@ -77,14 +77,14 @@ test("entry with no remaining eligible messages returns guidance and an empty ra
 test("recursive entry rejects without replacing an accumulated memo", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: "Keep this draft." })
+    await h.run("edit_memo", { action: "append", textItems: ["Keep this draft."] })
 
     await h.guard("enter_housekeeping")
     await assert.rejects(h.enter(), /already|recursive|active/i)
 
-    assert.equal(await h.readMemo(), "- Keep this draft.")
+    assert.equal(await h.readMemo(), "Keep this draft.")
     await h.leave()
-    assert.equal(await h.readMemo(), "- Keep this draft.")
+    assert.equal(await h.readMemo(), "Keep this draft.")
     await h.enter()
     await h.leave()
     h.assertSessionReads()
@@ -94,7 +94,7 @@ test("required mode cannot be bypassed when an older config omits housekeeping s
     const h = await createHousekeepingHarness(t)
     h.config.housekeeping = undefined as never
     await assert.rejects(
-        h.run("edit_memo", { action: "append", content: "Must stay committed." }),
+        h.run("edit_memo", { action: "append", textItems: ["Must stay committed."] }),
         /enter_housekeeping/i,
     )
     assert.equal(await h.readMemo(), "(memo is empty)")
@@ -111,7 +111,7 @@ test("tool-before session switching reloads each session's housekeeping access",
     const state = createSessionState()
     const first = await createHousekeepingHarness(t, { sharedState: state })
     await first.enter()
-    await first.run("edit_memo", { action: "append", content: "First session draft." })
+    await first.run("edit_memo", { action: "append", textItems: ["First session draft."] })
 
     const second = await createHousekeepingHarness(t, {
         sharedState: state,
@@ -120,7 +120,7 @@ test("tool-before session switching reloads each session's housekeeping access",
     await second.guard("read", { filePath: "example.ts" })
 
     await assert.rejects(first.guard("read", { filePath: "example.ts" }), /housekeeping/i)
-    assert.equal(await first.readMemo(), "- First session draft.")
+    assert.equal(await first.readMemo(), "First session draft.")
     first.assertSessionReads()
     second.assertSessionReads()
 })
@@ -142,7 +142,7 @@ test("leave reports an unchanged previously committed nested memo", async (t) =>
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Plan", items: [{ topic: "Nested", items: ["keep"] }] },
+        topics: [{ topicTitle: "Plan", topics: [{ topicTitle: "Nested", textItems: ["keep"] }] }],
     })
     await h.leave()
 
@@ -150,7 +150,7 @@ test("leave reports an unchanged previously committed nested memo", async (t) =>
     const receipt = await h.leave()
 
     assert.match(receipt, /memo unchanged/i)
-    const expectedMemo = "# Plan\n## Nested\n- keep"
+    const expectedMemo = "# Plan\n## Nested\nkeep"
     assert.equal(await h.readMemo(), expectedMemo)
     const memoInjections = (await h.render())
         .flatMap((message) => message.parts)
@@ -184,13 +184,13 @@ test("retrying identical boundary calls is idempotent while a distinct second en
     const guidance = await h.run("enter_housekeeping", {}, entryID)
     assert.equal(await h.run("enter_housekeeping", {}, entryID), guidance)
     await assert.rejects(h.enter(), /already|recursive|active/i)
-    await h.run("edit_memo", { action: "append", content: "Exactly once." })
+    await h.run("edit_memo", { action: "append", textItems: ["Exactly once."] })
 
     const receipt = await h.run("leave_housekeeping", {}, exitID)
 
     assert.equal(await h.run("leave_housekeeping", {}, exitID), receipt)
     assert.equal(await h.run("enter_housekeeping", {}, entryID), guidance)
-    assert.equal(await h.readMemo(), '- Exactly once.\n# Todo status\n- [{"id":"todo-entry"}]')
+    assert.equal(await h.readMemo(), 'Exactly once.\n# Todo status\n[{"id":"todo-entry"}]')
     assert.equal(h.todo.mock.callCount(), 1)
     assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
     await assert.rejects(h.leave(), /not.*housekeeping|enter_housekeeping|no.*active/i)
@@ -240,7 +240,7 @@ test("entry stores the complete todo response as one topic item for a null memo"
 
     await h.enter()
 
-    const todoItem = `- ${JSON.stringify(todos)}`
+    const todoItem = JSON.stringify(todos)
     assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
     assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
     await h.leave()
@@ -254,18 +254,21 @@ test("entry replaces the positioned todo topic and its nested notes only in the 
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Before", items: ["keep before"] },
+        topics: [{ topicTitle: "Before", textItems: ["keep before"] }],
     })
     await h.run("edit_memo", {
         action: "append",
-        content: {
-            topic: "Todo status",
-            items: ["old todo", { topic: "Old notes", items: ["remove this"] }],
-        },
+        topics: [
+            {
+                topicTitle: "Todo status",
+                textItems: ["old todo"],
+                topics: [{ topicTitle: "Old notes", textItems: ["remove this"] }],
+            },
+        ],
     })
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "After", items: ["keep after"] },
+        topics: [{ topicTitle: "After", textItems: ["keep after"] }],
     })
     await h.leave()
     h.todo.mock.mockImplementationOnce(async () => ({ data: [{ id: "fresh", status: "pending" }] }))
@@ -273,14 +276,14 @@ test("entry replaces the positioned todo topic and its nested notes only in the 
     await h.enter()
 
     const expected =
-        '# Before\n- keep before\n# Todo status\n- [{"id":"fresh","status":"pending"}]\n# After\n- keep after'
+        '# Before\nkeep before\n# Todo status\n[{"id":"fresh","status":"pending"}]\n# After\nkeep after'
     assert.equal(await h.readMemo(), expected)
     const injected = (await h.render())
         .flatMap((message) => message.parts)
         .filter((part) => part.type === "text" && part.text.startsWith("[Memo]\n"))
         .map((part) => part.text)
     assert.deepEqual(injected, [
-        "[Memo]\n# Before\n- keep before\n# Todo status\n- old todo\n## Old notes\n- remove this\n# After\n- keep after",
+        "[Memo]\n# Before\nkeep before\n# Todo status\nold todo\n## Old notes\nremove this\n# After\nkeep after",
     ])
     await h.leave()
     assert.equal(await h.readMemo(), expected)
@@ -293,25 +296,25 @@ test("an empty todo response clears the existing topic while retaining its posit
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Before", items: ["keep"] },
+        topics: [{ topicTitle: "Before", textItems: ["keep"] }],
     })
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Todo status", items: ["old"] },
+        topics: [{ topicTitle: "Todo status", textItems: ["old"] }],
     })
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "After", items: ["keep"] },
+        topics: [{ topicTitle: "After", textItems: ["keep"] }],
     })
     await h.leave()
     h.todo.mock.mockImplementationOnce(async () => ({ data: [] }))
 
     await h.enter()
 
-    assert.equal(await h.readMemo(), "# Before\n- keep\n# Todo status\n# After\n- keep")
+    assert.equal(await h.readMemo(), "# Before\nkeep\n# Todo status\n# After\nkeep")
     await h.leave()
     await h.restart()
-    assert.equal(await h.readMemo(), "# Before\n- keep\n# Todo status\n# After\n- keep")
+    assert.equal(await h.readMemo(), "# Before\nkeep\n# Todo status\n# After\nkeep")
 })
 
 test("public entry with empty todo data retains an empty topic for a null memo", async (t) => {
@@ -350,17 +353,17 @@ for (const { name, configure } of [
     test(`failed ${name} leaves the memo untouched and permits entry`, async (t) => {
         const h = await createHousekeepingHarness(t)
         await h.enter()
-        await h.run("edit_memo", { action: "append", content: "Existing memo." })
+        await h.run("edit_memo", { action: "append", textItems: ["Existing memo."] })
         await h.leave()
         configure(h)
 
         await h.enter()
 
-        assert.equal(await h.readMemo(), "- Existing memo.")
+        assert.equal(await h.readMemo(), "Existing memo.")
         assert.equal(h.todo.mock.callCount(), 2)
         await h.leave()
         await h.restart()
-        assert.equal(await h.readMemo(), "- Existing memo.")
+        assert.equal(await h.readMemo(), "Existing memo.")
     })
 }
 
@@ -369,7 +372,7 @@ test("read_memo reports empty after removing the last topic and committing", asy
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Temporary", items: ["memo"] },
+        topics: [{ topicTitle: "Temporary", textItems: ["memo"] }],
     })
     await h.run("edit_memo", { action: "remove", path: "Temporary" })
     assert.equal(await h.readMemo(), "(memo is empty)")
@@ -384,12 +387,12 @@ for (const { name, legacyMemo, expected } of [
     {
         name: "plain text",
         legacyMemo: "Legacy notes\ncontinued line",
-        expected: "- Legacy notes\n  continued line",
+        expected: "Legacy notes\ncontinued line",
     },
     {
         name: "markdown with an empty header",
         legacyMemo: "# Setup\n- step\n## Empty",
-        expected: "# Setup\n- step\n## Empty",
+        expected: "# Setup\nstep\n## Empty",
     },
     {
         name: "empty text",
@@ -421,14 +424,14 @@ test("session restart migrates legacy memos in open and completed transaction sn
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Plan", items: ["committed"] },
+        topics: [{ topicTitle: "Plan", textItems: ["committed"] }],
     })
     await h.leave()
 
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Draft", items: ["staged"] },
+        topics: [{ topicTitle: "Draft", textItems: ["staged"] }],
     })
     const openFixture = await readPersistedFixture(h.sessionID)
     await writePersistedFixture(
@@ -437,13 +440,13 @@ test("session restart migrates legacy memos in open and completed transaction sn
     )
     await h.restart()
 
-    const draftView = "# Plan\n- committed\n# Draft\n- staged"
+    const draftView = "# Plan\ncommitted\n# Draft\nstaged"
     assert.equal(await h.readMemo(), draftView)
     const openMemoInjections = (await h.render())
         .flatMap((message) => message.parts)
         .filter((part) => part.type === "text" && part.text.startsWith("[Memo]\n"))
         .map((part) => part.text)
-    assert.deepEqual(openMemoInjections, ["[Memo]\n# Plan\n- committed"])
+    assert.deepEqual(openMemoInjections, ["[Memo]\n# Plan\ncommitted"])
     await assert.rejects(h.enter(), /already|recursive|active/i)
     await h.leave()
 
@@ -489,15 +492,18 @@ test("session restart migrates legacy memos in open and completed transaction sn
     h.assertSessionReads()
 })
 
-test("injected memo preserves nested sections and unindented bullets", async (t) => {
+test("injected memo preserves nested sections and plain text items", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await h.run("edit_memo", {
         action: "append",
-        content: {
-            topic: "Plan",
-            items: ["first", { topic: "Nested", items: ["child"] }, "last"],
-        },
+        topics: [
+            {
+                topicTitle: "Plan",
+                textItems: ["first", "last"],
+                topics: [{ topicTitle: "Nested", textItems: ["child"] }],
+            },
+        ],
     })
     await h.leave()
 
@@ -505,102 +511,89 @@ test("injected memo preserves nested sections and unindented bullets", async (t)
         .flatMap((message) => message.parts)
         .filter((part) => part.type === "text" && part.text.startsWith("[Memo]\n"))
         .map((part) => part.text)
-    assert.deepEqual(memoInjections, ["[Memo]\n# Plan\n- first\n- last\n## Nested\n- child"])
+    assert.deepEqual(memoInjections, ["[Memo]\n# Plan\nfirst\nlast\n## Nested\nchild"])
     h.assertSessionReads()
 })
 
 test("edit_memo requires entry even for an otherwise valid empty-memo insertion", async (t) => {
     const h = await createHousekeepingHarness(t)
     await assert.rejects(
-        h.run("edit_memo", { action: "append", content: "Do not publish." }),
+        h.run("edit_memo", { action: "append", textItems: ["Do not publish."] }),
         /enter_housekeeping/i,
     )
     assert.equal(await h.readMemo(), "(memo is empty)")
 })
 
-test("edit_memo public input schema accepts six topic levels and rejects seven", async (t) => {
+test("edit_memo public input schema accepts six topic levels, sixth-level strings, and root text arrays", async (t) => {
     const h = await createHousekeepingHarness(t)
     const editMemo = createEditMemoTool(h.ctx)
     const schema = tool.schema.object(editMemo.args)
-    const sixTopics = {
-        topic: "Level 1",
-        items: [
-            {
-                topic: "Level 2",
-                items: [
-                    {
-                        topic: "Level 3",
-                        items: [
-                            {
-                                topic: "Level 4",
-                                items: [
-                                    {
-                                        topic: "Level 5",
-                                        items: [{ topic: "Level 6", items: ["leaf string"] }],
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                ],
-            },
-        ],
+    const nestedTopics = (
+        depth: number,
+        leafTextItems: string[],
+    ): Array<Record<string, unknown>> => {
+        let topics: Array<Record<string, unknown>> = [
+            { topicTitle: `Level ${depth}`, textItems: leafTextItems },
+        ]
+        for (let level = depth - 1; level >= 1; level -= 1) {
+            topics = [{ topicTitle: `Level ${level}`, topics }]
+        }
+        return topics
     }
-    const validArgs = { action: "append", content: sixTopics }
-    assert.deepEqual(schema.parse(validArgs), validArgs)
-    assert.deepEqual(schema.parse({ action: "append", content: "root string" }), {
+    const sixTopics = {
         action: "append",
-        content: "root string",
+        textItems: ["root one", "root two"],
+        topics: nestedTopics(6, ["leaf string"]),
+    }
+    assert.deepEqual(schema.parse(sixTopics), sixTopics)
+    assert.deepEqual(schema.parse({ action: "append", textItems: ["root string"] }), {
+        action: "append",
+        textItems: ["root string"],
     })
     assert.deepEqual(
         schema.parse({
             action: "append",
-            content: { topic: "Shallow", items: ["topic string"] },
+            topics: [{ topicTitle: "Shallow", textItems: ["topic string"] }],
         }),
         {
             action: "append",
-            content: { topic: "Shallow", items: ["topic string"] },
+            topics: [{ topicTitle: "Shallow", textItems: ["topic string"] }],
         },
     )
-    const sevenTopics = {
-        ...sixTopics,
-        items: [
-            {
-                topic: "Level 2",
-                items: [
-                    {
-                        topic: "Level 3",
-                        items: [
-                            {
-                                topic: "Level 4",
-                                items: [
-                                    {
-                                        topic: "Level 5",
-                                        items: [
-                                            {
-                                                topic: "Level 6",
-                                                items: [{ topic: "Level 7", items: [] }],
-                                            },
-                                        ],
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                ],
-            },
-        ],
-    }
-    assert.throws(() => schema.parse({ action: "append", content: sevenTopics }))
+    assert.throws(() => schema.parse({ action: "append", topics: nestedTopics(7, ["too deep"]) }))
+    const wrongShapes: unknown[] = [
+        { action: "append", textItems: "not an array" },
+        { action: "append", textItems: [1] },
+        { action: "append", textItems: ["ok"], topics: "not an array" },
+        { action: "append", topics: [{ topicTitle: "Plan", textItems: "not an array" }] },
+        { action: "append", topics: ['{"topicTitle":"Plan"}'] },
+        { action: "append", topics: [{ textItems: ["missing title"] }] },
+        { action: "append", topics: [{ topicTitle: 7 }] },
+        {
+            action: "append",
+            topics: [{ topicTitle: "Plan", topics: ['{"topicTitle":"Nested"}'] }],
+        },
+    ]
+    for (const wrong of wrongShapes) assert.throws(() => schema.parse(wrong))
 })
 
-for (const content of ["beta", { topic: "Plan", items: ["beta"] }]) {
-    test(`memo append accumulates structured content ${JSON.stringify(content)}`, async (t) => {
+for (const { name, edit, expected } of [
+    {
+        name: "text items",
+        edit: { action: "append", textItems: ["beta"] },
+        expected: "alpha\nbeta",
+    },
+    {
+        name: "topics",
+        edit: { action: "append", topics: [{ topicTitle: "Plan", textItems: ["beta"] }] },
+        expected: "alpha\n# Plan\nbeta",
+    },
+]) {
+    test(`memo append accumulates ${name}`, async (t) => {
         const h = await createHousekeepingHarness(t)
         await h.enter()
-        await h.run("edit_memo", { action: "append", content: "alpha" })
-        await h.run("edit_memo", { action: "append", content })
-        const expected = typeof content === "string" ? "- alpha\n- beta" : "- alpha\n# Plan\n- beta"
+        await h.run("edit_memo", { action: "append", textItems: ["alpha"] })
+        await h.run("edit_memo", edit)
         assert.equal(await h.readMemo(), expected)
         await h.leave()
         assert.equal(await h.readMemo(), expected)
@@ -625,12 +618,12 @@ for (const { name, args, error } of [
     test(`edit_memo rejects ${name} without losing earlier accumulated edits`, async (t) => {
         const h = await createHousekeepingHarness(t)
         await h.enter()
-        await h.run("edit_memo", { action: "append", content: "Draft memo." })
+        await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
         await assert.rejects(h.run("edit_memo", args), error)
-        assert.equal(await h.readMemo(), "- Draft memo.")
-        await h.run("edit_memo", { action: "append", content: "Repaired memo." })
+        assert.equal(await h.readMemo(), "Draft memo.")
+        await h.run("edit_memo", { action: "append", textItems: ["Repaired memo."] })
         await h.leave()
-        assert.equal(await h.readMemo(), "- Draft memo.\n- Repaired memo.")
+        assert.equal(await h.readMemo(), "Draft memo.\nRepaired memo.")
         h.assertSessionReads()
     })
 }
@@ -639,11 +632,11 @@ test("draft memo inspection does not publish the memo to ordinary model context"
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await stageBlock(h)
-    await h.run("edit_memo", { action: "append", content: "Committed parser memo." })
+    await h.run("edit_memo", { action: "append", textItems: ["Committed parser memo."] })
     await h.leave()
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: "Staged parser memo." })
-    assert.equal(await h.readMemo(), "- Committed parser memo.\n- Staged parser memo.")
+    await h.run("edit_memo", { action: "append", textItems: ["Staged parser memo."] })
+    assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     const ordinaryText = (await h.render())
         .flatMap((message) => message.parts)
         .filter((part) => part.type === "text")
@@ -654,7 +647,7 @@ test("draft memo inspection does not publish the memo to ordinary model context"
 
     await h.leave()
     await h.restart()
-    assert.equal(await h.readMemo(), "- Committed parser memo.\n- Staged parser memo.")
+    assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     h.assertSessionReads()
 })
 
@@ -664,18 +657,18 @@ test("restart restores an open transaction's draft and tool restrictions until l
     await stageBlock(h, "Recovered parser summary.")
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Recovered", items: ["draft memo"] },
+        topics: [{ topicTitle: "Recovered", textItems: ["draft memo"] }],
     })
     await h.restart()
 
-    assert.equal(await h.readMemo(), "# Recovered\n- draft memo")
+    assert.equal(await h.readMemo(), "# Recovered\ndraft memo")
     assert.match(await h.versions(1, 1), /Recovered parser summary\./)
     await assert.rejects(h.guard("bash"), /housekeeping/i)
     await assert.rejects(h.enter(), /already|recursive|active/i)
     assert.match(visibleText(await h.render()), /Investigate the parser boundary\./)
     await h.leave()
     await h.restart()
-    assert.equal(await h.readMemo(), "# Recovered\n- draft memo")
+    assert.equal(await h.readMemo(), "# Recovered\ndraft memo")
     assert.doesNotMatch(visibleText(await h.render()), /Investigate the parser boundary\./)
     await h.guard("bash")
     h.assertSessionReads()
@@ -687,25 +680,25 @@ test("leave applies compression and memo together and reopening after revert und
     await stageBlock(h, "Transaction summary.")
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Transaction", items: ["memo"] },
+        topics: [{ topicTitle: "Transaction", textItems: ["memo"] }],
     })
     const beforeLeave = structuredClone(h.history)
     await h.leave()
     const committed = structuredClone(h.history)
     assert.doesNotMatch(visibleText(await h.render()), /Investigate the parser boundary\./)
-    assert.equal(await h.readMemo(), "# Transaction\n- memo")
+    assert.equal(await h.readMemo(), "# Transaction\nmemo")
 
     h.setHistory(beforeLeave)
     await h.render()
     await h.restart()
-    assert.equal(await h.readMemo(), "# Transaction\n- memo")
+    assert.equal(await h.readMemo(), "# Transaction\nmemo")
     assert.match(visibleText(await h.render()), /Investigate the parser boundary\./)
     await assert.rejects(h.guard("read"), /housekeeping/i)
 
     h.setHistory(committed)
     await h.render()
     assert.doesNotMatch(visibleText(await h.render()), /Investigate the parser boundary\./)
-    assert.equal(await h.readMemo(), "# Transaction\n- memo")
+    assert.equal(await h.readMemo(), "# Transaction\nmemo")
     await h.guard("read")
     h.assertSessionReads()
 })
@@ -733,9 +726,9 @@ test("concurrent entry attempts enable one transaction and reject the other with
     const rejected = results.find((result) => result.status === "rejected")
     assert.ok(rejected && rejected.status === "rejected")
     assert.match(String(rejected.reason), /already|recursive|active/i)
-    await h.run("edit_memo", { action: "append", content: "Single transaction." })
+    await h.run("edit_memo", { action: "append", textItems: ["Single transaction."] })
     await h.leave()
-    assert.equal(await h.readMemo(), "- Single transaction.")
+    assert.equal(await h.readMemo(), "Single transaction.")
     h.assertSessionReads()
 })
 
@@ -743,10 +736,10 @@ test("leave rejects an invalid summary without publishing an otherwise valid mem
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await stageBlock(h, "Committed parser summary.")
-    await h.run("edit_memo", { action: "append", content: "Committed parser memo." })
+    await h.run("edit_memo", { action: "append", textItems: ["Committed parser memo."] })
     await h.leave()
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: "Staged parser memo." })
+    await h.run("edit_memo", { action: "append", textItems: ["Staged parser memo."] })
     await h.run("edit_summary", {
         blockId: 1,
         oldString: "Committed parser summary.",
@@ -754,7 +747,7 @@ test("leave rejects an invalid summary without publishing an otherwise valid mem
     })
     await assert.rejects(h.leave(), /empty|non-empty|blank/i)
     await h.restart()
-    assert.equal(await h.readMemo(), "- Committed parser memo.\n- Staged parser memo.")
+    assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     const ordinaryText = (await h.render())
         .flatMap((message) => message.parts)
         .filter((part) => part.type === "text")
@@ -766,7 +759,7 @@ test("leave rejects an invalid summary without publishing an otherwise valid mem
     await h.run("append_summary", { blockId: 1, text: "Repaired parser summary." })
     await h.leave()
     await h.restart()
-    assert.equal(await h.readMemo(), "- Committed parser memo.\n- Staged parser memo.")
+    assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     assert.match(await h.versions(1, 2), /Repaired parser summary\./)
     h.assertSessionReads()
 })
@@ -775,14 +768,14 @@ test("leave persistence failure keeps all effects staged and permits a durable r
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await stageBlock(h, "Durable parser summary.")
-    await h.run("edit_memo", { action: "append", content: "Durable parser memo." })
+    await h.run("edit_memo", { action: "append", textItems: ["Durable parser memo."] })
     const file = getSessionFilePath(h.sessionID)
     const backup = `${file}.test-backup`
     await rename(file, backup)
     await mkdir(file)
     try {
         await assert.rejects(h.leave(), /persist|write|directory|EISDIR|EEXIST|rename/i)
-        assert.equal(await h.readMemo(), "- Durable parser memo.")
+        assert.equal(await h.readMemo(), "Durable parser memo.")
         assert.match(visibleText(await h.render()), /Investigate the parser boundary\./)
         await assert.rejects(h.guard("read"), /housekeeping/i)
     } finally {
@@ -791,7 +784,7 @@ test("leave persistence failure keeps all effects staged and permits a durable r
     }
     await h.leave()
     await h.restart()
-    assert.equal(await h.readMemo(), "- Durable parser memo.")
+    assert.equal(await h.readMemo(), "Durable parser memo.")
     assert.doesNotMatch(visibleText(await h.render()), /Investigate the parser boundary\./)
     await h.guard("read")
     h.assertSessionReads()
@@ -808,7 +801,7 @@ test("failed memo persistence leaves the previous draft intact and supports retr
         await assert.rejects(
             h.run(
                 "edit_memo",
-                { action: "append", content: "Uncommitted draft." },
+                { action: "append", textItems: ["Uncommitted draft."] },
                 { callID: "memo-retry" },
             ),
             /persist|write|directory|EISDIR|EEXIST|rename/i,
@@ -820,46 +813,49 @@ test("failed memo persistence leaves the previous draft intact and supports retr
     }
     const firstResult = await h.run(
         "edit_memo",
-        { action: "append", content: "Durable draft." },
+        { action: "append", textItems: ["Durable draft."] },
         { callID: "memo-retry" },
     )
     const retryResult = await h.run(
         "edit_memo",
-        { action: "append", content: "Durable draft." },
+        { action: "append", textItems: ["Durable draft."] },
         { callID: "memo-retry" },
     )
     assert.ok(firstResult.length > 0)
     assert.equal(retryResult, firstResult)
-    assert.equal(await h.readMemo(), "- Durable draft.")
+    assert.equal(await h.readMemo(), "Durable draft.")
     await h.leave()
 })
 
 test("edit_memo appends into a selected topic, inserts after a sibling, removes by prefix, and clears in place", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: { topic: "Plan", items: ["first"] } })
+    await h.run("edit_memo", {
+        action: "append",
+        topics: [{ topicTitle: "Plan", textItems: ["first"] }],
+    })
     await h.run("edit_memo", {
         action: "append",
         parent: "Plan",
-        content: { topic: "Details", items: [] },
+        topics: [{ topicTitle: "Details" }],
     })
     await h.run("edit_memo", {
         action: "append",
         parent: "Plan/Details",
-        content: "temporary",
+        textItems: ["temporary"],
     })
     const relocated = await h.run("edit_memo", {
         action: "append",
         parent: "Plan",
         after: "Plan/Details",
-        content: "relocated string",
+        textItems: ["relocated string"],
     })
     assert.match(relocated, /relocat|string portion/i)
     await h.run("edit_memo", {
         action: "append",
         parent: "Plan",
         after: "Plan/Details",
-        content: { topic: "Follow-up", items: ["later"] },
+        topics: [{ topicTitle: "Follow-up", textItems: ["later"] }],
     })
     await h.run("edit_memo", {
         action: "remove",
@@ -868,48 +864,48 @@ test("edit_memo appends into a selected topic, inserts after a sibling, removes 
 
     assert.equal(
         await h.readMemo(),
-        "# Plan\n- relocated string\n## Details\n- temporary\n## Follow-up\n- later",
+        "# Plan\nrelocated string\n## Details\ntemporary\n## Follow-up\nlater",
     )
 
     await h.run("edit_memo", { action: "clear", path: "Plan/Details" })
-    assert.equal(
-        await h.readMemo(),
-        "# Plan\n- relocated string\n## Details\n## Follow-up\n- later",
-    )
+    assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up\nlater")
     await h.run("edit_memo", { action: "clear", path: "Plan/Follow-up" })
-    assert.equal(await h.readMemo(), "# Plan\n- relocated string\n## Details\n## Follow-up")
+    assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up")
     await h.leave()
-    assert.equal(await h.readMemo(), "# Plan\n- relocated string\n## Details\n## Follow-up")
+    assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up")
 })
 
-test("edit_memo normalizes recursively misordered supplied sections with a visible warning", async (t) => {
+test("edit_memo renders separated text items before topics without normalization warnings", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
     const result = await h.run("edit_memo", {
         action: "append",
-        content: {
-            topic: "Outer",
-            items: [{ topic: "Inner", items: ["child"] }, "late string"],
-        },
+        topics: [
+            {
+                topicTitle: "Outer",
+                textItems: ["first", "second"],
+                topics: [{ topicTitle: "Inner", textItems: ["child"] }],
+            },
+        ],
     })
 
-    assert.match(result, /normaliz|order/i)
-    assert.equal(await h.readMemo(), "# Outer\n- late string\n## Inner\n- child")
+    assert.doesNotMatch(result, /normaliz|order/i)
+    assert.equal(await h.readMemo(), "# Outer\nfirst\nsecond\n## Inner\nchild")
     await h.leave()
 })
 
 test("invalid memo actions reject without corrupting the draft", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: "Keep me." })
-    await h.run("edit_memo", { action: "append", content: "Keep more." })
+    await h.run("edit_memo", { action: "append", textItems: ["Keep me."] })
+    await h.run("edit_memo", { action: "append", textItems: ["Keep more."] })
     await h.run("edit_memo", {
         action: "append",
-        content: { topic: "Plan", items: [{ topic: "Existing", items: [] }] },
+        topics: [{ topicTitle: "Plan", topics: [{ topicTitle: "Existing" }] }],
     })
-    let tooDeep: unknown = { topic: "Level 7", items: [] }
+    let tooDeep: unknown = { topicTitle: "Level 7" }
     for (let level = 6; level >= 1; level--) {
-        tooDeep = { topic: `Level ${level}`, items: [tooDeep] }
+        tooDeep = { topicTitle: `Level ${level}`, topics: [tooDeep] }
     }
 
     for (const args of [
@@ -919,28 +915,287 @@ test("invalid memo actions reject without corrupting the draft", async (t) => {
         { action: "remove", path: "Missing" },
         { action: "clear", path: "Missing" },
         { action: "remove", path: "//Keep" },
-        { action: "append", content: "Keep me." },
-        { action: "append", content: { topic: "Bad/Topic", items: [] } },
-        { action: "append", content: { topic: "Plan", items: [] } },
-        { action: "append", content: "misordered", parent: "Absent" },
+        { action: "append", textItems: ["Keep me."] },
+        { action: "append", topics: [{ topicTitle: "Bad/Topic" }] },
+        { action: "append", topics: [{ topicTitle: "Plan" }] },
+        { action: "append", textItems: ["misordered"], parent: "Absent" },
         {
             action: "append",
             parent: "Plan",
             after: "Plan/Absent",
-            content: { topic: "Missing sibling", items: [] },
+            topics: [{ topicTitle: "Missing sibling" }],
         },
         {
             action: "append",
             parent: "Plan",
             after: "Plan",
-            content: { topic: "Wrong parent", items: [] },
+            topics: [{ topicTitle: "Wrong parent" }],
         },
-        { action: "append", content: tooDeep },
+        { action: "append", topics: [tooDeep] },
     ]) {
         await assert.rejects(h.run("edit_memo", args))
-        assert.equal(await h.readMemo(), "- Keep me.\n- Keep more.\n# Plan\n## Existing")
+        assert.equal(await h.readMemo(), "Keep me.\nKeep more.\n# Plan\n## Existing")
     }
 
+    await h.leave()
+})
+
+test("edit_memo appends multiple text items and topics at the root and beneath a parent", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        textItems: ["First", "Second"],
+        topics: [{ topicTitle: "Verification", textItems: ["Run tests"], topics: [] }],
+    })
+    assert.equal(await h.readMemo(), "First\nSecond\n# Verification\nRun tests")
+    await h.run("edit_memo", {
+        action: "append",
+        topics: [
+            {
+                topicTitle: "Plan",
+                textItems: ["base"],
+                topics: [{ topicTitle: "Existing" }],
+            },
+        ],
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        parent: "Plan",
+        textItems: ["Added one", "Added two"],
+        topics: [
+            { topicTitle: "Details", textItems: ["detail"] },
+            { topicTitle: "Follow-up", textItems: ["later"] },
+        ],
+    })
+    assert.equal(
+        await h.readMemo(),
+        "First\nSecond\n# Verification\nRun tests\n# Plan\nbase\nAdded one\nAdded two\n## Existing\n## Details\ndetail\n## Follow-up\nlater",
+    )
+    await h.leave()
+})
+
+test("edit_memo splits multiline text items at root and within nested topics", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        textItems: ["root one\nroot two\r\nroot three\rroot four"],
+        topics: [
+            {
+                topicTitle: "Plan",
+                textItems: ["nested one\nnested two\r\nnested three\rnested four"],
+            },
+        ],
+    })
+
+    assert.deepEqual(h.ctx.state.housekeeping!.draft.memo, [
+        "root one",
+        "root two",
+        "root three",
+        "root four",
+        {
+            topic: "Plan",
+            items: ["nested one", "nested two", "nested three", "nested four"],
+        },
+    ])
+    assert.equal(
+        await h.readMemo(),
+        "root one\nroot two\nroot three\nroot four\n# Plan\nnested one\nnested two\nnested three\nnested four",
+    )
+    await h.leave()
+})
+
+test("edit_memo removes split lines independently by prefix at the root and in a nested topic", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        textItems: ["alpha\nbeta"],
+        topics: [{ topicTitle: "Plan", textItems: ["nested alpha\nnested beta"] }],
+    })
+    await h.run("edit_memo", { action: "remove", path: "//beta" })
+    await h.run("edit_memo", { action: "remove", path: "Plan//nested beta" })
+
+    assert.deepEqual(h.ctx.state.housekeeping!.draft.memo, [
+        "alpha",
+        { topic: "Plan", items: ["nested alpha"] },
+    ])
+    assert.equal(await h.readMemo(), "alpha\n# Plan\nnested alpha")
+    await h.leave()
+})
+
+test("edit_memo rejects a duplicate introduced by splitting without changing the earlier draft", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
+    const staged = structuredClone(h.ctx.state.housekeeping!.draft.memo)
+
+    await assert.rejects(
+        h.run("edit_memo", { action: "append", textItems: ["Fresh line\nDraft memo."] }),
+        /duplicate/i,
+    )
+
+    assert.deepEqual(h.ctx.state.housekeeping!.draft.memo, staged)
+    assert.equal(await h.readMemo(), "Draft memo.")
+    await h.leave()
+})
+
+test("edit_memo inserts multiple topics after an anchor in submitted order before following siblings", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", {
+        action: "append",
+        topics: [
+            {
+                topicTitle: "Plan",
+                topics: [
+                    { topicTitle: "Alpha", textItems: ["a"] },
+                    { topicTitle: "Beta", textItems: ["b"] },
+                    { topicTitle: "Gamma", textItems: ["c"] },
+                ],
+            },
+        ],
+    })
+    await h.run("edit_memo", {
+        action: "append",
+        parent: "Plan",
+        after: "Plan/Alpha",
+        topics: [
+            { topicTitle: "Inserted one", textItems: ["one"] },
+            { topicTitle: "Inserted two", textItems: ["two"] },
+        ],
+    })
+    assert.equal(
+        await h.readMemo(),
+        "# Plan\n## Alpha\na\n## Inserted one\none\n## Inserted two\ntwo\n## Beta\nb\n## Gamma\nc",
+    )
+    await h.leave()
+})
+
+test("edit_memo rejects a late duplicate or over-deep batch without changing the earlier draft", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
+    for (const args of [
+        { action: "append", textItems: ["fresh", "Draft memo."] },
+        { action: "append", topics: [{ topicTitle: "Fresh" }, { topicTitle: "Fresh" }] },
+    ]) {
+        await assert.rejects(h.run("edit_memo", args))
+        assert.equal(await h.readMemo(), "Draft memo.")
+    }
+    await h.run("edit_memo", {
+        action: "append",
+        topics: [
+            {
+                topicTitle: "L1",
+                topics: [
+                    {
+                        topicTitle: "L2",
+                        topics: [
+                            {
+                                topicTitle: "L3",
+                                topics: [
+                                    {
+                                        topicTitle: "L4",
+                                        topics: [
+                                            {
+                                                topicTitle: "L5",
+                                                topics: [{ topicTitle: "L6" }],
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    })
+    const deepDraft = "Draft memo.\n# L1\n## L2\n### L3\n#### L4\n##### L5\n###### L6"
+    assert.equal(await h.readMemo(), deepDraft)
+    await assert.rejects(
+        h.run("edit_memo", {
+            action: "append",
+            parent: "L1/L2/L3/L4/L5/L6",
+            topics: [{ topicTitle: "L7" }],
+        }),
+    )
+    assert.equal(await h.readMemo(), deepDraft)
+    await h.leave()
+})
+
+test("edit_memo rejects malformed append fields including serialized nested topics", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
+    for (const args of [
+        { action: "append", textItems: "not an array" },
+        { action: "append", textItems: [1] },
+        { action: "append", textItems: ["ok"], topics: "not an array" },
+        { action: "append", topics: [{ topicTitle: "Plan", textItems: "not an array" }] },
+        { action: "append", topics: ['{"topicTitle":"Plan"}'] },
+        {
+            action: "append",
+            topics: [{ topicTitle: "Plan", topics: ['{"topicTitle":"Nested"}'] }],
+        },
+        { action: "append", topics: [{ textItems: ["missing title"] }] },
+        { action: "append", topics: [{ topicTitle: 7 }] },
+        { action: "append", parent: 7, textItems: ["text"] },
+        { action: "append", after: 7, textItems: ["text"] },
+    ]) {
+        await assert.rejects(h.run("edit_memo", args))
+        assert.equal(await h.readMemo(), "Draft memo.")
+    }
+    await h.leave()
+})
+
+test("edit_memo rejects an append without any text item or topic", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
+    for (const args of [
+        { action: "append" },
+        { action: "append", textItems: [] },
+        { action: "append", topics: [] },
+        { action: "append", textItems: [], topics: [] },
+    ]) {
+        await assert.rejects(h.run("edit_memo", args))
+        assert.equal(await h.readMemo(), "Draft memo.")
+    }
+    await h.leave()
+})
+
+test("edit_memo rejects legacy content arguments even alongside valid text items", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Draft memo."] })
+    for (const args of [
+        { action: "append", content: "Legacy content." },
+        { action: "append", textItems: ["valid text"], content: "Legacy content." },
+        {
+            action: "append",
+            textItems: ["valid text"],
+            content: { topic: "Legacy", items: ["nested"] },
+        },
+        { action: "append", topics: [{ topicTitle: "Valid" }], content: "Legacy content." },
+    ]) {
+        await assert.rejects(h.run("edit_memo", args))
+        assert.equal(await h.readMemo(), "Draft memo.")
+    }
+    await h.leave()
+})
+
+test("edit_memo keeps JSON-looking and bullet-prefixed text items verbatim", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    const serialized = '{"topicTitle":"Not a topic"}'
+    await h.run("edit_memo", {
+        action: "append",
+        textItems: [serialized, "- already bulleted"],
+    })
+    assert.equal(await h.readMemo(), `${serialized}\n- already bulleted`)
     await h.leave()
 })
 
@@ -951,7 +1206,7 @@ test("leave and a concurrent mutation serialize without losing or leaking the mu
         h.leave(),
         h.run(
             "edit_memo",
-            { action: "append", content: "Serialized draft." },
+            { action: "append", textItems: ["Serialized draft."] },
             { callID: "concurrent-memo" },
         ),
     ])
@@ -959,7 +1214,7 @@ test("leave and a concurrent mutation serialize without losing or leaking the mu
     const memoResult = results[1]
     let expectedMemo: string
     if (memoResult.status === "fulfilled") {
-        expectedMemo = "- Serialized draft."
+        expectedMemo = "Serialized draft."
     } else {
         assert.match(String(memoResult.reason), /enter_housekeeping|active|not.*housekeeping/i)
         expectedMemo = "(memo is empty)"

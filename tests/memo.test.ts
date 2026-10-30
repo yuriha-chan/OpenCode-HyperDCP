@@ -18,7 +18,7 @@ function assertNoWarnings(value: unknown): asserts value is EditResult {
     assert.deepEqual(value.warnings, [])
 }
 
-test("renders canonical headers and unindented bullets, then parses the rendered document", () => {
+test("renders canonical headers and plain text items, then parses the rendered document", () => {
     const memo: Memo = [
         {
             topic: "Environment",
@@ -31,9 +31,9 @@ test("renders canonical headers and unindented bullets, then parses the rendered
     const markdown = [
         "# Environment",
         "## Constraints and User preferences",
-        "- constraint",
+        "constraint",
         "## Working Commands",
-        "- npm run typecheck",
+        "npm run typecheck",
     ].join("\n")
 
     assert.equal(renderMemo(memo), markdown)
@@ -41,7 +41,7 @@ test("renders canonical headers and unindented bullets, then parses the rendered
     assert.deepEqual(parseMemo(renderMemo(memo)), memo)
 })
 
-test("round-trips canonical plain, multiline, blank, fenced, and syntax-like strings", () => {
+test("renders arbitrary text and multiline strings verbatim without bullets or continuation indentation", () => {
     const memo: Memo = [
         "root note",
         "",
@@ -60,10 +60,53 @@ test("round-trips canonical plain, multiline, blank, fenced, and syntax-like str
         },
     ]
 
+    assert.equal(
+        renderMemo(memo),
+        [
+            "root note",
+            "",
+            "first line",
+            "second line",
+            "",
+            "last line",
+            "```ts",
+            "const value = 1",
+            "```",
+            "# header-looking",
+            "- list-looking",
+            "# Code and notes",
+            "nested plain",
+            "nested first",
+            "nested second",
+            "~~~txt",
+            "inside fence",
+            "~~~",
+            "## Details",
+            "deep note",
+            "## heading-looking",
+        ].join("\n"),
+    )
+})
+
+test("round-trips ordinary one-line and nested memos with adjacent distinct strings", () => {
+    const memo: Memo = [
+        "root one",
+        "root two",
+        {
+            topic: "Plan",
+            items: [
+                "first step",
+                "second step",
+                { topic: "Details", items: ["detail one", "detail two"] },
+            ],
+        },
+        { topic: "Empty", items: [] },
+    ]
+
     assert.deepEqual(parseMemo(renderMemo(memo)), memo)
 })
 
-test("parses headings, unindented bullets, multiline paragraphs, and fenced code", () => {
+test("parses headings, unindented bullets, separate paragraph lines, and fenced code", () => {
     assert.deepEqual(
         parseMemo(
             [
@@ -81,12 +124,14 @@ test("parses headings, unindented bullets, multiline paragraphs, and fenced code
             ].join("\n"),
         ),
         [
-            "Root paragraph\ncontinued root",
+            "Root paragraph",
+            "continued root",
             "root bullet",
             {
                 topic: "Plan",
                 items: [
-                    "A paragraph\ncontinued paragraph",
+                    "A paragraph",
+                    "continued paragraph",
                     "a bullet",
                     "```md\n# code heading\n- code bullet\n```",
                 ],
@@ -112,7 +157,7 @@ test("repairs malformed imported headings while preserving all fixture content",
     assert.deepEqual(memo, [
         { topic: "A-B", items: ["keep slash name text"] },
         { topic: "Same", items: ["duplicate"] },
-        { topic: "Same (2)", items: ["duplicate", "####### Too deep\npreserve this"] },
+        { topic: "Same (2)", items: ["duplicate", "####### Too deep", "preserve this"] },
     ])
 })
 

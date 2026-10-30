@@ -927,7 +927,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
     await h.run("enter_housekeeping", {}, { messageID: mixed.info.id, callID: "revert-enter" })
     await h.run(
         "edit_memo",
-        { action: "append", content: "Draft memo first." },
+        { action: "append", textItems: ["Draft memo first."] },
         {
             messageID: mixed.info.id,
             callID: "revert-edit-first",
@@ -944,7 +944,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
     const earlierDraft = structuredClone(h.history)
     await h.run(
         "edit_memo",
-        { action: "append", content: "Draft memo second." },
+        { action: "append", textItems: ["Draft memo second."] },
         {
             messageID: mixed.info.id,
             callID: "revert-edit-second",
@@ -977,12 +977,12 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
             .flatMap((message) => message.parts)
             .some((part) => part.type === "tool" && part.callID === "revert-leave"),
     )
-    assert.equal(await h.readMemo(), "- Draft memo first.\n- Draft memo second.")
+    assert.equal(await h.readMemo(), "Draft memo first.\nDraft memo second.")
     await assert.rejects(h.enter(), /already|recursive|active/i)
 
     h.setHistory(earlierDraft)
     assert.match(visibleText(await h.render()), /Surviving private draft work/)
-    assert.equal(await h.readMemo(), "- Draft memo first.")
+    assert.equal(await h.readMemo(), "Draft memo first.")
 
     h.setHistory(beforeEntry)
     assert.doesNotMatch(visibleText(await h.render()), /Surviving private draft work/)
@@ -1003,7 +1003,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
             1,
         )
     }
-    assert.equal(await h.readMemo(), "- Draft memo first.\n- Draft memo second.")
+    assert.equal(await h.readMemo(), "Draft memo first.\nDraft memo second.")
     h.assertSessionReads()
 })
 
@@ -1013,13 +1013,13 @@ test("reverting housekeeping transactions follows surviving transcript prefixes"
     const original = structuredClone(h.history)
 
     await h.run("enter_housekeeping", {}, { callID: "a-enter" })
-    await h.run("edit_memo", { action: "append", content: "Memo A." }, { callID: "a-memo" })
+    await h.run("edit_memo", { action: "append", textItems: ["Memo A."] }, { callID: "a-memo" })
     await h.run("rewrite_summary", { blockId: 1, summary: "Summary A." }, { callID: "a-rewrite" })
     await h.run("leave_housekeeping", {}, { callID: "a-leave" })
     const transactionA = structuredClone(h.history)
 
     await h.run("enter_housekeeping", {}, { callID: "b-enter" })
-    await h.run("edit_memo", { action: "append", content: "Memo B." }, { callID: "b-memo" })
+    await h.run("edit_memo", { action: "append", textItems: ["Memo B."] }, { callID: "b-memo" })
     await h.run("rewrite_summary", { blockId: 1, summary: "Summary B." }, { callID: "b-rewrite" })
     const bLeave = await h.run("leave_housekeeping", {}, { callID: "b-leave" })
     const bothCommitted = structuredClone(h.history)
@@ -1034,7 +1034,7 @@ test("reverting housekeeping transactions follows surviving transcript prefixes"
     const reopenedB = await h.render()
     assert.match(visibleText(reopenedB), /Summary A\./)
     assert.doesNotMatch(visibleText(reopenedB), /Summary B\./)
-    assert.equal(await h.readMemo(), "- Memo A.\n- Memo B.")
+    assert.equal(await h.readMemo(), "Memo A.\nMemo B.")
     assert.match(await h.versions(1), /Summary B\./)
     await assert.rejects(h.guard("read"), /housekeeping/i)
 
@@ -1042,7 +1042,7 @@ test("reverting housekeeping transactions follows surviving transcript prefixes"
     const revertedB = await h.render()
     assert.match(visibleText(revertedB), /Summary A\./)
     assert.doesNotMatch(visibleText(revertedB), /Summary B\./)
-    assert.equal(await h.readMemo(), "- Memo A.")
+    assert.equal(await h.readMemo(), "Memo A.")
     assert.doesNotMatch(await h.versions(1), /Summary B\./)
 
     h.setHistory(original)
@@ -1055,7 +1055,7 @@ test("reverting housekeeping transactions follows surviving transcript prefixes"
     for (let render = 0; render < 2; render++) {
         const restored = await h.render()
         assert.match(visibleText(restored), /Summary B\./)
-        assert.equal(await h.readMemo(), "- Memo A.\n- Memo B.")
+        assert.equal(await h.readMemo(), "Memo A.\nMemo B.")
         assert.equal(await h.versions(1), bVersions)
         const leave = modelToolPart(restored, "b-leave")
         assert.ok(leave.state.status === "completed")
@@ -1100,7 +1100,7 @@ test("reopened transaction keeps newly staged edits across repeated reconciliati
     await h.run("enter_housekeeping", {}, { messageID, callID: "reopen-entry" })
     await h.run(
         "edit_memo",
-        { action: "append", content: "First draft." },
+        { action: "append", textItems: ["First draft."] },
         { messageID, callID: "reopen-first" },
     )
     await h.run("leave_housekeeping", {}, { messageID, callID: "reopen-leave" })
@@ -1115,15 +1115,15 @@ test("reopened transaction keeps newly staged edits across repeated reconciliati
     )
 
     await h.render()
-    assert.equal(await h.readMemo(), "- First draft.")
+    assert.equal(await h.readMemo(), "First draft.")
     await h.run(
         "edit_memo",
-        { action: "append", content: "Reopened draft." },
+        { action: "append", textItems: ["Reopened draft."] },
         { messageID, callID: "reopen-second" },
     )
     for (let index = 0; index < 3; index++) {
         await h.render()
-        assert.equal(await h.readMemo(), "- First draft.\n- Reopened draft.")
+        assert.equal(await h.readMemo(), "First draft.\nReopened draft.")
     }
     await h.leave()
     h.assertSessionReads()
@@ -1132,7 +1132,7 @@ test("reopened transaction keeps newly staged edits across repeated reconciliati
 test("host compaction without transaction calls does not reconcile them as reverted", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    await h.run("edit_memo", { action: "append", content: "Survives compaction." })
+    await h.run("edit_memo", { action: "append", textItems: ["Survives compaction."] })
     const compacted = ordinaryMessage(
         h.sessionID,
         "compacted-summary",
@@ -1148,7 +1148,7 @@ test("host compaction without transaction calls does not reconcile them as rever
 
     await h.render()
 
-    assert.equal(await h.readMemo(), "- Survives compaction.")
+    assert.equal(await h.readMemo(), "Survives compaction.")
     await assert.rejects(h.guard("read"), /housekeeping/i)
     await h.leave()
     h.assertSessionReads()
