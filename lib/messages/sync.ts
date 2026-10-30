@@ -71,13 +71,17 @@ export const syncCompressionBlocks = (
         }
     }
 
-    for (const entry of messagesState.byMessageId.values()) {
+    const allBlockIdMembership = new Map<string, Set<number>>()
+    const activeBlockIdMembership = new Map<string, Set<number>>()
+    for (const [messageId, entry] of messagesState.byMessageId) {
         const allBlockIds = Array.isArray(entry.allBlockIds)
             ? [...new Set(entry.allBlockIds.filter((id) => Number.isInteger(id) && id > 0))]
             : []
 
         entry.allBlockIds = allBlockIds
         entry.activeBlockIds = allBlockIds.filter((id) => messagesState.activeBlockIds.has(id))
+        allBlockIdMembership.set(messageId, new Set(allBlockIds))
+        activeBlockIdMembership.set(messageId, new Set(entry.activeBlockIds))
     }
 
     const messageById = new Map(messages.map((message) => [message.info.id, message]))
@@ -90,20 +94,27 @@ export const syncCompressionBlocks = (
 
             const entry = messagesState.byMessageId.get(messageId)
             if (entry) {
-                if (!entry.allBlockIds.includes(blockId)) {
+                const allMembership = allBlockIdMembership.get(messageId)!
+                const activeMembership = activeBlockIdMembership.get(messageId)!
+                if (!allMembership.has(blockId)) {
+                    allMembership.add(blockId)
                     entry.allBlockIds.push(blockId)
                 }
-                if (!entry.activeBlockIds.includes(blockId)) {
+                if (!activeMembership.has(blockId)) {
+                    activeMembership.add(blockId)
                     entry.activeBlockIds.push(blockId)
                 }
                 continue
             }
 
-            messagesState.byMessageId.set(messageId, {
+            const newEntry = {
                 tokenCount: countAllMessageTokens(message),
                 allBlockIds: [blockId],
                 activeBlockIds: [blockId],
-            })
+            }
+            messagesState.byMessageId.set(messageId, newEntry)
+            allBlockIdMembership.set(messageId, new Set([blockId]))
+            activeBlockIdMembership.set(messageId, new Set([blockId]))
         }
     }
 

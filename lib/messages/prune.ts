@@ -4,7 +4,8 @@ import type { PluginConfig } from "../config"
 import { isMessageCompacted } from "../state/utils"
 import { renderMemo } from "../memo"
 import { createSyntheticUserMessage, replaceBlockIdsWithBlocked } from "./utils"
-import { getLastUserMessage } from "./query"
+import { isIgnoredUserMessage } from "./query"
+import { isMessageWithInfo } from "./shape"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 
 const PRUNED_TOOL_OUTPUT_REPLACEMENT =
@@ -26,7 +27,7 @@ export const prune = (
 }
 
 const pruneFullTool = (state: SessionState, logger: Logger, messages: WithParts[]): void => {
-    const messagesToRemove: string[] = []
+    const messagesToRemove = new Set<string>()
 
     for (const msg of messages) {
         if (isMessageCompacted(state, msg)) {
@@ -34,7 +35,7 @@ const pruneFullTool = (state: SessionState, logger: Logger, messages: WithParts[
         }
 
         const parts = Array.isArray(msg.parts) ? msg.parts : []
-        const partsToRemove: string[] = []
+        const partsToRemove = new Set<string>()
 
         for (const part of parts) {
             if (part.type !== "tool") {
@@ -48,24 +49,22 @@ const pruneFullTool = (state: SessionState, logger: Logger, messages: WithParts[
                 continue
             }
 
-            partsToRemove.push(part.callID)
+            partsToRemove.add(part.callID)
         }
 
-        if (partsToRemove.length === 0) {
+        if (partsToRemove.size === 0) {
             continue
         }
 
-        msg.parts = parts.filter(
-            (part) => part.type !== "tool" || !partsToRemove.includes(part.callID),
-        )
+        msg.parts = parts.filter((part) => part.type !== "tool" || !partsToRemove.has(part.callID))
 
         if (msg.parts.length === 0) {
-            messagesToRemove.push(msg.info.id)
+            messagesToRemove.add(msg.info.id)
         }
     }
 
-    if (messagesToRemove.length > 0) {
-        const result = messages.filter((msg) => !messagesToRemove.includes(msg.info.id))
+    if (messagesToRemove.size > 0) {
+        const result = messages.filter((msg) => !messagesToRemove.has(msg.info.id))
         messages.length = 0
         messages.push(...result)
     }
@@ -174,9 +173,30 @@ const filterCompressedRanges = (
 
     const result: WithParts[] = []
     let lastBlockIndex = -1
+    let latestEligibleUser: WithParts | null = null
+    const messageEligibility = new Map<
+        WithParts,
+        { eligible: boolean; eligibleUser: WithParts | null }
+    >()
 
     for (const msg of messages) {
         const msgId = msg.info.id
+
+        let eligibility = messageEligibility.get(msg)
+        if (!eligibility) {
+            const eligible =
+                isMessageWithInfo(msg) && msg.info.role === "user" && !isIgnoredUserMessage(msg)
+            if (eligible) {
+                latestEligibleUser = msg
+            }
+            eligibility = { eligible, eligibleUser: latestEligibleUser }
+            messageEligibility.set(msg, eligibility)
+        } else if (eligibility.eligible) {
+            latestEligibleUser = msg
+        }
+
+        // Find user message for variant and as base for synthetic message
+        const userMessage = eligibility.eligibleUser
 
         // Check if there's a summary to inject at this anchor point
         const blockId = state.prune.messages.activeByAnchorMessageId.get(msgId)
@@ -209,10 +229,6 @@ const filterCompressedRanges = (
                     blockId: (summary as { blockId?: unknown }).blockId,
                 })
             } else {
-                // Find user message for variant and as base for synthetic message
-                const msgIndex = messages.indexOf(msg)
-                const userMessage = getLastUserMessage(messages, msgIndex)
-
                 if (userMessage) {
                     const userInfo = userMessage.info as UserMessage
                     const summaryContent =
@@ -249,10 +265,9 @@ const filterCompressedRanges = (
 
     // Inject memo after the last block summary
     if (memoContent.length > 0) {
-        const userMessage = getLastUserMessage(messages)
-        if (userMessage) {
+        if (latestEligibleUser) {
             const memoMsg = createSyntheticUserMessage(
-                userMessage,
+                latestEligibleUser,
                 `[Memo]\n${memoContent}`,
                 "dcp_memo",
             )

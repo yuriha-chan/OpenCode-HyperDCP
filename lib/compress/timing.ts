@@ -1,5 +1,4 @@
-import type { SessionState } from "../state/types"
-import { attachCompressionDuration } from "./state"
+import type { CompressionBlock, SessionState } from "../state/types"
 
 export interface PendingCompressionDuration {
     messageId: string
@@ -55,22 +54,44 @@ export function resolveCompressionDuration(
 }
 
 export function applyPendingCompressionDurations(state: SessionState): number {
-    if (state.compressionTiming.pendingByCallId.size === 0) {
+    const pendingByCallId = state.compressionTiming.pendingByCallId
+    if (pendingByCallId.size === 0) {
         return 0
     }
 
-    let updates = 0
-    for (const [key, entry] of state.compressionTiming.pendingByCallId) {
-        const applied = attachCompressionDuration(
-            state.prune.messages,
-            entry.messageId,
-            entry.callId,
-            entry.durationMs,
-        )
-        if (applied > 0) {
-            updates += applied
-            state.compressionTiming.pendingByCallId.delete(key)
+    const blocksByPair = new Map<string, Map<string | undefined, CompressionBlock[]>>()
+    for (const block of state.prune.messages.blocksById.values()) {
+        let blocksByCallId = blocksByPair.get(block.compressMessageId)
+        if (!blocksByCallId) {
+            blocksByCallId = new Map()
+            blocksByPair.set(block.compressMessageId, blocksByCallId)
         }
+
+        const callId = block.compressCallId
+        const matches = blocksByCallId.get(callId)
+        if (matches) {
+            matches.push(block)
+        } else {
+            blocksByCallId.set(callId, [block])
+        }
+    }
+
+    let updates = 0
+    for (const [key, entry] of pendingByCallId) {
+        if (typeof entry.durationMs !== "number" || !Number.isFinite(entry.durationMs)) {
+            continue
+        }
+
+        const matches = blocksByPair.get(entry.messageId)?.get(entry.callId)
+        if (!matches) {
+            continue
+        }
+
+        for (const block of matches) {
+            block.durationMs = entry.durationMs
+            updates++
+        }
+        pendingByCallId.delete(key)
     }
 
     return updates
