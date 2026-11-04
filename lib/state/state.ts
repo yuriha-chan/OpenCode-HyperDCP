@@ -1,7 +1,12 @@
 import type { SessionState, ToolParameterEntry, WithParts } from "./types"
 import type { Logger } from "../logger"
 import { applyPendingCompressionDurations } from "../compress/timing"
-import { loadSessionState, saveSessionState, restoreHousekeepingTransaction } from "./persistence"
+import {
+    loadSessionState,
+    saveSessionState,
+    restoreHousekeepingTransaction,
+    HousekeepingMetadataError,
+} from "./persistence"
 import {
     isSubAgentSession,
     findLastCompactionTimestamp,
@@ -38,6 +43,7 @@ export const checkSession = async (
             )
         } catch (err: any) {
             logger.error("Failed to initialize session state", { error: err.message })
+            if (err instanceof HousekeepingMetadataError) throw err
         }
     }
 
@@ -166,6 +172,18 @@ export async function ensureSessionInitialized(
     // logger.info("session ID = " + sessionId)
     // logger.info("Initializing session state", { sessionId: sessionId })
 
+    const persisted = await loadSessionState(sessionId, logger)
+    const housekeeping = restoreHousekeepingTransaction(persisted?.housekeeping)
+    const history = persisted?.housekeepingHistory ?? []
+    if (!Array.isArray(history))
+        throw new HousekeepingMetadataError("Invalid housekeeping history metadata.")
+    const housekeepingHistory = history.map((entry) => {
+        const transaction = restoreHousekeepingTransaction(entry)
+        if (!transaction)
+            throw new HousekeepingMetadataError("Invalid housekeeping history entry metadata.")
+        return transaction
+    })
+
     resetSessionState(state)
     state.manualMode = manualModeEnabled ? "active" : false
     state.sessionId = sessionId
@@ -178,7 +196,6 @@ export async function ensureSessionInitialized(
     state.currentTurn = countTurns(state, messages)
     state.nudges.turnNudgeAnchors = collectTurnNudgeAnchors(messages)
 
-    const persisted = await loadSessionState(sessionId, logger)
     if (persisted === null) {
         return
     }
@@ -202,10 +219,8 @@ export async function ensureSessionInitialized(
     state.autotoggle = persisted.autotoggle === true
     state.revision = persisted.revision ?? 0
     state.contentRevision = persisted.contentRevision ?? 0
-    state.housekeeping = restoreHousekeepingTransaction(persisted.housekeeping)
-    state.housekeepingHistory = (persisted.housekeepingHistory ?? [])
-        .map(restoreHousekeepingTransaction)
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    state.housekeeping = housekeeping
+    state.housekeepingHistory = housekeepingHistory
 
     if (persisted.messageIds) {
         state.messageIds.byRawId = new Map(Object.entries(persisted.messageIds.byRawId))

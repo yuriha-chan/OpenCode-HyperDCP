@@ -1,9 +1,12 @@
 import type {
+    HousekeepingDraft,
+    HousekeepingDraftRef,
     HousekeepingSourcePart,
     HousekeepingTransaction,
     SessionState,
     WithParts,
 } from "../state"
+import { readHousekeepingDraft } from "../state/housekeeping-draft-store"
 import { operationIdentity } from "./types"
 
 const HOUSEKEEPING_TOOL_NAMES = new Set([
@@ -262,7 +265,10 @@ function isHousekeepingToolName(name: string): boolean {
     )
 }
 
-export function reconcileHousekeepingHistory(state: SessionState, messages: WithParts[]): boolean {
+export async function reconcileHousekeepingHistory(
+    state: SessionState,
+    messages: WithParts[],
+): Promise<boolean> {
     let changed = false
     const hasCall = (messageId: string, callId: string, partId: string | null): boolean =>
         messages.some(
@@ -279,6 +285,31 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
         record.tool.startsWith("command:")
             ? messages.some((message) => message.info.id === record.messageId)
             : hasCall(record.messageId, record.callId, record.partId)
+    const readDraft = (transaction: HousekeepingTransaction, ref: HousekeepingDraftRef) =>
+        readHousekeepingDraft(transaction.sessionId, ref)
+    const survivingOperationRefs = (
+        transaction: HousekeepingTransaction,
+        operations: HousekeepingTransaction["operationRecords"],
+        active?: HousekeepingTransaction,
+    ): Record<string, HousekeepingTransaction["operationDraftRefs"][string]> =>
+        Object.fromEntries(
+            operations.flatMap((operation) => {
+                const key = operationIdentity(operation.messageId, operation.callId)
+                const ref = active?.operationDraftRefs[key] ?? transaction.operationDraftRefs[key]
+                return ref ? [[key, structuredClone(ref)] as const] : []
+            }),
+        )
+    const lastDraftRef = (
+        refs: Record<string, HousekeepingTransaction["operationDraftRefs"][string]>,
+        order: string[],
+        baseRef: HousekeepingTransaction["baseRef"],
+    ): HousekeepingDraftRef => {
+        if (!order.length) return structuredClone(baseRef)
+        const key = order.at(-1)!
+        const ref = refs[key]
+        if (!ref) throw new Error(`Missing housekeeping checkpoint reference for ${key}.`)
+        return structuredClone(ref)
+    }
     const transactions = [...state.housekeepingHistory]
     const undoTransactions = transactions
         .filter((transaction) => {
@@ -326,17 +357,14 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
 
         if (active && entrySurvives && !leaveSurvives) {
             if (!sameOrder(active.operationOrder, survivingOrder)) {
-                const operationDrafts = Object.fromEntries(
-                    survivingOperations.flatMap((operation) => {
-                        const key = operationIdentity(operation.messageId, operation.callId)
-                        const checkpoint =
-                            active.operationDrafts[key] ?? transaction.operationDrafts[key]
-                        return checkpoint ? [[key, checkpoint] as const] : []
-                    }),
+                const operationDraftRefs = survivingOperationRefs(
+                    transaction,
+                    survivingOperations,
+                    active,
                 )
                 active.operationOrder = survivingOrder
                 active.operationRecords = survivingOperations
-                active.operationDrafts = operationDrafts
+                active.operationDraftRefs = operationDraftRefs
                 active.operationResults = Object.fromEntries(
                     survivingOperations.flatMap((operation) => {
                         const key = operationIdentity(operation.messageId, operation.callId)
@@ -351,15 +379,13 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
                         operation.result,
                     ]),
                 )
-                active.draft = survivingOrder.length
-                    ? structuredClone(operationDrafts[survivingOrder.at(-1)!] ?? active.base)
-                    : structuredClone(active.base)
+                active.draftRef = lastDraftRef(operationDraftRefs, survivingOrder, active.baseRef)
                 transaction.operationOrder = [...active.operationOrder]
                 transaction.operationRecords = [...active.operationRecords]
-                transaction.operationDrafts = structuredClone(active.operationDrafts)
+                transaction.operationDraftRefs = structuredClone(active.operationDraftRefs)
                 transaction.operationResults = structuredClone(active.operationResults)
                 transaction.operations = structuredClone(active.operations)
-                transaction.draft = structuredClone(active.draft)
+                transaction.draftRef = structuredClone(active.draftRef)
                 changed = true
             }
             continue
@@ -367,17 +393,21 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
 
         if (transaction.completed && (!entrySurvives || !leaveSurvives) && !compactedPastEntry) {
             if (!transaction.reverted) {
-                applyDraftDelta(state, transaction.draft, transaction.base)
+                const workingDraft = await readDraft(transaction, transaction.draftRef)
+                const baseDraft = await readDraft(transaction, transaction.baseRef)
+                applyDraftDelta(state, workingDraft, baseDraft)
                 state.contentRevision = transaction.baseRevision
                 transaction.reverted = true
                 changed = true
             }
             if (entrySurvives) {
+                const operationDraftRefs = survivingOperationRefs(transaction, survivingOperations)
                 const reopened: HousekeepingTransaction = {
                     ...structuredClone(transaction),
                     completed: undefined,
                     operationOrder: [...survivingOrder],
                     operationRecords: survivingOperations,
+                    operationDraftRefs,
                     operationResults: Object.fromEntries(
                         survivingOperations.map((operation) => {
                             const key = operationIdentity(operation.messageId, operation.callId)
@@ -390,12 +420,7 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
                             operation.result,
                         ]),
                     ),
-                    draft: survivingOrder.length
-                        ? structuredClone(
-                              transaction.operationDrafts[survivingOrder.at(-1)!] ??
-                                  transaction.base,
-                          )
-                        : structuredClone(transaction.base),
+                    draftRef: lastDraftRef(operationDraftRefs, survivingOrder, transaction.baseRef),
                 }
                 state.housekeeping = reopened
                 changed = true
@@ -407,7 +432,12 @@ export function reconcileHousekeepingHistory(state: SessionState, messages: With
         }
 
         if (transaction.completed && entrySurvives && leaveSurvives && transaction.reverted) {
-            applyDraftDelta(state, transaction.base, transaction.completed.committedDraft)
+            const baseDraft = await readDraft(transaction, transaction.baseRef)
+            const committedDraft = await readDraft(
+                transaction,
+                transaction.completed.committedDraftRef,
+            )
+            applyDraftDelta(state, baseDraft, committedDraft)
             state.contentRevision = transaction.baseRevision + 1
             transaction.reverted = false
             if (state.housekeeping?.id === transaction.id) state.housekeeping = null
@@ -428,8 +458,8 @@ function sameOrder(left: string[], right: string[]): boolean {
 
 export function applyDraftDelta(
     target: SessionState,
-    from: HousekeepingTransaction["draft"],
-    to: HousekeepingTransaction["draft"],
+    from: HousekeepingDraft,
+    to: HousekeepingDraft,
 ): void {
     const messageState = target.prune.messages
     const touchedMessages = new Set<string>()

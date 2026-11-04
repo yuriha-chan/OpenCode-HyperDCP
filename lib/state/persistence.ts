@@ -13,17 +13,21 @@ import type {
     PrunedMessageEntry,
     SessionState,
     SessionStats,
+    HousekeepingDraftRef,
+    HousekeepingSnapshotRef,
     HousekeepingTransaction,
 } from "./types"
 import type { Logger } from "../logger"
 import { STORAGE_DIR, getSessionFilePath } from "../paths"
-import { serializePruneMessagesState, loadPruneMessagesState, loadPruneMap } from "./utils"
+import { serializePruneMessagesState } from "./utils"
 import {
     HOUSEKEEPING_DRAFT_VIEW,
     type HousekeepingDraftViewMarker,
 } from "../housekeeping/coordinator"
 import { withSessionCoordinator } from "../housekeeping/coordinator"
-import { parseMemo, validateMemo, type Memo } from "../memo"
+import type { Memo } from "../memo"
+import { decodePersistedMemo, isRecord } from "./housekeeping-draft-codec"
+import { isHousekeepingRefId } from "./housekeeping-draft-store"
 
 /** Prune state as stored on disk */
 export interface PersistedPruneMessagesState {
@@ -75,115 +79,105 @@ const writeQueues = new Map<string, Promise<void>>()
 const persistedRevisions = new Map<string, number>()
 
 function serializeTransaction(transaction: HousekeepingTransaction): Record<string, unknown> {
-    const serializeDraft = (draft: HousekeepingTransaction["draft"]): Record<string, unknown> => ({
-        prune: {
-            tools: Object.fromEntries(draft.prune.tools),
-            messages: serializePruneMessagesState(draft.prune.messages),
-        },
-        stats: structuredClone(draft.stats),
-        memo: draft.memo,
-        nudges: {
-            contextLimitAnchors: [...draft.nudges.contextLimitAnchors],
-            turnNudgeAnchors: [...draft.nudges.turnNudgeAnchors],
-            iterationNudgeAnchors: [...draft.nudges.iterationNudgeAnchors],
-        },
-    })
     return {
-        ...transaction,
-        base: serializeDraft(transaction.base),
-        draft: serializeDraft(transaction.draft),
+        id: transaction.id,
+        sessionId: transaction.sessionId,
+        entryMessageId: transaction.entryMessageId,
+        entryPartId: transaction.entryPartId,
+        entryCallId: transaction.entryCallId,
+        entryCreatedAt: transaction.entryCreatedAt,
+        sourceParts: transaction.sourceParts,
+        baseRevision: transaction.baseRevision,
+        baseRef: transaction.baseRef,
+        draftRef: transaction.draftRef,
+        operations: transaction.operations,
+        operationResults: transaction.operationResults,
+        operationRecords: transaction.operationRecords,
+        entryGuidance: transaction.entryGuidance,
+        notifications: transaction.notifications,
+        batchTopic: transaction.batchTopic,
+        operationOrder: transaction.operationOrder,
+        operationDraftRefs: transaction.operationDraftRefs,
+        reverted: transaction.reverted,
         completed: transaction.completed
             ? {
-                  ...transaction.completed,
-                  committedDraft: serializeDraft(transaction.completed.committedDraft),
+                  leaveMessageId: transaction.completed.leaveMessageId,
+                  leavePartId: transaction.completed.leavePartId,
+                  leaveCallId: transaction.completed.leaveCallId,
+                  receipt: transaction.completed.receipt,
+                  commitRevision: transaction.completed.commitRevision,
+                  committedDraftRef: transaction.completed.committedDraftRef,
               }
             : undefined,
-        operationDrafts: Object.fromEntries(
-            Object.entries(transaction.operationDrafts).map(([id, draft]) => [
-                id,
-                serializeDraft(draft),
-            ]),
-        ),
     }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
+export class HousekeepingMetadataError extends Error {}
+
+function invalidTransaction(detail: string): never {
+    throw new HousekeepingMetadataError(`Invalid housekeeping transaction metadata: ${detail}`)
 }
 
-function decodePersistedMemo(value: unknown): Memo | null {
-    if (value === undefined || value === null) return null
-    if (typeof value === "string") {
-        const memo = parseMemo(value)
-        return memo.length ? memo : null
+function restoreDraftRef(value: unknown, label: string): HousekeepingDraftRef {
+    if (!isRecord(value) || typeof value.kind !== "string")
+        invalidTransaction(`${label} is missing its reference kind.`)
+    if (value.kind === "snapshot") {
+        if (!isHousekeepingRefId(value.snapshotId))
+            invalidTransaction(`${label} is not a valid snapshot reference.`)
+        if ("baseSnapshotId" in value)
+            invalidTransaction(`${label} snapshot must not carry a base identifier.`)
+        return { kind: "snapshot", snapshotId: value.snapshotId }
     }
-    try {
-        validateMemo(value)
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error)
-        throw new Error(`Invalid persisted memo: ${detail}`)
+    if (value.kind === "delta") {
+        if (!isHousekeepingRefId(value.snapshotId) || !isHousekeepingRefId(value.baseSnapshotId))
+            invalidTransaction(`${label} is not a valid delta reference.`)
+        return {
+            kind: "delta",
+            snapshotId: value.snapshotId,
+            baseSnapshotId: value.baseSnapshotId,
+        }
     }
-    return value.length ? value : null
+    invalidTransaction(`${label} has an invalid reference kind.`)
 }
 
-function restoreDraft(value: unknown): HousekeepingTransaction["draft"] | null {
-    if (!isRecord(value) || !isRecord(value.prune) || !isRecord(value.nudges)) return null
-    if (
-        !isRecord(value.stats) ||
-        typeof value.stats.pruneTokenCounter !== "number" ||
-        typeof value.stats.totalPruneTokens !== "number"
-    )
-        return null
-    let memo: Memo | null
-    try {
-        memo = decodePersistedMemo(value.memo)
-    } catch (error) {
-        if (error instanceof Error) return null
-        throw error
+function restoreSnapshotRef(value: unknown, label: string): HousekeepingSnapshotRef {
+    const ref = restoreDraftRef(value, label)
+    if (ref.kind !== "snapshot") invalidTransaction(`${label} must be a snapshot reference.`)
+    return ref
+}
+
+function restoreCheckpointRef(
+    value: unknown,
+    baseRef: HousekeepingSnapshotRef,
+    label: string,
+): HousekeepingDraftRef {
+    const ref = restoreDraftRef(value, label)
+    if (ref.kind === "snapshot") {
+        if (ref.snapshotId !== baseRef.snapshotId)
+            invalidTransaction(`${label} does not reference the transaction base snapshot.`)
+        return ref
     }
-    const asStringArray = (input: unknown): string[] | null =>
-        Array.isArray(input) && input.every((entry) => typeof entry === "string") ? input : null
-    const contextLimitAnchors = asStringArray(value.nudges.contextLimitAnchors)
-    const turnNudgeAnchors = asStringArray(value.nudges.turnNudgeAnchors)
-    const iterationNudgeAnchors = asStringArray(value.nudges.iterationNudgeAnchors)
-    if (!contextLimitAnchors || !turnNudgeAnchors || !iterationNudgeAnchors) return null
-    const pruneTools = isRecord(value.prune.tools) ? value.prune.tools : {}
-    if (!Object.values(pruneTools).every((count) => typeof count === "number")) return null
-    if (!isRecord(value.prune.messages)) return null
-    return {
-        prune: {
-            tools: loadPruneMap(pruneTools as Record<string, number>),
-            messages: loadPruneMessagesState(
-                value.prune.messages as unknown as Parameters<typeof loadPruneMessagesState>[0],
-            ),
-        },
-        stats: {
-            pruneTokenCounter: value.stats.pruneTokenCounter,
-            totalPruneTokens: value.stats.totalPruneTokens,
-        },
-        memo,
-        nudges: {
-            contextLimitAnchors: new Set(contextLimitAnchors),
-            turnNudgeAnchors: new Set(turnNudgeAnchors),
-            iterationNudgeAnchors: new Set(iterationNudgeAnchors),
-        },
-    }
+    if (ref.baseSnapshotId !== baseRef.snapshotId)
+        invalidTransaction(`${label} does not reference the transaction base snapshot.`)
+    return ref
 }
 
 export function restoreHousekeepingTransaction(value: unknown): HousekeepingTransaction | null {
-    if (!isRecord(value)) return null
-    const base = restoreDraft(value.base)
-    const draft = restoreDraft(value.draft)
-    if (!base || !draft) return null
+    if (value === undefined || value === null) return null
+    if (!isRecord(value)) invalidTransaction("transaction is not an object.")
+    const baseRef = restoreSnapshotRef(value.baseRef, "baseRef")
+    const draftRef = restoreCheckpointRef(value.draftRef, baseRef, "draftRef")
     if (
         typeof value.id !== "string" ||
         typeof value.sessionId !== "string" ||
         typeof value.entryMessageId !== "string" ||
         typeof value.entryCallId !== "string"
     )
-        return null
-    if (value.entryPartId !== null && typeof value.entryPartId !== "string") return null
-    if (typeof value.entryCreatedAt !== "number") return null
+        invalidTransaction("identity fields are incomplete.")
+    if (value.entryPartId !== null && typeof value.entryPartId !== "string")
+        invalidTransaction("entryPartId is not a string or null.")
+    if (typeof value.entryCreatedAt !== "number")
+        invalidTransaction("entryCreatedAt is not a number.")
     if (
         !Array.isArray(value.sourceParts) ||
         !value.sourceParts.every(
@@ -193,31 +187,33 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
                 typeof part.partId === "string",
         )
     )
-        return null
+        invalidTransaction("sourceParts is malformed.")
     if (
         !Array.isArray(value.operationOrder) ||
         !value.operationOrder.every((id) => typeof id === "string")
     )
-        return null
+        invalidTransaction("operationOrder is malformed.")
     if (
         !isRecord(value.operations) ||
         !Object.values(value.operations).every((result) => typeof result === "string")
     )
-        return null
+        invalidTransaction("operations is malformed.")
     if (
         !isRecord(value.operationResults) ||
         !Object.values(value.operationResults).every(
             (result) => isRecord(result) && typeof result.result === "string",
         )
     )
-        return null
-    if (!isRecord(value.operationDrafts)) return null
-    const operationDrafts: Record<string, HousekeepingTransaction["draft"]> = {}
-    for (const [id, snapshot] of Object.entries(value.operationDrafts)) {
-        const restored = restoreDraft(snapshot)
-        if (!restored) return null
-        operationDrafts[id] = restored
-    }
+        invalidTransaction("operationResults is malformed.")
+    if (!isRecord(value.operationDraftRefs))
+        invalidTransaction("operationDraftRefs is missing or not an object.")
+    const operationDraftRefs: Record<string, HousekeepingDraftRef> = {}
+    for (const [id, ref] of Object.entries(value.operationDraftRefs))
+        operationDraftRefs[id] = restoreCheckpointRef(
+            ref,
+            baseRef,
+            `operationDraftRefs[${JSON.stringify(id)}]`,
+        )
     if (
         !Array.isArray(value.operationRecords) ||
         !value.operationRecords.every(
@@ -230,8 +226,33 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
                 typeof record.result === "string",
         )
     )
-        return null
-    if (typeof value.baseRevision !== "number") return null
+        invalidTransaction("operationRecords is malformed.")
+    if (typeof value.baseRevision !== "number") invalidTransaction("baseRevision is not a number.")
+    let completed: HousekeepingTransaction["completed"]
+    if (value.completed !== undefined && value.completed !== null) {
+        if (
+            !isRecord(value.completed) ||
+            typeof value.completed.leaveMessageId !== "string" ||
+            (value.completed.leavePartId !== null &&
+                typeof value.completed.leavePartId !== "string") ||
+            typeof value.completed.leaveCallId !== "string" ||
+            typeof value.completed.receipt !== "string" ||
+            typeof value.completed.commitRevision !== "number"
+        )
+            invalidTransaction("completed marker is malformed.")
+        completed = {
+            leaveMessageId: value.completed.leaveMessageId,
+            leavePartId: value.completed.leavePartId,
+            leaveCallId: value.completed.leaveCallId,
+            receipt: value.completed.receipt,
+            commitRevision: value.completed.commitRevision,
+            committedDraftRef: restoreCheckpointRef(
+                value.completed.committedDraftRef,
+                baseRef,
+                "completed.committedDraftRef",
+            ),
+        }
+    }
     return {
         id: value.id,
         sessionId: value.sessionId,
@@ -241,8 +262,8 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
         entryCreatedAt: value.entryCreatedAt,
         sourceParts: value.sourceParts as HousekeepingTransaction["sourceParts"],
         baseRevision: value.baseRevision,
-        base,
-        draft,
+        baseRef,
+        draftRef,
         operations: value.operations as Record<string, string>,
         operationResults: value.operationResults as HousekeepingTransaction["operationResults"],
         operationRecords: value.operationRecords as HousekeepingTransaction["operationRecords"],
@@ -252,26 +273,9 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
             : undefined,
         batchTopic: typeof value.batchTopic === "string" ? value.batchTopic : undefined,
         operationOrder: value.operationOrder,
-        operationDrafts,
+        operationDraftRefs,
         reverted: value.reverted === true,
-        completed:
-            isRecord(value.completed) &&
-            typeof value.completed.leaveMessageId === "string" &&
-            (value.completed.leavePartId === null ||
-                typeof value.completed.leavePartId === "string") &&
-            typeof value.completed.leaveCallId === "string" &&
-            typeof value.completed.receipt === "string" &&
-            typeof value.completed.commitRevision === "number" &&
-            restoreDraft(value.completed.committedDraft)
-                ? {
-                      leaveMessageId: value.completed.leaveMessageId,
-                      leavePartId: value.completed.leavePartId,
-                      leaveCallId: value.completed.leaveCallId,
-                      receipt: value.completed.receipt,
-                      commitRevision: value.completed.commitRevision,
-                      committedDraft: restoreDraft(value.completed.committedDraft)!,
-                  }
-                : undefined,
+        completed,
     }
 }
 

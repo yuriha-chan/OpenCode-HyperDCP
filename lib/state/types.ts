@@ -138,6 +138,19 @@ export interface HousekeepingDraft {
     nudges: Nudges
 }
 
+export interface HousekeepingSnapshotRef {
+    kind: "snapshot"
+    snapshotId: string
+}
+
+export interface HousekeepingDeltaRef {
+    kind: "delta"
+    snapshotId: string
+    baseSnapshotId: string
+}
+
+export type HousekeepingDraftRef = HousekeepingSnapshotRef | HousekeepingDeltaRef
+
 export interface HousekeepingSourcePart {
     messageId: string
     partId: string
@@ -165,8 +178,8 @@ export interface HousekeepingTransaction {
     entryCreatedAt: number
     sourceParts: HousekeepingSourcePart[]
     baseRevision: number
-    base: HousekeepingDraft
-    draft: HousekeepingDraft
+    baseRef: HousekeepingSnapshotRef
+    draftRef: HousekeepingDraftRef
     operations: Record<string, string>
     operationResults: Record<string, HousekeepingOperationResult>
     operationRecords: HousekeepingOperation[]
@@ -179,7 +192,7 @@ export interface HousekeepingTransaction {
     }>
     batchTopic?: string
     operationOrder: string[]
-    operationDrafts: Record<string, HousekeepingDraft>
+    operationDraftRefs: Record<string, HousekeepingDraftRef>
     reverted?: boolean
     completed?: {
         leaveMessageId: string
@@ -187,6 +200,6 @@ export interface HousekeepingTransaction {
         leaveCallId: string
         receipt: string
         commitRevision: number
-        committedDraft: HousekeepingDraft
+        committedDraftRef: HousekeepingDraftRef
     }
 }

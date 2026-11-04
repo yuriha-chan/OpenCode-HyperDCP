@@ -3,6 +3,11 @@ import type { ToolContext } from "../compress/types"
 import { finalizeSession } from "../compress/pipeline"
 import type { WithParts } from "../state"
 import { saveSessionStateStrict } from "../state/persistence"
+import {
+    readHousekeepingCheckpoint,
+    writeHousekeepingDelta,
+    writeHousekeepingDraft,
+} from "../state/housekeeping-draft-store"
 import { finalizePendingBuffers } from "../expand-block"
 import {
     captureEligibleSourceParts,
@@ -14,6 +19,7 @@ import { withSessionCoordinator } from "./coordinator"
 import { loadAndReconcileSession } from "./state"
 import { buildEntryGuidance, cloneDraft, publishDraft } from "./state"
 import type { HousekeepingTransaction } from "../state"
+import type { HousekeepingDraft, HousekeepingDraftRef } from "../state"
 import type { Memo } from "../memo"
 import type { ToolExecutionContext } from "./types"
 
@@ -139,6 +145,19 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 const entryMessage = messages.find(
                     (message) => message.info.id === toolContext.messageID,
                 )
+                const baseDraft = cloneDraft(candidateState)
+                const baseRef = await writeHousekeepingDraft(toolContext.sessionID, baseDraft)
+                let draftRef: HousekeepingDraftRef = baseRef
+                if (todos !== undefined) {
+                    const todoDraft = structuredClone(baseDraft)
+                    todoDraft.memo = replaceTodoStatus(todoDraft.memo, todos)
+                    draftRef = await writeHousekeepingDelta(
+                        toolContext.sessionID,
+                        baseRef,
+                        baseDraft,
+                        todoDraft,
+                    )
+                }
                 const transaction: HousekeepingTransaction = {
                     id: `${toolContext.sessionID}:${toolContext.messageID}:${callId ?? ""}`,
                     sessionId: toolContext.sessionID,
@@ -148,17 +167,15 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     entryCreatedAt: entryMessage?.info.time.created ?? 0,
                     sourceParts,
                     baseRevision: candidateState.contentRevision,
-                    base: cloneDraft(candidateState),
-                    draft: cloneDraft(candidateState),
+                    baseRef,
+                    draftRef,
                     operations: {},
                     operationResults: {},
                     operationRecords: [],
                     entryGuidance: guidance,
                     operationOrder: [],
-                    operationDrafts: {},
+                    operationDraftRefs: {},
                 }
-                if (todos !== undefined)
-                    transaction.draft.memo = replaceTodoStatus(transaction.draft.memo, todos)
                 candidateState.housekeeping = transaction
                 candidateState.housekeepingHistory = [
                     ...candidateState.housekeepingHistory,
@@ -175,10 +192,7 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
     })
 }
 
-function buildCommitReceipt(
-    base: HousekeepingTransaction["base"],
-    candidate: HousekeepingTransaction["draft"],
-): string {
+function buildCommitReceipt(base: HousekeepingDraft, candidate: HousekeepingDraft): string {
     const changed = [...candidate.prune.messages.blocksById.values()]
         .filter((block) => {
             const before = base.prune.messages.blocksById.get(block.blockId)
@@ -227,14 +241,24 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                         "Committed context changed during housekeeping. Re-enter housekeeping from the current session state before committing.",
                     )
                 }
-                const candidateDraft = structuredClone(transaction.draft)
+                const checkpoint = await readHousekeepingCheckpoint(
+                    transaction.sessionId,
+                    transaction.draftRef,
+                )
+                const candidateDraft = structuredClone(checkpoint.draft)
                 finalizePendingBuffers(candidateDraft)
                 candidateDraft.nudges = {
                     contextLimitAnchors: new Set(),
                     turnNudgeAnchors: new Set(),
                     iterationNudgeAnchors: new Set(),
                 }
-                const receipt = buildCommitReceipt(transaction.base, candidateDraft)
+                const receipt = buildCommitReceipt(checkpoint.base, candidateDraft)
+                const committedDraftRef = await writeHousekeepingDelta(
+                    transaction.sessionId,
+                    checkpoint.baseRef,
+                    checkpoint.base,
+                    candidateDraft,
+                )
                 const candidateState = structuredClone(ctx.state)
                 publishDraft(candidateState, candidateDraft)
                 candidateState.contentRevision = transaction.baseRevision + 1
@@ -246,11 +270,11 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     leaveCallId: callId ?? "",
                     receipt,
                     commitRevision: candidateState.revision + 1,
-                    committedDraft: structuredClone(candidateDraft),
+                    committedDraftRef,
                 }
                 const completedTransaction: HousekeepingTransaction = {
                     ...structuredClone(transaction),
-                    draft: candidateDraft,
+                    draftRef: committedDraftRef,
                     completed,
                 }
                 candidateState.housekeeping = null

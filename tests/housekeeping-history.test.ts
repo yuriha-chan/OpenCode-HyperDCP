@@ -86,6 +86,10 @@ function operation(
     return { messageId, partId, callId, tool, input: {}, result: "ok" }
 }
 
+function snapshotRef(snapshotId: string): HousekeepingTransaction["baseRef"] {
+    return { kind: "snapshot", snapshotId }
+}
+
 function transaction(overrides: Partial<HousekeepingTransaction> = {}): HousekeepingTransaction {
     return {
         id: "transaction-1",
@@ -96,13 +100,13 @@ function transaction(overrides: Partial<HousekeepingTransaction> = {}): Housekee
         entryCreatedAt: 1,
         sourceParts: [],
         baseRevision: 0,
-        base: {} as HousekeepingTransaction["base"],
-        draft: {} as HousekeepingTransaction["draft"],
+        baseRef: snapshotRef("base-snapshot"),
+        draftRef: snapshotRef("draft-snapshot"),
         operations: {},
         operationResults: {},
         operationRecords: [],
         operationOrder: [],
-        operationDrafts: {},
+        operationDraftRefs: {},
         ...overrides,
     }
 }
@@ -121,7 +125,7 @@ function completed(
             leavePartId,
             receipt,
             commitRevision: 1,
-            committedDraft: {} as HousekeepingTransaction["base"],
+            committedDraftRef: snapshotRef("committed-snapshot"),
         },
         ...overrides,
     })
@@ -692,7 +696,7 @@ function generateCase(seed: number): {
                               leavePartId: random() < 0.5 ? null : sourceOrPartId(),
                               receipt: `receipt-${index}`,
                               commitRevision: 1,
-                              committedDraft: {} as HousekeepingTransaction["base"],
+                              committedDraftRef: snapshotRef("committed-snapshot"),
                           },
                       }
                     : {}),

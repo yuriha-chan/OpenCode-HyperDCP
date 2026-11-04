@@ -16,7 +16,7 @@ No arguments needed — returns the full current memo text verbatim.`,
         async execute(_args, toolContext) {
             return withSessionCoordinator(ctx.state, async () => {
                 await loadAndReconcileSession(ctx, toolContext.sessionID)
-                const memo = (ctx.state.housekeeping ? draftState(ctx.state) : ctx.state).memo
+                const memo = (ctx.state.housekeeping ? await draftState(ctx.state) : ctx.state).memo
                 if (!memo) return "(memo is empty)"
                 const rendered = renderMemo(memo)
                 return rendered.trim().length > 0 ? rendered : "(memo is empty)"

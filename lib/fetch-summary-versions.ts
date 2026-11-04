@@ -68,7 +68,7 @@ THE FORMAT
             const input = args as { blockId: number; version?: number }
             return withSessionCoordinator(ctx.state, async () => {
                 await loadAndReconcileSession(ctx, toolContext.sessionID)
-                const state = ctx.state.housekeeping ? draftState(ctx.state) : ctx.state
+                const state = ctx.state.housekeeping ? await draftState(ctx.state) : ctx.state
                 const block = state.prune.messages.blocksById.get(input.blockId)
                 if (!block) throw new Error(`Block ${input.blockId} not found.`)
 

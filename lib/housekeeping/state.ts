@@ -4,6 +4,11 @@ import { findUncoveredRanges, formatUncoveredRanges } from "../messages/uncovere
 import type { ToolContext } from "../compress/types"
 import type { Logger } from "../logger"
 import { saveSessionStateStrict } from "../state/persistence"
+import {
+    readHousekeepingCheckpoint,
+    readHousekeepingDraft,
+    writeHousekeepingDelta,
+} from "../state/housekeeping-draft-store"
 import { operationIdentity, type ToolExecutionContext } from "./types"
 import { HOUSEKEEPING_DRAFT_VIEW, withSessionCoordinator } from "./coordinator"
 import { ensureSessionInitialized } from "../state"
@@ -27,11 +32,12 @@ export function cloneDraft(state: SessionState): HousekeepingDraft {
     })
 }
 
-export function draftState(state: SessionState): SessionState {
+export async function draftState(state: SessionState): Promise<SessionState> {
     const transaction = state.housekeeping
     if (!transaction)
         throw new Error("Call enter_housekeeping before making context-maintenance edits.")
-    return makeDraftView(state, transaction, transaction.draft)
+    const draft = await readHousekeepingDraft(transaction.sessionId, transaction.draftRef)
+    return makeDraftView(state, transaction, draft)
 }
 
 function makeDraftView(
@@ -91,14 +97,24 @@ export async function runHousekeepingMutation<T>(
             throw new Error("Call enter_housekeeping before making context-maintenance edits.")
         const prior = operationId ? transaction.operationResults[operationId] : undefined
         if (prior) return prior.result as T
-        const candidateDraft = structuredClone(transaction.draft)
+        const checkpoint = await readHousekeepingCheckpoint(
+            transaction.sessionId,
+            transaction.draftRef,
+        )
+        const candidateDraft = checkpoint.draft
         const candidateTransaction = structuredClone(transaction)
-        candidateTransaction.draft = candidateDraft
         const operationContext = {
             ...ctx,
             state: makeDraftView(ctx.state, candidateTransaction, candidateDraft),
         }
         const result = await operation(operationContext)
+        const checkpointRef = await writeHousekeepingDelta(
+            transaction.sessionId,
+            checkpoint.baseRef,
+            checkpoint.base,
+            candidateDraft,
+        )
+        candidateTransaction.draftRef = checkpointRef
         if (callId) {
             const record = {
                 callId,
@@ -115,7 +131,7 @@ export async function runHousekeepingMutation<T>(
             candidateTransaction.operationResults[operationId!] = { result: record.result }
             candidateTransaction.operations[operationId!] = record.result
             candidateTransaction.operationOrder.push(operationId!)
-            candidateTransaction.operationDrafts[operationId!] = structuredClone(candidateDraft)
+            candidateTransaction.operationDraftRefs[operationId!] = checkpointRef
         }
         const historyIndex = ctx.state.housekeepingHistory.findIndex(
             (entry) => entry.id === transaction.id,
@@ -124,12 +140,14 @@ export async function runHousekeepingMutation<T>(
         candidateRoot.housekeeping = candidateTransaction
         if (historyIndex >= 0) {
             const historyEntry = structuredClone(candidateRoot.housekeepingHistory[historyIndex]!)
-            historyEntry.draft = structuredClone(candidateDraft)
+            historyEntry.draftRef = structuredClone(checkpointRef)
             historyEntry.operationRecords = structuredClone(candidateTransaction.operationRecords)
             historyEntry.operationResults = structuredClone(candidateTransaction.operationResults)
             historyEntry.operations = structuredClone(candidateTransaction.operations)
             historyEntry.operationOrder = [...candidateTransaction.operationOrder]
-            historyEntry.operationDrafts = structuredClone(candidateTransaction.operationDrafts)
+            historyEntry.operationDraftRefs = structuredClone(
+                candidateTransaction.operationDraftRefs,
+            )
             candidateRoot.housekeepingHistory[historyIndex] = historyEntry
         }
         await saveSessionStateStrict(candidateRoot, ctx.logger)
@@ -161,7 +179,7 @@ export async function loadAndReconcileSession(
         await saveSessionStateStrict(ctx.state, ctx.logger)
     }
     const reconciledState = structuredClone(ctx.state)
-    if (reconcileHousekeepingHistory(reconciledState, messages)) {
+    if (await reconcileHousekeepingHistory(reconciledState, messages)) {
         await saveSessionStateStrict(reconciledState, ctx.logger)
         Object.assign(ctx.state, reconciledState)
     }
@@ -179,11 +197,20 @@ export async function runHousekeepingCommandMutation<T>(
     return withSessionCoordinator(state, async () => {
         const transaction = state.housekeeping
         if (!transaction) return operation(state)
-        const draft = structuredClone(transaction.draft)
+        const checkpoint = await readHousekeepingCheckpoint(
+            transaction.sessionId,
+            transaction.draftRef,
+        )
         const candidateTransaction = structuredClone(transaction)
-        candidateTransaction.draft = draft
-        const view = makeDraftView(state, candidateTransaction, draft)
+        const view = makeDraftView(state, candidateTransaction, checkpoint.draft)
         const result = await operation(view)
+        const checkpointRef = await writeHousekeepingDelta(
+            transaction.sessionId,
+            checkpoint.baseRef,
+            checkpoint.base,
+            checkpoint.draft,
+        )
+        candidateTransaction.draftRef = checkpointRef
         const callId = `command:${state.revision + 1}:${label}`
         const operationId = operationIdentity(messageId, callId)
         const record = {
@@ -196,7 +223,7 @@ export async function runHousekeepingCommandMutation<T>(
         }
         candidateTransaction.operationRecords.push(record)
         candidateTransaction.operationOrder.push(operationId)
-        candidateTransaction.operationDrafts[operationId] = structuredClone(draft)
+        candidateTransaction.operationDraftRefs[operationId] = checkpointRef
         candidateTransaction.operationResults[operationId] = { result: record.result }
         candidateTransaction.operations[operationId] = record.result
         const candidateRoot = structuredClone(state)
@@ -206,12 +233,14 @@ export async function runHousekeepingCommandMutation<T>(
         )
         if (index >= 0) {
             const historyEntry = structuredClone(candidateRoot.housekeepingHistory[index]!)
-            historyEntry.draft = structuredClone(draft)
+            historyEntry.draftRef = structuredClone(checkpointRef)
             historyEntry.operationRecords = structuredClone(candidateTransaction.operationRecords)
             historyEntry.operationResults = structuredClone(candidateTransaction.operationResults)
             historyEntry.operations = structuredClone(candidateTransaction.operations)
             historyEntry.operationOrder = [...candidateTransaction.operationOrder]
-            historyEntry.operationDrafts = structuredClone(candidateTransaction.operationDrafts)
+            historyEntry.operationDraftRefs = structuredClone(
+                candidateTransaction.operationDraftRefs,
+            )
             candidateRoot.housekeepingHistory[index] = historyEntry
         }
         await saveSessionStateStrict(candidateRoot, logger)

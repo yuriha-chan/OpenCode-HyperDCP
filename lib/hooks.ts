@@ -153,8 +153,11 @@ export function createChatMessageTransformHandler(
 
             await checkSession(client, state, logger, output.messages, config.manualMode.enabled)
 
-            const reconciliationChanged = reconcileHousekeepingHistory(state, output.messages)
-            if (reconciliationChanged) await saveSessionStateStrict(state, logger)
+            const reconciledState = structuredClone(state)
+            if (await reconcileHousekeepingHistory(reconciledState, output.messages)) {
+                await saveSessionStateStrict(reconciledState, logger)
+                Object.assign(state, reconciledState)
+            }
 
             syncCompressionBlocks(state, logger, output.messages)
 
@@ -285,7 +288,8 @@ export function createCommandExecuteHandler(
                     resetOnCompaction(candidateState)
                     stateChanged = true
                 }
-                if (reconcileHousekeepingHistory(candidateState, messages)) stateChanged = true
+                if (await reconcileHousekeepingHistory(candidateState, messages))
+                    stateChanged = true
                 if (stateChanged) {
                     await saveSessionStateStrict(candidateState, logger)
                     Object.assign(state, candidateState)

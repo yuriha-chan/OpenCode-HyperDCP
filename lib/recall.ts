@@ -226,7 +226,7 @@ export function createRecallCompressedTool(ctx: ToolContext): ReturnType<typeof 
                     ctx.state.housekeepingHistory,
                 )
                 const operationCtx = ctx.state.housekeeping
-                    ? { ...ctx, state: draftState(ctx.state) as typeof ctx.state }
+                    ? { ...ctx, state: (await draftState(ctx.state)) as typeof ctx.state }
                     : ctx
                 const rawMessages = ctx.state.housekeeping
                     ? projectEligibleSourceMessages(historicalMessages, ctx.state.housekeeping)
