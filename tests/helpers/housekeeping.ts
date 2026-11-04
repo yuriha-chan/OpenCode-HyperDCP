@@ -280,7 +280,7 @@ export async function createHousekeepingHarness(t: TestContext, options: Harness
         command,
         assertSessionReads,
         enter: () => run("enter_housekeeping"),
-        leave: () => run("leave_housekeeping"),
+        leave: (args: Record<string, unknown> = {}) => run("leave_housekeeping", args),
         readMemo: () => run("read_memo"),
         versions: (blockId = 1, version?: number) =>
             run("fetch_summary_versions", {

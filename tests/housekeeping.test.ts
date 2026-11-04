@@ -10,6 +10,7 @@ import { tool } from "@opencode-ai/plugin"
 import { getConfig, getInvalidConfigKeys, validateConfigTypes } from "../lib/config"
 import { STORAGE_DIR, getSessionFilePath } from "../lib/paths"
 import { resolveProtectedTool } from "../lib/protected-tools"
+import { createLeaveHousekeepingTool } from "../lib/housekeeping/tools"
 import { createEditMemoTool } from "../lib/set-memo"
 import { saveSessionStateStrict, type PersistedSessionState } from "../lib/state/persistence"
 import { readHousekeepingDraft } from "../lib/state/housekeeping-draft-store"
@@ -29,6 +30,29 @@ async function readPersistedFixture(sessionID: string): Promise<PersistedSession
 
 async function writePersistedFixture(sessionID: string, fixture: PersistedSessionState) {
     await writeFile(getSessionFilePath(sessionID), JSON.stringify(fixture), "utf-8")
+}
+
+async function assertLeaveGuardRejects(
+    h: Awaited<ReturnType<typeof createHousekeepingHarness>>,
+    action: () => Promise<unknown>,
+): Promise<void> {
+    const manifestBefore = await readPersistedFixture(h.sessionID)
+    const transaction = h.ctx.state.housekeeping
+    assert.ok(transaction)
+    const draftBefore = await readHousekeepingDraft(h.sessionID, transaction.draftRef)
+    const memoBefore = await h.readMemo()
+
+    await assert.rejects(action, (error) => {
+        const message = error instanceof Error ? error.message : String(error)
+        assert.match(message, /before leaving/i)
+        assert.match(message, /force=true/i)
+        return true
+    })
+
+    assert.deepEqual(await readPersistedFixture(h.sessionID), manifestBefore)
+    assert.deepEqual(await readHousekeepingDraft(h.sessionID, transaction.draftRef), draftBefore)
+    assert.equal(await h.readMemo(), memoBefore)
+    assert.equal(h.ctx.state.housekeeping?.id, transaction.id)
 }
 
 test("enter returns existing uncovered ranges and actionable housekeeping guidance", async (t) => {
@@ -57,7 +81,7 @@ test("entry with no remaining eligible messages returns guidance and an empty ra
     assert.match(guidance, /no.*(uncovered|eligible)|(?:uncovered|eligible).*none/i)
     assert.match(guidance, /leave_housekeeping/)
     assert.doesNotMatch(guidance, /m0001\s*→\s*m0004/)
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -70,10 +94,10 @@ test("recursive entry rejects without replacing an accumulated memo", async (t) 
     await assert.rejects(h.enter(), /already|recursive|active/i)
 
     assert.equal(await h.readMemo(), "Keep this draft.")
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), "Keep this draft.")
     await h.enter()
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -112,14 +136,14 @@ test("tool-before session switching reloads each session's housekeeping access",
     second.assertSessionReads()
 })
 
-test("leaving an empty transaction succeeds once and permits another independent transaction", async (t) => {
+test("leaving an empty transaction with force succeeds once and permits another independent transaction", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    assert.match(await h.leave(), /left|leave|complete|committ|applied/i)
+    assert.match(await h.leave({ force: true }), /left|leave|complete|committ|applied/i)
     await assert.rejects(h.leave(), /not.*housekeeping|enter_housekeeping|no.*active/i)
     await h.enter()
     await h.guard("read_memo")
-    await h.leave()
+    await h.leave({ force: true })
     await h.guard("read")
     h.assertSessionReads()
 })
@@ -131,10 +155,10 @@ test("leave reports an unchanged previously committed nested memo", async (t) =>
         action: "append",
         topics: [{ topicTitle: "Plan", topics: [{ topicTitle: "Nested", textItems: ["keep"] }] }],
     })
-    await h.leave()
+    await h.leave({ force: true })
 
     await h.enter()
-    const receipt = await h.leave()
+    const receipt = await h.leave({ force: true })
 
     assert.match(receipt, /memo unchanged/i)
     const expectedMemo = "# Plan\n## Nested\nkeep"
@@ -151,7 +175,7 @@ test("leave reports an unchanged empty memo", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
 
-    const receipt = await h.leave()
+    const receipt = await h.leave({ force: true })
 
     assert.match(receipt, /memo unchanged/i)
     assert.equal(await h.readMemo(), "(memo is empty)")
@@ -173,7 +197,7 @@ test("retrying identical boundary calls is idempotent while a distinct second en
     await assert.rejects(h.enter(), /already|recursive|active/i)
     await h.run("edit_memo", { action: "append", textItems: ["Exactly once."] })
 
-    const receipt = await h.run("leave_housekeeping", {}, exitID)
+    const receipt = await h.run("leave_housekeeping", { force: true }, exitID)
 
     assert.equal(await h.run("leave_housekeeping", {}, exitID), receipt)
     assert.equal(await h.run("enter_housekeeping", {}, entryID), guidance)
@@ -182,6 +206,213 @@ test("retrying identical boundary calls is idempotent while a distinct second en
     assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
     await assert.rejects(h.leave(), /not.*housekeeping|enter_housekeeping|no.*active/i)
     h.assertSessionReads()
+})
+
+for (const { name, prepare } of [
+    {
+        name: "an empty transaction",
+        prepare: async (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) => {
+            await h.enter()
+        },
+    },
+    {
+        name: "a memo-only edit",
+        prepare: async (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) => {
+            await h.enter()
+            await h.run("edit_memo", { action: "append", textItems: ["Memo only."] })
+        },
+    },
+    {
+        name: "a summary-only edit",
+        prepare: async (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) => {
+            await h.enter()
+            await stageBlock(h)
+            await h.leave()
+            await h.enter()
+            await h.run("edit_summary", {
+                blockId: 1,
+                oldString: "Parser findings.",
+                newString: "Summary only.",
+            })
+        },
+    },
+    {
+        name: "a read-only memo inspection",
+        prepare: async (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) => {
+            await h.enter()
+            await h.readMemo()
+        },
+    },
+    {
+        name: "a failed compression",
+        prepare: async (h: Awaited<ReturnType<typeof createHousekeepingHarness>>) => {
+            await h.enter()
+            await assert.rejects(h.run("compress", {}))
+        },
+    },
+]) {
+    test(`leave guard rejects ${name} with guidance and no publication`, async (t) => {
+        const h = await createHousekeepingHarness(t)
+        await prepare(h)
+
+        await assertLeaveGuardRejects(h, () => h.leave())
+    })
+}
+
+test("leave guard rejects explicit force false and commits with force true", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Forced memo."] })
+
+    await assertLeaveGuardRejects(h, () => h.leave({ force: false }))
+    assert.equal(h.ctx.state.memo, null)
+    const memoInjections = (await h.render())
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.text.startsWith("[Memo]\n"))
+    assert.deepEqual(memoInjections, [])
+
+    const receipt = await h.leave({ force: true })
+
+    assert.match(receipt, /memo updated/i)
+    assert.equal(h.ctx.state.housekeeping, null)
+    assert.match(visibleText(await h.render()), /Forced memo\./)
+    assert.equal(await h.readMemo(), "Forced memo.")
+    h.assertSessionReads()
+})
+
+test("leave guard permits a transaction containing only a compression", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+
+    const receipt = await h.leave()
+
+    assert.match(receipt, /Housekeeping complete/i)
+    assert.equal(h.ctx.state.housekeeping, null)
+    h.assertSessionReads()
+})
+
+test("leave guard permits a transaction containing only an expansion", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await h.leave()
+    await h.enter()
+
+    assert.match(await h.run("expand_block", { blockId: 1, endId: "m0004" }), /Expanded block 1/)
+    const receipt = await h.leave()
+
+    assert.match(receipt, /Housekeeping complete/i)
+    assert.doesNotMatch(visibleText(await h.render()), /Use the documented parser API\./)
+    h.assertSessionReads()
+})
+
+test("leave guard permits a transaction containing only a summary version toggle", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await h.leave()
+    await h.command("autotoggle on")
+    await h.enter()
+
+    assert.match(
+        await h.run("toggle_summary_version", { blockId: 1, version: 0 }),
+        /summary set to disabled/i,
+    )
+    const receipt = await h.leave()
+
+    assert.match(receipt, /Housekeeping complete/i)
+    h.assertSessionReads()
+})
+
+test("leave guard permits a transaction containing only a decompress command", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await h.leave()
+    await h.enter()
+    await h.command("decompress 1")
+
+    const receipt = await h.leave()
+
+    assert.match(receipt, /Housekeeping complete/i)
+    assert.match(visibleText(await h.render()), /Investigate the parser boundary\./)
+    h.assertSessionReads()
+})
+
+test("leave guard permits a transaction containing only a toggle command", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await h.leave()
+    await h.enter()
+    await h.command("toggle 1 0")
+
+    const receipt = await h.leave()
+
+    assert.match(receipt, /Housekeeping complete/i)
+    h.assertSessionReads()
+})
+
+test("completed forced leave retry returns the same receipt without an active transaction", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    const identity = {
+        callID: "forced-leave-retry",
+        messageID: "forced-leave-retry-message",
+    }
+
+    const receipt = await h.run("leave_housekeeping", { force: true }, identity)
+
+    assert.equal(h.ctx.state.housekeeping, null)
+    assert.match(receipt, /Housekeeping complete/i)
+    assert.equal(await h.run("leave_housekeeping", {}, identity), receipt)
+    assert.equal(await h.run("leave_housekeeping", { force: false }, identity), receipt)
+    h.assertSessionReads()
+})
+
+test("force cannot bypass pending summary buffer validation", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await stageBlock(h)
+    await h.leave()
+    await h.enter()
+    await h.run("edit_summary", {
+        blockId: 1,
+        oldString: "Parser findings.",
+        newString: "",
+    })
+
+    await assert.rejects(h.leave({ force: true }), /empty|non-empty|blank/i)
+    assert.ok(h.ctx.state.housekeeping)
+    assert.match(visibleText(await h.render()), /Parser findings\./)
+
+    await h.run("append_summary", { blockId: 1, text: "Repaired parser findings." })
+    const receipt = await h.leave({ force: true })
+
+    assert.match(receipt, /Housekeeping complete/i)
+    assert.equal(h.ctx.state.housekeeping, null)
+    h.assertSessionReads()
+})
+
+test("leave tool exposes optional force without advertising an override", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    const leave = createLeaveHousekeepingTool(h.ctx)
+    const schema = tool.schema.object(leave.args)
+
+    assert.deepEqual(schema.parse({}), {})
+    assert.deepEqual(schema.parse({ force: true }), { force: true })
+    assert.deepEqual(schema.parse({ force: false }), { force: false })
+    assert.throws(() => schema.parse({ force: "true" }))
+    assert.throws(() => schema.parse({ force: 1 }))
+    assert.equal(
+        leave.description,
+        "Commit the accumulated housekeeping draft and exit the mode. Finish all intended memo updates, compression, expansions, rewrites, version changes, and summary edits first. Preserve essential findings from housekeeping, then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks. Reading back the draft is optional.",
+    )
+    assert.doesNotMatch(leave.description, /force|override|bypass/i)
+    const forceDescription =
+        (leave.args as Record<string, { description?: string }>).force?.description ?? ""
+    assert.doesNotMatch(forceDescription, /force=true|override|bypass/i)
 })
 
 test("entry stores the complete todo response as one topic item for a null memo", async (t) => {
@@ -230,7 +461,7 @@ test("entry stores the complete todo response as one topic item for a null memo"
     const todoItem = JSON.stringify(todos)
     assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
     assert.deepEqual(h.todo.mock.calls[0].arguments[0], { path: { id: h.sessionID } })
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
     await h.restart()
     assert.equal(await h.readMemo(), `# Todo status\n${todoItem}`)
@@ -257,7 +488,7 @@ test("entry replaces the positioned todo topic and its nested notes only in the 
         action: "append",
         topics: [{ topicTitle: "After", textItems: ["keep after"] }],
     })
-    await h.leave()
+    await h.leave({ force: true })
     h.todo.mock.mockImplementationOnce(async () => ({ data: [{ id: "fresh", status: "pending" }] }))
 
     await h.enter()
@@ -272,7 +503,7 @@ test("entry replaces the positioned todo topic and its nested notes only in the 
     assert.deepEqual(injected, [
         "[Memo]\n# Before\nkeep before\n# Todo status\nold todo\n## Old notes\nremove this\n# After\nkeep after",
     ])
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), expected)
     await h.restart()
     assert.equal(await h.readMemo(), expected)
@@ -293,13 +524,13 @@ test("an empty todo response clears the existing topic while retaining its posit
         action: "append",
         topics: [{ topicTitle: "After", textItems: ["keep"] }],
     })
-    await h.leave()
+    await h.leave({ force: true })
     h.todo.mock.mockImplementationOnce(async () => ({ data: [] }))
 
     await h.enter()
 
     assert.equal(await h.readMemo(), "# Before\nkeep\n# Todo status\n# After\nkeep")
-    await h.leave()
+    await h.leave({ force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "# Before\nkeep\n# Todo status\n# After\nkeep")
 })
@@ -311,7 +542,7 @@ test("public entry with empty todo data retains an empty topic for a null memo",
     await h.run("enter_housekeeping")
 
     assert.equal(await h.readMemo(), "# Todo status")
-    await h.run("leave_housekeeping")
+    await h.run("leave_housekeeping", { force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "# Todo status")
 })
@@ -341,14 +572,14 @@ for (const { name, configure } of [
         const h = await createHousekeepingHarness(t)
         await h.enter()
         await h.run("edit_memo", { action: "append", textItems: ["Existing memo."] })
-        await h.leave()
+        await h.leave({ force: true })
         configure(h)
 
         await h.enter()
 
         assert.equal(await h.readMemo(), "Existing memo.")
         assert.equal(h.todo.mock.callCount(), 2)
-        await h.leave()
+        await h.leave({ force: true })
         await h.restart()
         assert.equal(await h.readMemo(), "Existing memo.")
     })
@@ -363,7 +594,7 @@ test("read_memo reports empty after removing the last topic and committing", asy
     })
     await h.run("edit_memo", { action: "remove", path: "Temporary" })
     assert.equal(await h.readMemo(), "(memo is empty)")
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), "(memo is empty)")
     await h.restart()
     assert.equal(await h.readMemo(), "(memo is empty)")
@@ -413,7 +644,7 @@ test("session restart reloads referenced open and completed snapshots for revert
         action: "append",
         topics: [{ topicTitle: "Plan", textItems: ["committed"] }],
     })
-    await h.leave()
+    await h.leave({ force: true })
 
     await h.enter()
     await h.run("edit_memo", {
@@ -430,7 +661,7 @@ test("session restart reloads referenced open and completed snapshots for revert
         .map((part) => part.text)
     assert.deepEqual(openMemoInjections, ["[Memo]\n# Plan\ncommitted"])
     await assert.rejects(h.enter(), /already|recursive|active/i)
-    await h.leave()
+    await h.leave({ force: true })
 
     const completed = structuredClone(h.history)
     await h.restart()
@@ -482,7 +713,7 @@ test("injected memo preserves nested sections and plain text items", async (t) =
             },
         ],
     })
-    await h.leave()
+    await h.leave({ force: true })
 
     const memoInjections = (await h.render())
         .flatMap((message) => message.parts)
@@ -572,7 +803,7 @@ for (const { name, edit, expected } of [
         await h.run("edit_memo", { action: "append", textItems: ["alpha"] })
         await h.run("edit_memo", edit)
         assert.equal(await h.readMemo(), expected)
-        await h.leave()
+        await h.leave({ force: true })
         assert.equal(await h.readMemo(), expected)
         await h.restart()
         assert.equal(await h.readMemo(), expected)
@@ -599,7 +830,7 @@ for (const { name, args, error } of [
         await assert.rejects(h.run("edit_memo", args), error)
         assert.equal(await h.readMemo(), "Draft memo.")
         await h.run("edit_memo", { action: "append", textItems: ["Repaired memo."] })
-        await h.leave()
+        await h.leave({ force: true })
         assert.equal(await h.readMemo(), "Draft memo.\nRepaired memo.")
         h.assertSessionReads()
     })
@@ -622,7 +853,7 @@ test("draft memo inspection does not publish the memo to ordinary model context"
     assert.match(ordinaryText, /Committed parser memo\./)
     assert.doesNotMatch(ordinaryText, /Staged parser memo\./)
 
-    await h.leave()
+    await h.leave({ force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     h.assertSessionReads()
@@ -692,7 +923,7 @@ test("failed entry host read leaves the session outside mode and allows retry", 
     assert.equal(h.client.session.messages.mock.callCount(), calls + 1)
     await h.guard("read")
     await h.enter()
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -704,7 +935,7 @@ test("concurrent entry attempts enable one transaction and reject the other with
     assert.ok(rejected && rejected.status === "rejected")
     assert.match(String(rejected.reason), /already|recursive|active/i)
     await h.run("edit_memo", { action: "append", textItems: ["Single transaction."] })
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), "Single transaction.")
     h.assertSessionReads()
 })
@@ -722,7 +953,7 @@ test("leave rejects an invalid summary without publishing an otherwise valid mem
         oldString: "Committed parser summary.",
         newString: "",
     })
-    await assert.rejects(h.leave(), /empty|non-empty|blank/i)
+    await assert.rejects(h.leave({ force: true }), /empty|non-empty|blank/i)
     await h.restart()
     assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     const ordinaryText = (await h.render())
@@ -734,7 +965,7 @@ test("leave rejects an invalid summary without publishing an otherwise valid mem
     assert.match(ordinaryText, /Committed parser summary\./)
     assert.doesNotMatch(ordinaryText, /Staged parser memo\./)
     await h.run("append_summary", { blockId: 1, text: "Repaired parser summary." })
-    await h.leave()
+    await h.leave({ force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "Committed parser memo.\nStaged parser memo.")
     assert.match(await h.versions(1, 2), /Repaired parser summary\./)
@@ -801,7 +1032,7 @@ test("failed memo persistence leaves the previous draft intact and supports retr
     assert.ok(firstResult.length > 0)
     assert.equal(retryResult, firstResult)
     assert.equal(await h.readMemo(), "Durable draft.")
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo appends into a selected topic, inserts after a sibling, removes by prefix, and clears in place", async (t) => {
@@ -848,7 +1079,7 @@ test("edit_memo appends into a selected topic, inserts after a sibling, removes 
     assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up\nlater")
     await h.run("edit_memo", { action: "clear", path: "Plan/Follow-up" })
     assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up")
-    await h.leave()
+    await h.leave({ force: true })
     assert.equal(await h.readMemo(), "# Plan\nrelocated string\n## Details\n## Follow-up")
 })
 
@@ -868,7 +1099,7 @@ test("edit_memo renders separated text items before topics without normalization
 
     assert.doesNotMatch(result, /normaliz|order/i)
     assert.equal(await h.readMemo(), "# Outer\nfirst\nsecond\n## Inner\nchild")
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("invalid memo actions reject without corrupting the draft", async (t) => {
@@ -914,7 +1145,7 @@ test("invalid memo actions reject without corrupting the draft", async (t) => {
         assert.equal(await h.readMemo(), "Keep me.\nKeep more.\n# Plan\n## Existing")
     }
 
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo appends multiple text items and topics at the root and beneath a parent", async (t) => {
@@ -949,7 +1180,7 @@ test("edit_memo appends multiple text items and topics at the root and beneath a
         await h.readMemo(),
         "First\nSecond\n# Verification\nRun tests\n# Plan\nbase\nAdded one\nAdded two\n## Existing\n## Details\ndetail\n## Follow-up\nlater",
     )
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo splits multiline text items at root and within nested topics", async (t) => {
@@ -981,7 +1212,7 @@ test("edit_memo splits multiline text items at root and within nested topics", a
         await h.readMemo(),
         "root one\nroot two\nroot three\nroot four\n# Plan\nnested one\nnested two\nnested three\nnested four",
     )
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo removes split lines independently by prefix at the root and in a nested topic", async (t) => {
@@ -998,7 +1229,7 @@ test("edit_memo removes split lines independently by prefix at the root and in a
     const stagedDraft = await readHousekeepingDraft(h.sessionID, h.ctx.state.housekeeping!.draftRef)
     assert.deepEqual(stagedDraft.memo, ["alpha", { topic: "Plan", items: ["nested alpha"] }])
     assert.equal(await h.readMemo(), "alpha\n# Plan\nnested alpha")
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo rejects a duplicate introduced by splitting without changing the earlier draft", async (t) => {
@@ -1019,7 +1250,7 @@ test("edit_memo rejects a duplicate introduced by splitting without changing the
         staged,
     )
     assert.equal(await h.readMemo(), "Draft memo.")
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo inserts multiple topics after an anchor in submitted order before following siblings", async (t) => {
@@ -1051,7 +1282,7 @@ test("edit_memo inserts multiple topics after an anchor in submitted order befor
         await h.readMemo(),
         "# Plan\n## Alpha\na\n## Inserted one\none\n## Inserted two\ntwo\n## Beta\nb\n## Gamma\nc",
     )
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo rejects a late duplicate or over-deep batch without changing the earlier draft", async (t) => {
@@ -1104,7 +1335,7 @@ test("edit_memo rejects a late duplicate or over-deep batch without changing the
         }),
     )
     assert.equal(await h.readMemo(), deepDraft)
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo rejects malformed append fields including serialized nested topics", async (t) => {
@@ -1129,7 +1360,7 @@ test("edit_memo rejects malformed append fields including serialized nested topi
         await assert.rejects(h.run("edit_memo", args))
         assert.equal(await h.readMemo(), "Draft memo.")
     }
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo rejects an append without any text item or topic", async (t) => {
@@ -1145,7 +1376,7 @@ test("edit_memo rejects an append without any text item or topic", async (t) => 
         await assert.rejects(h.run("edit_memo", args))
         assert.equal(await h.readMemo(), "Draft memo.")
     }
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo rejects legacy content arguments even alongside valid text items", async (t) => {
@@ -1165,7 +1396,7 @@ test("edit_memo rejects legacy content arguments even alongside valid text items
         await assert.rejects(h.run("edit_memo", args))
         assert.equal(await h.readMemo(), "Draft memo.")
     }
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("edit_memo keeps JSON-looking and bullet-prefixed text items verbatim", async (t) => {
@@ -1177,14 +1408,14 @@ test("edit_memo keeps JSON-looking and bullet-prefixed text items verbatim", asy
         textItems: [serialized, "- already bulleted"],
     })
     assert.equal(await h.readMemo(), `${serialized}\n- already bulleted`)
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("leave and a concurrent mutation serialize without losing or leaking the mutation", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
     const results = await Promise.allSettled([
-        h.leave(),
+        h.leave({ force: true }),
         h.run(
             "edit_memo",
             { action: "append", textItems: ["Serialized draft."] },
@@ -1230,7 +1461,7 @@ for (const name of [
             await execute(args)
         }, /housekeeping/i)
         assert.equal(execute.mock.callCount(), 1)
-        await h.leave()
+        await h.leave({ force: true })
         await h.guard(name, args)
         await execute(args)
         assert.equal(execute.mock.callCount(), 2)
@@ -1256,7 +1487,7 @@ for (const name of [
         const h = await createHousekeepingHarness(t)
         await h.enter()
         await h.guard(name)
-        await h.leave()
+        await h.leave({ force: true })
         h.assertSessionReads()
     })
 }
@@ -1268,7 +1499,7 @@ for (const name of ["read", "write", "bash", "custom_inspect"]) {
         await h.guard(name)
         await assert.rejects(h.guard(`${name}_other`), /housekeeping/i)
         await assert.rejects(h.guard("unknown_tool"), /housekeeping/i)
-        await h.leave()
+        await h.leave({ force: true })
         h.assertSessionReads()
     })
 }
@@ -1286,7 +1517,7 @@ test("an allowed exception still fails when its host executor denies permission"
     }, /host permission denied/)
     assert.equal(execute.mock.callCount(), 1)
     assert.deepEqual(execute.mock.calls[0].arguments, [args])
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -1310,7 +1541,7 @@ test("parallel dispatch validates nested tools and cannot bypass the default blo
         }),
         /housekeeping/i,
     )
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -1319,7 +1550,7 @@ test("tool-name suffixes do not grant unrelated namespaced tools access", async 
     await h.enter()
     await assert.rejects(h.guard("vendor.compress"), /housekeeping/i)
     await assert.rejects(h.guard("multi_tool_use.parallel", null), /housekeeping/i)
-    await h.leave()
+    await h.leave({ force: true })
 })
 
 test("parallel entry and read dispatch never executes read while housekeeping is active", async (t) => {
@@ -1350,7 +1581,7 @@ test("parallel entry and read dispatch never executes read while housekeeping is
     } catch (error) {
         dispatchError = error
     } finally {
-        if (entered) await h.leave()
+        if (entered) await h.leave({ force: true })
     }
 
     assert.ok(dispatchError instanceof Error)
@@ -1731,7 +1962,7 @@ test("external checkpoint metadata stores draft references instead of embedded p
     }
     assert.equal(active.operationDrafts, undefined)
 
-    await h.leave()
+    await h.leave({ force: true })
 
     manifest = await readPersistedFixture(h.sessionID)
     assert.equal(manifest.housekeeping, null)
@@ -1773,7 +2004,7 @@ test("external checkpoint restart and intact render read no checkpoint payloads"
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await h.run("edit_memo", { action: "append", textItems: ["Cold historical memo."] })
-    await h.leave()
+    await h.leave({ force: true })
     h.addText("after-checkpoint", "Ordinary work after housekeeping.", "user")
 
     const manifest = await readPersistedFixture(h.sessionID)
@@ -1803,7 +2034,7 @@ test("external checkpoint ordinary strict save does not rewrite checkpoint paylo
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await h.run("edit_memo", { action: "append", textItems: ["Strict save memo."] })
-    await h.leave()
+    await h.leave({ force: true })
 
     const before = await readPersistedFixture(h.sessionID)
     const transaction = recordOf(before.housekeepingHistory?.[0])
@@ -1844,12 +2075,12 @@ for (const failure of ["missing", "corrupt"] as const) {
 
         await h.enter()
         await h.run("edit_memo", { action: "append", textItems: ["Memo A."] })
-        await h.leave()
+        await h.leave({ force: true })
         const afterA = structuredClone(h.history)
 
         await h.enter()
         await h.run("edit_memo", { action: "append", textItems: ["Memo B."] })
-        await h.leave()
+        await h.leave({ force: true })
 
         const manifest = await readPersistedFixture(h.sessionID)
         const transactions = manifest.housekeepingHistory ?? []
@@ -1897,7 +2128,7 @@ test("missing required completed-transaction draft reference rejects repeated re
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await h.run("edit_memo", { action: "append", textItems: ["Recovery memo."] })
-    await h.leave()
+    await h.leave({ force: true })
 
     const originalManifest = await readFile(getSessionFilePath(h.sessionID), "utf-8")
     const manifest = JSON.parse(originalManifest) as PersistedSessionState
@@ -2013,7 +2244,7 @@ for (const stage of ["writeFile", "rename"] as const) {
             const checkpoint = deltaCheckpoint(ref, "retried operation checkpoint")
             assert.equal(checkpoint.baseSnapshotId, baseRef.snapshotId)
         }
-        await h.leave()
+        await h.leave({ force: true })
         assert.equal(await h.readMemo(), "Retried checkpoint memo.")
     })
 }
@@ -2206,7 +2437,7 @@ test("leave writes a final base-relative delta and reuses it for completed metad
 
     const writes = instrumentWritePaths()
     try {
-        await h.leave()
+        await h.leave({ force: true })
     } finally {
         writes.restore()
     }
@@ -2281,7 +2512,7 @@ test("restart and operation cuts restore delta checkpoints and retry exact resul
     assert.equal(finalRetry, secondResult)
     assert.equal(await h.readMemo(), "Alpha\nBeta")
 
-    await h.leave()
+    await h.leave({ force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "Alpha\nBeta")
 })
@@ -2306,7 +2537,7 @@ test("obsolete earlier operation delta can be removed without breaking later che
     await h.restart()
     assert.equal(await h.readMemo(), "Alpha\nBeta")
 
-    await h.leave()
+    await h.leave({ force: true })
     await h.restart()
     assert.equal(await h.readMemo(), "Alpha\nBeta")
 })
@@ -2337,7 +2568,7 @@ test("cross-transaction delta base references reject metadata before payload hyd
     const h = await createHousekeepingHarness(t)
     await h.enter()
     await h.run("edit_memo", { action: "append", textItems: ["Transaction A."] })
-    await h.leave()
+    await h.leave({ force: true })
 
     await h.enter()
     await h.run("edit_memo", { action: "append", textItems: ["Transaction B."] })

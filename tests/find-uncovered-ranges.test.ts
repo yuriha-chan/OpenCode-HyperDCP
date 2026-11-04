@@ -223,7 +223,7 @@ test("findUncoveredRanges: completed housekeeping content contributes neither ta
     await h.enter()
     h.addText("private-range-interior", "Private housekeeping-only token payload. ".repeat(200))
     await h.readMemo()
-    await h.leave()
+    await h.leave({ force: true })
 
     const after = findUncoveredRanges(h.ctx.state, h.history)
     assert.deepEqual(after, before)

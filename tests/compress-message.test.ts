@@ -423,7 +423,7 @@ test("message compression cannot assign aliases to housekeeping working messages
         h.run("compress", { topic: "Ineligible working note", content: [entry("m0005")] }),
         /not available|not found/i,
     )
-    await h.leave()
+    await h.leave({ force: true })
     h.addText("source-5", "Ordinary message after maintenance.", "user")
     await h.render()
     await h.enter()

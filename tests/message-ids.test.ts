@@ -137,7 +137,7 @@ test("housekeeping allocates no references or tags and never backfills interiors
     assert.match(visibleText(active), /Private reference work/)
     assert.doesNotMatch(visibleText(active), injectedTag)
 
-    await h.leave()
+    await h.leave({ force: true })
     h.addText("ordinary-after-leave", "Ordinary work resumes.")
     const completed = await h.render()
     assert.doesNotMatch(visibleText(completed), /Private reference work/)
@@ -161,7 +161,7 @@ test("housekeeping allocates no references or tags and never backfills interiors
     const nextActive = await h.render()
     assert.doesNotMatch(visibleText(nextActive), injectedTag)
     assert.doesNotMatch(visibleText(nextActive), /Private reference work/)
-    await h.leave()
+    await h.leave({ force: true })
     h.addText("ordinary-after-second-leave", "Continue with stable ordinary references.")
     const resumed = await h.render()
     assert.equal(modelReference(resumed, "ordinary-after-second-leave"), "m0007")
@@ -178,7 +178,7 @@ test("entry prepares missing preceding ordinary references without assigning its
     assert.equal(assignMessageRefs(h.ctx.state, h.history), 0)
     assert.doesNotMatch(visibleText(await h.render()), injectedTag)
 
-    await h.leave()
+    await h.leave({ force: true })
     h.addText("ordinary-next", "The next ordinary message.")
     const projected = await h.render()
     assert.equal(modelReference(projected, "ordinary-not-yet-rendered"), "m0005")

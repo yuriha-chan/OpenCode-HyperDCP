@@ -163,7 +163,7 @@ test("a rejected version toggle does not materialize or discard an earlier pendi
 
     assert.equal(await h.versions(), before)
     await h.run("append_summary", { blockId: 1, text: " Continued." })
-    await h.leave()
+    await h.leave({ force: true })
 
     assert.match(await h.versions(), /Active version: v2\b/)
     assert.match(await h.versions(), /2 version\(s\) available/)

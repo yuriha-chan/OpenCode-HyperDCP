@@ -258,7 +258,7 @@ test("expand_block rejects overlap with a committed block without publishing pri
     )
     assert.ok((await h.render()).some((message) => message.info.id === "source-3"))
     assert.doesNotMatch(await contextText(h), /Retained pending detail\./)
-    await h.leave()
+    await h.leave({ force: true })
 
     assert.ok((await h.render()).some((message) => message.info.id === "source-3"))
     assert.match(await contextText(h), /Parser findings\. Retained pending detail\./)

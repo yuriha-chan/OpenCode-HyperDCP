@@ -869,7 +869,11 @@ test("chat transform keeps older completed interiors hidden through later entry 
     const h = await createHousekeepingHarness(t)
     await h.run("enter_housekeeping", {}, { callID: "first-enter" })
     h.addText("first-interior", "First private maintenance discussion.")
-    const firstReceipt = await h.run("leave_housekeeping", {}, { callID: "first-leave" })
+    const firstReceipt = await h.run(
+        "leave_housekeeping",
+        { force: true },
+        { callID: "first-leave" },
+    )
     h.addText("between-transactions", "Ordinary text between transactions.", "user")
 
     const secondGuidance = await h.run("enter_housekeeping", {}, { callID: "second-enter" })
@@ -884,7 +888,7 @@ test("chat transform keeps older completed interiors hidden through later entry 
     assert.ok(oldLeave.state.status === "completed")
     assert.equal(oldLeave.state.output, firstReceipt)
 
-    await h.run("leave_housekeeping", {}, { callID: "second-leave" })
+    await h.run("leave_housekeeping", { force: true }, { callID: "second-leave" })
     const completed = structuredClone(h.history)
     for (let render = 0; render < 2; render++) {
         const projected = await h.render()
@@ -952,7 +956,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
     )
     const receipt = await h.run(
         "leave_housekeeping",
-        {},
+        { force: true },
         {
             messageID: mixed.info.id,
             callID: "revert-leave",
@@ -1103,7 +1107,7 @@ test("reopened transaction keeps newly staged edits across repeated reconciliati
         { action: "append", textItems: ["First draft."] },
         { messageID, callID: "reopen-first" },
     )
-    await h.run("leave_housekeeping", {}, { messageID, callID: "reopen-leave" })
+    await h.run("leave_housekeeping", { force: true }, { messageID, callID: "reopen-leave" })
     const completed = structuredClone(h.history)
     h.setHistory(
         completed.map((message) => ({
@@ -1125,7 +1129,7 @@ test("reopened transaction keeps newly staged edits across repeated reconciliati
         await h.render()
         assert.equal(await h.readMemo(), "First draft.\nReopened draft.")
     }
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })
 
@@ -1150,6 +1154,6 @@ test("host compaction without transaction calls does not reconcile them as rever
 
     assert.equal(await h.readMemo(), "Survives compaction.")
     await assert.rejects(h.guard("read"), /housekeeping/i)
-    await h.leave()
+    await h.leave({ force: true })
     h.assertSessionReads()
 })

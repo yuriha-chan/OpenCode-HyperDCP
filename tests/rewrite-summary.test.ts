@@ -220,7 +220,7 @@ describe("rewrite_summary tool", () => {
         assert.match(await contextText(h), /Parser findings\./)
         assert.doesNotMatch(await contextText(h), /Lexer findings\./)
 
-        await h.leave()
+        await h.leave({ force: true })
 
         assert.match(await h.versions(), /2 version\(s\) available/)
         assert.doesNotMatch(await h.versions(), /pending/i)
@@ -240,7 +240,7 @@ describe("rewrite_summary tool", () => {
                 newString: "Lexer",
                 replaceAll,
             })
-            await h.leave()
+            await h.leave({ force: true })
 
             await assertVersion(
                 h,
@@ -341,7 +341,7 @@ describe("rewrite_summary tool", () => {
 
         assert.equal(await h.versions(), before)
         await h.run("append_summary", { blockId: 1, text: " Continued." })
-        await h.leave()
+        await h.leave({ force: true })
 
         await assertVersion(h, 2, "Parser findings. Retained pending detail. Continued.")
         assert.match(await h.versions(), /2 version\(s\) available/)
@@ -370,7 +370,7 @@ describe("rewrite_summary tool", () => {
             newString: "Final",
             replaceAll: false,
         })
-        await h.leave()
+        await h.leave({ force: true })
 
         await assertVersion(h, 2, "Parser findings. Final detail.")
         assert.match(await h.versions(), /2 version\(s\) available/)
@@ -405,7 +405,7 @@ describe("rewrite_summary tool", () => {
             await assert.rejects(h.run("edit_summary", args), error)
 
             assert.equal(await h.versions(), before)
-            await h.leave()
+            await h.leave({ force: true })
             await assertVersion(h, 2, "Parser findings. Retained detail.")
             h.assertSessionReads()
         })
@@ -424,7 +424,7 @@ describe("rewrite_summary tool", () => {
         )
 
         assert.equal(await h.versions(), before)
-        await h.leave()
+        await h.leave({ force: true })
         await assertVersion(h, 2, "Parser findings. Retained detail.")
         h.assertSessionReads()
     })
@@ -441,12 +441,12 @@ describe("rewrite_summary tool", () => {
                 replaceAll: false,
             })
 
-            await assert.rejects(h.leave(), /empty|summary|buffer/i)
+            await assert.rejects(h.leave({ force: true }), /empty|summary|buffer/i)
 
             assert.match(await contextText(h), /Parser findings\./)
             assert.match(await h.versions(), /pending/i)
             await h.run("append_summary", { blockId: 1, text: "Repaired findings." })
-            await h.leave()
+            await h.leave({ force: true })
 
             await assertVersion(h, 2, "Repaired findings.")
             assert.match(await h.versions(), /2 version\(s\) available/)
@@ -586,7 +586,7 @@ describe("/dcp toggle command", () => {
             ),
             edited,
         )
-        await h.leave()
+        await h.leave({ force: true })
         assert.match(await h.versions(1, 2), /Syntax findings\. Retry-safe detail\./)
         assert.doesNotMatch(await h.versions(1, 2), /Retry-safe detail\. Retry-safe detail\./)
     })

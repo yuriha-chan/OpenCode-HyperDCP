@@ -472,7 +472,7 @@ for (const mode of ["range", "message"] as const) {
         h.addText("private-recall-note", "HOUSEKEEPING_RECALL_PRIVATE token investigation")
         await h.run("recall_compressed", { action: "get", messageId: "m0001" })
         assert.match(visibleText(await h.render()), /HOUSEKEEPING_RECALL_PRIVATE/)
-        await h.leave()
+        await h.leave({ force: true })
         assert.doesNotMatch(visibleText(await h.render()), /HOUSEKEEPING_RECALL_PRIVATE/)
         h.addText("msg-6", "Outside token follow-up.", "user")
         await h.render()

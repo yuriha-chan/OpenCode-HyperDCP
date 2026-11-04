@@ -36,6 +36,15 @@ function callIdentity(context: ToolExecutionContext): string | undefined {
     return context.callID || undefined
 }
 
+const LEAVE_QUALIFYING_OPERATIONS = new Set([
+    "compress",
+    "rewrite_summary",
+    "expand_block",
+    "toggle_summary_version",
+    "command:decompress",
+    "command:toggle",
+])
+
 function completedEntry(
     state: ToolContext["state"],
     messageId: string,
@@ -215,8 +224,8 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
     return tool({
         description:
             "Commit the accumulated housekeeping draft and exit the mode. Finish all intended memo updates, compression, expansions, rewrites, version changes, and summary edits first. Preserve essential findings from housekeeping, then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks. Reading back the draft is optional.",
-        args: {},
-        async execute(_args, untypedToolContext) {
+        args: { force: tool.schema.boolean().optional() },
+        async execute(args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext
             return withSessionCoordinator(ctx.state, async () => {
                 const rawMessages = await prepareToolSession(ctx, toolContext.sessionID)
@@ -239,6 +248,14 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 if (ctx.state.contentRevision !== transaction.baseRevision) {
                     throw new Error(
                         "Committed context changed during housekeeping. Re-enter housekeeping from the current session state before committing.",
+                    )
+                }
+                const hasQualifyingWork = transaction.operationRecords.some((record) =>
+                    LEAVE_QUALIFYING_OPERATIONS.has(record.tool),
+                )
+                if (!hasQualifyingWork && args.force !== true) {
+                    throw new Error(
+                        "No compression, block expansion, context toggle, or summary rewrite was staged. Finish all intended housekeeping work before leaving, or call leave_housekeeping with force=true to override.",
                     )
                 }
                 const checkpoint = await readHousekeepingCheckpoint(
