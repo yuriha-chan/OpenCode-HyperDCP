@@ -92,6 +92,7 @@ function createDraft(): HousekeepingDraft {
             turnNudgeAnchors: new Set(["m2"]),
             iterationNudgeAnchors: new Set(["m1", "m2"]),
         },
+        protectedSkills: [],
     }
 }
 

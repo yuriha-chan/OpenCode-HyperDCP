@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
-import type { SessionState, WithParts } from "../state"
+import type { SessionState, SkillContext, WithParts } from "../state"
 import { isMessageCompacted } from "../state/utils"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, ToolPart as SDKToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 
 const SUMMARY_ID_HASH_LENGTH = 16
 const DCP_BLOCK_ID_TAG_REGEX = /(<dcp-message-id(?=[\s>])[^>]*>)b\d+(<\/dcp-message-id>)/g
@@ -43,6 +43,50 @@ export const createSyntheticUserMessage = (
             },
         ],
     }
+}
+
+export const createSyntheticSkillMessage = (
+    baseMessage: WithParts,
+    record: SkillContext,
+): WithParts => {
+    const userInfo = baseMessage.info as UserMessage
+    const seed = `${record.name}\0${record.callId}`
+    const hash = createHash("sha256").update(seed).digest("hex")
+    const createdAt = parseInt(hash.slice(0, 8), 16)
+    const messageId = generateStableId("msg_dcp_skill", seed)
+    const partId = generateStableId("prt_dcp_skill", seed)
+    const callId = generateStableId("call_dcp_skill", seed)
+    const info: AssistantMessage = {
+        id: messageId,
+        sessionID: userInfo.sessionID,
+        role: "assistant",
+        time: { created: createdAt, completed: createdAt + 1 },
+        parentID: userInfo.id,
+        modelID: userInfo.model.modelID,
+        providerID: userInfo.model.providerID,
+        mode: userInfo.agent,
+        agent: userInfo.agent,
+        path: { cwd: "", root: "" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    }
+    const part: SDKToolPart = {
+        id: partId,
+        sessionID: userInfo.sessionID,
+        messageID: messageId,
+        type: "tool",
+        callID: callId,
+        tool: "skill",
+        state: {
+            status: "completed",
+            input: structuredClone(record.input),
+            output: record.output,
+            title: record.title,
+            metadata: structuredClone(record.metadata),
+            time: { start: createdAt, end: createdAt + 1 },
+        },
+    }
+    return { info, parts: [part] }
 }
 
 export const createSyntheticTextPart = (

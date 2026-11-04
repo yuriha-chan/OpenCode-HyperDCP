@@ -21,7 +21,7 @@ import {
     renderMessagePriorityGuidance,
 } from "../prompts/extensions/nudge"
 
-const DRAFT_FIELDS = new Set(["prune", "stats", "memo", "nudges"])
+const DRAFT_FIELDS = new Set(["prune", "stats", "memo", "nudges", "protectedSkills"])
 
 export function cloneDraft(state: SessionState): HousekeepingDraft {
     return structuredClone({
@@ -29,6 +29,7 @@ export function cloneDraft(state: SessionState): HousekeepingDraft {
         stats: state.stats,
         memo: state.memo,
         nudges: state.nudges,
+        protectedSkills: state.protectedSkills,
     })
 }
 
@@ -71,6 +72,7 @@ export function publishDraft(state: SessionState, draft: HousekeepingDraft): voi
     state.stats = structuredClone(draft.stats)
     state.memo = draft.memo
     state.nudges = structuredClone(draft.nudges)
+    state.protectedSkills = structuredClone(draft.protectedSkills)
 }
 
 export async function runHousekeepingMutation<T>(
@@ -251,6 +253,11 @@ export async function runHousekeepingCommandMutation<T>(
     })
 }
 
+function renderLoadedSkillsGuidance(state: SessionState): string {
+    const names = state.loadedSkills.map((record) => record.name)
+    return names.length > 0 ? `Loaded skills: ${names.join(", ")}.` : "Loaded skills: none."
+}
+
 export function buildEntryGuidance(
     state: SessionState,
     messages: WithParts[],
@@ -277,6 +284,7 @@ export function buildEntryGuidance(
         "HOUSEKEEPING ENTRY",
         registeredGuidance.trim(),
         buildCompressedBlockGuidance(state),
+        renderLoadedSkillsGuidance(state),
         priorityGuidance,
         rangeText ||
             "No eligible uncovered ranges are available. Memo and summary maintenance can still be performed.",

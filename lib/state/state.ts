@@ -1,4 +1,4 @@
-import type { SessionState, ToolParameterEntry, WithParts } from "./types"
+import type { SessionState, SkillContext, ToolParameterEntry, WithParts } from "./types"
 import type { Logger } from "../logger"
 import { applyPendingCompressionDurations } from "../compress/timing"
 import {
@@ -7,6 +7,7 @@ import {
     restoreHousekeepingTransaction,
     HousekeepingMetadataError,
 } from "./persistence"
+import { decodeSkillContexts } from "./housekeeping-draft-codec"
 import {
     isSubAgentSession,
     findLastCompactionTimestamp,
@@ -103,6 +104,8 @@ export function createSessionState(): SessionState {
         modelContextLimit: undefined,
         systemPromptTokens: undefined,
         protectedRefs: new Set<string>(),
+        loadedSkills: [],
+        protectedSkills: [],
         memo: null,
         debug: {
             enabled: false,
@@ -149,6 +152,8 @@ export function resetSessionState(state: SessionState): void {
     state.modelContextLimit = undefined
     state.systemPromptTokens = undefined
     state.protectedRefs = new Set<string>()
+    state.loadedSkills = []
+    state.protectedSkills = []
     state.memo = null
     state.autotoggle = false
     state.housekeeping = null
@@ -173,6 +178,18 @@ export async function ensureSessionInitialized(
     // logger.info("Initializing session state", { sessionId: sessionId })
 
     const persisted = await loadSessionState(sessionId, logger)
+    let loadedSkills: SkillContext[]
+    let protectedSkills: SkillContext[]
+    try {
+        loadedSkills = decodeSkillContexts(persisted?.loadedSkills, "persisted loadedSkills")
+        protectedSkills = decodeSkillContexts(
+            persisted?.protectedSkills,
+            "persisted protectedSkills",
+        )
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new HousekeepingMetadataError(`Invalid persisted skill state: ${detail}`)
+    }
     const housekeeping = restoreHousekeepingTransaction(persisted?.housekeeping)
     const history = persisted?.housekeepingHistory ?? []
     if (!Array.isArray(history))
@@ -185,6 +202,8 @@ export async function ensureSessionInitialized(
     })
 
     resetSessionState(state)
+    state.loadedSkills = loadedSkills
+    state.protectedSkills = protectedSkills
     state.manualMode = manualModeEnabled ? "active" : false
     state.sessionId = sessionId
 

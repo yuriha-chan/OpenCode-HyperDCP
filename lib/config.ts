@@ -87,7 +87,6 @@ type CompressOverride = Partial<CompressConfig>
 
 const DEFAULT_PROTECTED_TOOLS = [
     "task",
-    "skill",
     "todowrite",
     "todoread",
     "compress",
@@ -98,7 +97,7 @@ const DEFAULT_PROTECTED_TOOLS = [
     "edit",
 ]
 
-const COMPRESS_DEFAULT_PROTECTED_TOOLS = ["task", "skill"]
+const COMPRESS_DEFAULT_PROTECTED_TOOLS = ["task"]
 
 export const VALID_CONFIG_KEYS = new Set([
     "$schema",

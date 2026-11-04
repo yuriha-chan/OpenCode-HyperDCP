@@ -29,6 +29,8 @@ MAINTENANCE WORKFLOW
 5. Preserve any essential findings obtained during housekeeping in the memo or summaries before leaving. After successful leave, housekeeping's interior interactions, including reasoning and recall results, are hidden from subsequent model context. The entry boundary and leave receipt remain; entering housekeeping again does not reveal earlier hidden work.
 6. Finish the entire maintenance pass before leaving. Updating the memo is only one step: continue with planned compression and complete every intended summary edit across all affected blocks. Do not leave after the memo edit, the first compression, or one block's edit while further work remains. Call leave_housekeeping once to publish all changes together.
 
+The native skill tool and unload_skill are allowed. Loaded status changes immediately; protected skill injections change only when leave_housekeeping succeeds. Review the loaded skill list and unload skills no longer needed before leaving. Loading or unloading skills alone does not satisfy the leave guard.
+
 Filesystem, shell, delegation, and unrelated tools are blocked unless their exact tool name is configured in housekeeping.allowedTools. Host permissions still apply.
 
 Only after the full maintenance pass is complete, call leave_housekeeping to validate and publish the complete draft. Do not enter recursively. If leave fails, repair the draft and retry; ordinary work resumes only after successful leave.`

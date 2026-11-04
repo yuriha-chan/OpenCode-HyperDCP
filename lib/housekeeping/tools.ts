@@ -264,6 +264,7 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 )
                 const candidateDraft = structuredClone(checkpoint.draft)
                 finalizePendingBuffers(candidateDraft)
+                candidateDraft.protectedSkills = structuredClone(ctx.state.loadedSkills)
                 candidateDraft.nudges = {
                     contextLimitAnchors: new Set(),
                     turnNudgeAnchors: new Set(),

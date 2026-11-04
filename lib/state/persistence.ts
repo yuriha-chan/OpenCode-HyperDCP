@@ -16,6 +16,7 @@ import type {
     HousekeepingDraftRef,
     HousekeepingSnapshotRef,
     HousekeepingTransaction,
+    SkillContext,
 } from "./types"
 import type { Logger } from "../logger"
 import { STORAGE_DIR, getSessionFilePath } from "../paths"
@@ -63,6 +64,8 @@ export interface PersistedSessionState {
     nudges: PersistedNudges
     stats: SessionStats
     protectedRefs?: string[]
+    loadedSkills?: SkillContext[]
+    protectedSkills?: SkillContext[]
     memo?: string | Memo | null
     messageIds?: PersistedMessageIds
     autotoggle?: boolean
@@ -362,6 +365,8 @@ export async function saveSessionState(
                     iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
                 },
                 protectedRefs: Array.from(sessionState.protectedRefs),
+                loadedSkills: structuredClone(sessionState.loadedSkills),
+                protectedSkills: structuredClone(sessionState.protectedSkills),
                 memo: sessionState.memo,
                 autotoggle: sessionState.autotoggle,
                 revision: sessionState.revision,
@@ -419,6 +424,8 @@ export async function saveSessionStateStrict(
                 iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
             },
             protectedRefs: Array.from(sessionState.protectedRefs),
+            loadedSkills: structuredClone(sessionState.loadedSkills),
+            protectedSkills: structuredClone(sessionState.protectedSkills),
             memo: sessionState.memo,
             autotoggle: sessionState.autotoggle,
             revision: sessionState.revision,

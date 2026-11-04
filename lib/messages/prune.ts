@@ -3,7 +3,11 @@ import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import { isMessageCompacted } from "../state/utils"
 import { renderMemo } from "../memo"
-import { createSyntheticUserMessage, replaceBlockIdsWithBlocked } from "./utils"
+import {
+    createSyntheticSkillMessage,
+    createSyntheticUserMessage,
+    replaceBlockIdsWithBlocked,
+} from "./utils"
 import { isIgnoredUserMessage } from "./query"
 import { isMessageWithInfo } from "./shape"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
@@ -163,10 +167,12 @@ const filterCompressedRanges = (
     messages: WithParts[],
 ): void => {
     const memoContent = state.memo ? renderMemo(state.memo) : ""
+    const protectedSkills = Array.isArray(state.protectedSkills) ? state.protectedSkills : []
     if (
         state.prune.messages.byMessageId.size === 0 &&
         state.prune.messages.activeByAnchorMessageId.size === 0 &&
-        memoContent.length === 0
+        memoContent.length === 0 &&
+        protectedSkills.length === 0
     ) {
         return
     }
@@ -264,6 +270,7 @@ const filterCompressedRanges = (
     }
 
     // Inject memo after the last block summary
+    let memoIndex = -1
     if (memoContent.length > 0) {
         if (latestEligibleUser) {
             const memoMsg = createSyntheticUserMessage(
@@ -271,12 +278,18 @@ const filterCompressedRanges = (
                 `[Memo]\n${memoContent}`,
                 "dcp_memo",
             )
-            if (lastBlockIndex >= 0) {
-                result.splice(lastBlockIndex + 1, 0, memoMsg)
-            } else {
-                result.unshift(memoMsg)
-            }
+            memoIndex = lastBlockIndex >= 0 ? lastBlockIndex + 1 : 0
+            result.splice(memoIndex, 0, memoMsg)
         }
+    }
+
+    if (protectedSkills.length > 0 && latestEligibleUser) {
+        const skillMessages = protectedSkills.map((record) =>
+            createSyntheticSkillMessage(latestEligibleUser!, record),
+        )
+        const skillIndex =
+            memoIndex >= 0 ? memoIndex + 1 : lastBlockIndex >= 0 ? lastBlockIndex + 1 : 0
+        result.splice(skillIndex, 0, ...skillMessages)
     }
 
     // Replace messages array contents

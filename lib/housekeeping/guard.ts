@@ -21,6 +21,8 @@ const HOUSEKEEPING_TOOLS = new Set([
     "fetch_summary_versions",
     "recall_compressed",
     "enter_housekeeping",
+    "skill",
+    "unload_skill",
 ])
 
 const DISPATCH_TOOLS = new Set(["multi_tool_use.parallel", "functions.multi_tool_use.parallel"])

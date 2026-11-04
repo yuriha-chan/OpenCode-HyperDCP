@@ -597,6 +597,8 @@ export function applyDraftDelta(
     target.stats.totalPruneTokens += to.stats.totalPruneTokens - from.stats.totalPruneTokens
     if (JSON.stringify(target.memo) === JSON.stringify(from.memo))
         target.memo = structuredClone(to.memo)
+    if (JSON.stringify(target.protectedSkills) === JSON.stringify(from.protectedSkills))
+        target.protectedSkills = structuredClone(to.protectedSkills)
     mergeSetDelta(
         target.nudges.contextLimitAnchors,
         from.nudges.contextLimitAnchors,

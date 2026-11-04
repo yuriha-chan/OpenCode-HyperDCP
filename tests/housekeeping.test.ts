@@ -1609,10 +1609,9 @@ test("public configuration defaults and explicit compression tool protections", 
     const ctx = { ...h.ctx, directory: h.root } as any
     const defaults = getConfig(ctx)
 
-    assert.deepEqual(Object.keys(defaults.compress.protectedTools), ["task", "skill"])
+    assert.deepEqual(Object.keys(defaults.compress.protectedTools), ["task"])
     assert.deepEqual(Object.keys(defaults.commands.protectedTools), [
         "task",
-        "skill",
         "todowrite",
         "todoread",
         "compress",
@@ -1630,6 +1629,7 @@ test("public configuration defaults and explicit compression tool protections", 
         JSON.stringify({
             compress: {
                 protectedTools: {
+                    skill: { protect: true },
                     todoread: { keepLast: 2 },
                     todowrite: { truncateSize: 100 },
                 },
@@ -1639,8 +1639,10 @@ test("public configuration defaults and explicit compression tool protections", 
     )
 
     const configured = getConfig(ctx)
+    assert.deepEqual(configured.compress.protectedTools.skill, { protect: true })
     assert.deepEqual(configured.compress.protectedTools.todoread, { keepLast: 2 })
     assert.deepEqual(configured.compress.protectedTools.todowrite, { truncateSize: 100 })
+    assert.equal(resolveProtectedTool(configured.compress.protectedTools, "skill")?.protect, true)
     assert.equal(
         resolveProtectedTool(configured.compress.protectedTools, "todoread")?.protect,
         true,

@@ -31,6 +31,12 @@ import { createToggleSummaryVersionTool } from "./lib/toggle-summary-version"
 import { startAutoUpdate } from "./lib/update"
 import { createEnterHousekeepingTool, createLeaveHousekeepingTool } from "./lib/housekeeping/tools"
 import { createToolExecuteBeforeHandler } from "./lib/housekeeping/guard"
+import {
+    createSkillExecuteAfterHandler,
+    createSkillExecuteBeforeHandler,
+    createSkillToolDefinitionHandler,
+    createUnloadSkillTool,
+} from "./lib/skills"
 
 const server: Plugin = (async (ctx) => {
     const config = getConfig(ctx)
@@ -66,6 +72,9 @@ const server: Plugin = (async (ctx) => {
         prompts,
     }
 
+    const housekeepingGuardBefore = createToolExecuteBeforeHandler(compressToolContext)
+    const skillExecuteBefore = createSkillExecuteBeforeHandler(compressToolContext)
+
     return {
         "experimental.chat.system.transform": createSystemPromptHandler(
             state,
@@ -91,7 +100,12 @@ const server: Plugin = (async (ctx) => {
             hostPermissions,
         ),
         event: createEventHandler(state, logger),
-        "tool.execute.before": createToolExecuteBeforeHandler(compressToolContext),
+        "tool.execute.before": async (input, output) => {
+            await housekeepingGuardBefore(input, output)
+            await skillExecuteBefore(input, output)
+        },
+        "tool.execute.after": createSkillExecuteAfterHandler(compressToolContext),
+        "tool.definition": createSkillToolDefinitionHandler(compressToolContext),
         tool: {
             ...(config.compress.permission !== "deny" && {
                 enter_housekeeping: createEnterHousekeepingTool(compressToolContext),
@@ -109,6 +123,7 @@ const server: Plugin = (async (ctx) => {
                 toggle_summary_version: createToggleSummaryVersionTool(compressToolContext),
                 edit_memo: createEditMemoTool(compressToolContext),
                 read_memo: createReadMemoTool(compressToolContext),
+                unload_skill: createUnloadSkillTool(compressToolContext),
             }),
         },
         config: async (opencodeConfig) => {
@@ -140,6 +155,7 @@ const server: Plugin = (async (ctx) => {
                 toolsToAdd.push("toggle_summary_version")
                 toolsToAdd.push("edit_memo")
                 toolsToAdd.push("read_memo")
+                toolsToAdd.push("unload_skill")
             }
 
             if (toolsToAdd.length > 0) {
@@ -204,6 +220,17 @@ const server: Plugin = (async (ctx) => {
                 opencodeConfig.permission = {
                     ...permission,
                     read_memo: "allow",
+                } as typeof permission
+            }
+
+            if (
+                config.compress.permission !== "deny" &&
+                !hasExplicitToolPermission(opencodeConfig.permission, "unload_skill")
+            ) {
+                const permission = opencodeConfig.permission ?? {}
+                opencodeConfig.permission = {
+                    ...permission,
+                    unload_skill: "allow",
                 } as typeof permission
             }
 

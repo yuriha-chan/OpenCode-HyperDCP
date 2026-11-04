@@ -102,6 +102,15 @@ export interface DebugState {
     directory: string | null
 }
 
+export interface SkillContext {
+    name: string
+    callId: string
+    input: Record<string, unknown>
+    title: string
+    output: string
+    metadata: Record<string, unknown>
+}
+
 export interface SessionState {
     sessionId: string | null
     isSubAgent: boolean
@@ -122,6 +131,8 @@ export interface SessionState {
     modelContextLimit: number | undefined
     systemPromptTokens: number | undefined
     protectedRefs: Set<string>
+    loadedSkills: SkillContext[]
+    protectedSkills: SkillContext[]
     memo: Memo | null
     debug: DebugState
     autotoggle: boolean
@@ -136,6 +147,7 @@ export interface HousekeepingDraft {
     stats: SessionStats
     memo: Memo | null
     nudges: Nudges
+    protectedSkills: SkillContext[]
 }
 
 export interface HousekeepingSnapshotRef {

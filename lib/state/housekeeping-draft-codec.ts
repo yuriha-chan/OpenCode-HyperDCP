@@ -1,4 +1,4 @@
-import type { HousekeepingDraft } from "./types"
+import type { HousekeepingDraft, SkillContext } from "./types"
 import { loadPruneMap, loadPruneMessagesState, serializePruneMessagesState } from "./utils"
 import { parseMemo, validateMemo, type Memo } from "../memo"
 
@@ -19,6 +19,7 @@ export function serializeHousekeepingDraft(draft: HousekeepingDraft): Record<str
             turnNudgeAnchors: [...draft.nudges.turnNudgeAnchors],
             iterationNudgeAnchors: [...draft.nudges.iterationNudgeAnchors],
         },
+        protectedSkills: structuredClone(draft.protectedSkills),
     }
 }
 
@@ -68,6 +69,32 @@ function isStringArray(value: unknown): value is string[] {
 
 function isNumberArray(value: unknown): value is number[] {
     return Array.isArray(value) && value.every((entry) => typeof entry === "number")
+}
+
+export function decodeSkillContexts(value: unknown, label: string): SkillContext[] {
+    if (value === undefined) return []
+    if (!Array.isArray(value)) invalid(`${label} is not an array.`)
+    const names = new Set<string>()
+    return value.map((entry, index) => {
+        if (!isRecord(entry)) invalid(`${label}[${index}] is not an object.`)
+        if (typeof entry.name !== "string") invalid(`${label}[${index}].name is not a string.`)
+        if (typeof entry.callId !== "string") invalid(`${label}[${index}].callId is not a string.`)
+        if (!isRecord(entry.input)) invalid(`${label}[${index}].input is not an object.`)
+        if (typeof entry.title !== "string") invalid(`${label}[${index}].title is not a string.`)
+        if (typeof entry.output !== "string") invalid(`${label}[${index}].output is not a string.`)
+        if (!isRecord(entry.metadata)) invalid(`${label}[${index}].metadata is not an object.`)
+        if (names.has(entry.name))
+            invalid(`${label} contains duplicate skill name ${JSON.stringify(entry.name)}.`)
+        names.add(entry.name)
+        return {
+            name: entry.name,
+            callId: entry.callId,
+            input: structuredClone(entry.input),
+            title: entry.title,
+            output: entry.output,
+            metadata: structuredClone(entry.metadata),
+        }
+    })
 }
 
 function validatePrunedMessageEntry(value: unknown, messageId: string): void {
@@ -190,6 +217,8 @@ export function validateHousekeepingDraftPayload(value: unknown): void {
         invalid("housekeeping draft prune.messages.lastSeenUserMessageId is not a string.")
     if (messages.activeMessageIds !== undefined && !isStringArray(messages.activeMessageIds))
         invalid("housekeeping draft prune.messages.activeMessageIds is not a string array.")
+    if (value.protectedSkills !== undefined)
+        decodeSkillContexts(value.protectedSkills, "housekeeping draft protectedSkills")
 }
 
 export function decodePersistedMemo(value: unknown): Memo | null {
@@ -228,6 +257,10 @@ export function restoreHousekeepingDraft(value: unknown): HousekeepingDraft | nu
     const turnNudgeAnchors = asStringArray(value.nudges.turnNudgeAnchors)
     const iterationNudgeAnchors = asStringArray(value.nudges.iterationNudgeAnchors)
     if (!contextLimitAnchors || !turnNudgeAnchors || !iterationNudgeAnchors) return null
+    const protectedSkills = decodeSkillContexts(
+        value.protectedSkills,
+        "housekeeping draft protectedSkills",
+    )
     const pruneTools = isRecord(value.prune.tools) ? value.prune.tools : {}
     if (!Object.values(pruneTools).every((count) => typeof count === "number")) return null
     if (!isRecord(value.prune.messages)) return null
@@ -262,5 +295,6 @@ export function restoreHousekeepingDraft(value: unknown): HousekeepingDraft | nu
             turnNudgeAnchors: new Set(turnNudgeAnchors),
             iterationNudgeAnchors: new Set(iterationNudgeAnchors),
         },
+        protectedSkills,
     }
 }
