@@ -844,11 +844,11 @@ test("chat transform retains paired boundaries and outside parts while hiding co
     assert.ok(entryPart.state.status === "completed")
     assert.ok(leavePart.state.status === "completed")
     assert.ok(entryPart.state.output.trim().length <= 160)
-    assert.match(entryPart.state.output, /completed|finished|hidden|omitted/i)
+    assert.equal(entryPart.state.output, "1 compression. details truncated.")
     assert.notEqual(entryPart.state.output, entry)
     assert.doesNotMatch(
         entryPart.state.output,
-        /UNCOVERED MESSAGE RANGES|m\d{4}\s*→|enter_housekeeping|leave_housekeeping|compress|edit_memo|rewrite_summary|range|guidance/i,
+        /UNCOVERED MESSAGE RANGES|m\d{4}\s*→|enter_housekeeping|leave_housekeeping|edit_memo|rewrite_summary|range|guidance|recall/i,
     )
     assert.equal(leavePart.state.output, receipt)
     const parts = projected.flatMap((message) => message.parts)

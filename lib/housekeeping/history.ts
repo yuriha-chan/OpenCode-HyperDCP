@@ -24,6 +24,48 @@ const HOUSEKEEPING_TOOL_NAMES = new Set([
     "recall_compressed",
 ])
 
+const OPERATION_CATEGORIES = new Map<string, string>([
+    ["compress", "compression"],
+    ["toggle_summary_version", "summary toggle"],
+    ["command:toggle", "summary toggle"],
+    ["edit_memo", "memo edit"],
+    ["command:memo", "memo edit"],
+    ["command:memo-file", "memo edit"],
+    ["edit_summary", "summary edit"],
+    ["append_summary", "summary edit"],
+    ["rewrite_summary", "summary edit"],
+    ["command:edit", "summary edit"],
+    ["command:edit-file", "summary edit"],
+    ["expand_block", "expansion"],
+    ["command:decompress", "expansion"],
+    ["command:recompress", "recompression"],
+    ["command:sweep", "sweep"],
+])
+
+const OPERATION_CATEGORY_ORDER = [
+    "compression",
+    "summary toggle",
+    "memo edit",
+    "summary edit",
+    "expansion",
+    "recompression",
+    "sweep",
+] as const
+
+function formatOperationCounts(transaction: HousekeepingTransaction): string {
+    const counts = new Map<string, number>()
+    for (const operation of transaction.operationRecords) {
+        const category = OPERATION_CATEGORIES.get(operation.tool)
+        if (category) counts.set(category, (counts.get(category) ?? 0) + 1)
+    }
+    const summary = OPERATION_CATEGORY_ORDER.flatMap((category) => {
+        const count = counts.get(category) ?? 0
+        if (!count) return []
+        return [`${count} ${category}${count === 1 ? "" : "s"}`]
+    }).join(", ")
+    return `${summary ? `${summary}. ` : ""}details truncated.`
+}
+
 export function captureEligibleSourceParts(
     messages: WithParts[],
     entryMessageId: string,
@@ -157,10 +199,11 @@ export function projectHousekeepingHistory(
             transaction.entryPartId,
         )
         const entryPosition = lastPosition(entryPositions)
-        if (transaction.completed) {
+        if (transaction.completed && entryPositions?.length) {
+            const output = formatOperationCounts(transaction)
             for (const current of entryPositions) {
                 boundaryEdits.set(current, {
-                    output: "Housekeeping completed; its working history is hidden.",
+                    output,
                     title: "Housekeeping entry",
                 })
             }

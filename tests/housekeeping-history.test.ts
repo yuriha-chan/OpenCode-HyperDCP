@@ -7,7 +7,7 @@ type Part = WithParts["parts"][number]
 type Edit = { output: string; title: string }
 
 const sessionID = "ses_housekeeping_history"
-const ENTRY_PLACEHOLDER = "Housekeeping completed; its working history is hidden."
+const EMPTY_ENTRY_PLACEHOLDER = "details truncated."
 const ENTRY_TITLE = "Housekeeping entry"
 const LEAVE_TITLE = "Housekeeping receipt"
 
@@ -198,7 +198,7 @@ function referenceProject(
                     entryPosition = current
                     if (transaction.completed) {
                         boundaryEdits.set(current!, {
-                            output: ENTRY_PLACEHOLDER,
+                            output: EMPTY_ENTRY_PLACEHOLDER,
                             title: ENTRY_TITLE,
                         })
                     }
@@ -285,7 +285,7 @@ test("completed transaction hides its interior and rewrites both boundaries", ()
         result.map((item) => item.info.id),
         ["m0", "m1", "m4", "m5"],
     )
-    assert.equal(outputOf(result[1].parts[0]), ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(result[1].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
     assert.equal(titleOf(result[1].parts[0]), ENTRY_TITLE)
     assert.equal(outputOf(result[2].parts[0]), "receipt")
     assert.equal(titleOf(result[2].parts[0]), LEAVE_TITLE)
@@ -407,8 +407,8 @@ test("duplicate identities keep every matching edit and use the last boundary", 
         result.map((item) => item.info.id),
         ["dup", "dup", "done"],
     )
-    assert.equal(outputOf(result[0].parts[0]), ENTRY_PLACEHOLDER)
-    assert.equal(outputOf(result[1].parts[0]), ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(result[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(result[1].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
     assert.equal(outputOf(result[2].parts[0]), "receipt")
 })
 
@@ -431,8 +431,8 @@ test("null part IDs are wildcards while non-null part IDs match exactly", () => 
         ["m0", "m2"],
     )
     assert.equal(wildcard[0].parts.length, 2)
-    assert.equal(outputOf(wildcard[0].parts[0]), ENTRY_PLACEHOLDER)
-    assert.equal(outputOf(wildcard[0].parts[1]), ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(wildcard[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(wildcard[0].parts[1]), EMPTY_ENTRY_PLACEHOLDER)
 
     const exact = projectHousekeepingHistory(messages, [
         completed("m2", "leave", "leave-part", "receipt", {
@@ -446,7 +446,7 @@ test("null part IDs are wildcards while non-null part IDs match exactly", () => 
         ["m0", "m2"],
     )
     assert.equal(exact[0].parts.length, 1)
-    assert.equal(outputOf(exact[0].parts[0]), ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(exact[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
 })
 
 test("operation fallback ignores non-tool parts but matches tool parts by identity", () => {
@@ -590,6 +590,227 @@ test("input messages and parts are not mutated", () => {
     projectHousekeepingHistory(messages, transactions)
 
     assert.deepEqual(messages, snapshot)
+})
+
+test("completed entry placeholder counts mixed operations in fixed category order", () => {
+    const messages = [
+        message("m0", [toolPart("m0", "entry-part", "entry")]),
+        message("m1", [textPart("m1", "inside", "inside")]),
+        message("m2", [toolPart("m2", "leave-part", "leave")]),
+    ]
+    const operationRecords = [
+        operation("m1", null, "memo-1", "edit_memo"),
+        operation("m1", null, "compress-1", "compress"),
+        operation("m1", null, "toggle-1", "toggle_summary_version"),
+        operation("m1", null, "memo-2", "command:memo"),
+        operation("m1", null, "compress-2", "compress"),
+        operation("m1", null, "memo-3", "command:memo-file"),
+        operation("m1", null, "memo-4", "edit_memo"),
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("m2", "leave", "leave-part", "receipt", {
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords,
+        }),
+    ])
+
+    assert.equal(
+        outputOf(result[0].parts[0]),
+        "2 compressions, 1 summary toggle, 4 memo edits. details truncated.",
+    )
+    assert.equal(titleOf(result[0].parts[0]), ENTRY_TITLE)
+})
+
+test("completed entry placeholder inflects counts and omits zero categories", () => {
+    const messages = [
+        message("m0", [toolPart("m0", "entry-part", "entry")]),
+        message("m1", [toolPart("m1", "leave-part", "leave")]),
+    ]
+    const operationRecords = [
+        operation("m0", null, "edit-1", "edit_summary"),
+        operation("m0", null, "edit-2", "append_summary"),
+        operation("m0", null, "edit-3", "rewrite_summary"),
+        operation("m0", null, "edit-4", "command:edit"),
+        operation("m0", null, "edit-5", "command:edit-file"),
+        operation("m0", null, "expand-1", "expand_block"),
+        operation("m0", null, "recompress-1", "command:recompress"),
+        operation("m0", null, "recompress-2", "command:recompress"),
+        operation("m0", null, "sweep-1", "command:sweep"),
+        operation("m0", null, "decompress-1", "command:decompress"),
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("m1", "leave", "leave-part", "receipt", {
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords,
+        }),
+    ])
+
+    assert.equal(
+        outputOf(result[0].parts[0]),
+        "5 summary edits, 2 expansions, 2 recompressions, 1 sweep. details truncated.",
+    )
+})
+
+test("completed entry placeholder ignores reads and unknown operations", () => {
+    const messages = [
+        message("m0", [toolPart("m0", "entry-part", "entry")]),
+        message("m1", [toolPart("m1", "leave-part", "leave")]),
+    ]
+    const operationRecords = [
+        operation("m0", null, "read-1", "read"),
+        operation("m0", null, "read-2", "read_memo"),
+        operation("m0", null, "read-3", "fetch_summary_versions"),
+        operation("m0", null, "read-4", "recall_compressed"),
+        operation("m0", null, "unknown-1", "bash"),
+        operation("m0", null, "unknown-2", "command:test"),
+        operation("m0", null, "unknown-3", "command:unrelated"),
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("m1", "leave", "leave-part", "receipt", {
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords,
+        }),
+    ])
+
+    assert.equal(outputOf(result[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+})
+
+test("completed entry placeholder never echoes operation inputs, results, or call identifiers", () => {
+    const messages = [
+        message("m0", [toolPart("m0", "entry-part", "entry")]),
+        message("m1", [toolPart("m1", "leave-part", "leave")]),
+    ]
+    const operationRecords: HousekeepingOperation[] = [
+        {
+            messageId: "m0",
+            partId: null,
+            callId: "call-secret-identifier",
+            tool: "compress",
+            input: { path: "INPUT_SECRET_PATH", text: "INPUT_SECRET_TEXT" },
+            result: "RESULT_SECRET_TEXT",
+        },
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("m1", "leave", "leave-part", "receipt", {
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords,
+        }),
+    ])
+
+    const output = outputOf(result[0].parts[0])
+    assert.equal(output, "1 compression. details truncated.")
+    for (const secret of [
+        "call-secret-identifier",
+        "INPUT_SECRET_PATH",
+        "INPUT_SECRET_TEXT",
+        "RESULT_SECRET_TEXT",
+    ]) {
+        assert.ok(!output!.includes(secret))
+    }
+})
+
+test("completed placeholder leaves the receipt and incomplete entries untouched", () => {
+    const completedMessages = [
+        message("m0", [toolPart("m0", "entry-part", "entry")]),
+        message("m1", [toolPart("m1", "leave-part", "leave", { output: "raw-leave" })]),
+    ]
+    const completedResult = projectHousekeepingHistory(completedMessages, [
+        completed("m1", "leave", "leave-part", "receipt", {
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords: [operation("m0", null, "compress-1", "compress")],
+        }),
+    ])
+    assert.equal(outputOf(completedResult[0].parts[0]), "1 compression. details truncated.")
+    assert.equal(outputOf(completedResult[1].parts[0]), "receipt")
+    assert.equal(titleOf(completedResult[1].parts[0]), LEAVE_TITLE)
+
+    const incompleteMessages = [
+        message("m0", [toolPart("m0", "entry-part", "entry", { output: "raw-entry" })]),
+        message("m1", [textPart("m1", "inside", "inside")]),
+    ]
+    const incompleteResult = projectHousekeepingHistory(incompleteMessages, [
+        transaction({
+            entryMessageId: "m0",
+            entryCallId: "entry",
+            entryPartId: "entry-part",
+            operationRecords: [operation("m0", null, "compress-1", "compress")],
+        }),
+    ])
+    assert.deepEqual(incompleteResult, incompleteMessages)
+})
+
+test("duplicate entry boundaries share one counted placeholder", () => {
+    const messages = [
+        message("dup", [toolPart("dup", "dup-part", "entry")]),
+        message("dup", [toolPart("dup", "dup-part", "entry")]),
+        message("done", [toolPart("done", "leave-part", "leave")]),
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("done", "leave", "leave-part", "receipt", {
+            entryMessageId: "dup",
+            entryCallId: "entry",
+            entryPartId: "dup-part",
+            operationRecords: [
+                operation("dup", "dup-part", "compress-1", "compress"),
+                operation("dup", "dup-part", "compress-2", "compress"),
+                operation("dup", "dup-part", "memo-1", "edit_memo"),
+            ],
+        }),
+    ])
+
+    assert.deepEqual(
+        result.map((item) => item.info.id),
+        ["dup", "dup", "done"],
+    )
+    assert.equal(outputOf(result[0].parts[0]), "2 compressions, 1 memo edit. details truncated.")
+    assert.equal(outputOf(result[1].parts[0]), "2 compressions, 1 memo edit. details truncated.")
+    assert.equal(outputOf(result[2].parts[0]), "receipt")
+})
+
+test("completed entries count only their own transaction operations", () => {
+    const messages = [
+        message("m0", [toolPart("m0", "entry-1", "entry-1")]),
+        message("m1", [textPart("m1", "inside-1", "inside-1")]),
+        message("m2", [toolPart("m2", "leave-1", "leave-1")]),
+        message("m3", [toolPart("m3", "entry-2", "entry-2")]),
+        message("m4", [textPart("m4", "inside-2", "inside-2")]),
+        message("m5", [toolPart("m5", "leave-2", "leave-2")]),
+    ]
+
+    const result = projectHousekeepingHistory(messages, [
+        completed("m2", "leave-1", "leave-1", "receipt-1", {
+            id: "first",
+            entryMessageId: "m0",
+            entryCallId: "entry-1",
+            entryPartId: "entry-1",
+            operationRecords: [operation("m1", null, "compress-1", "compress")],
+        }),
+        completed("m5", "leave-2", "leave-2", "receipt-2", {
+            id: "second",
+            entryMessageId: "m3",
+            entryCallId: "entry-2",
+            entryPartId: "entry-2",
+            operationRecords: [operation("m4", null, "sweep-1", "command:sweep")],
+        }),
+    ])
+
+    assert.equal(outputOf(result[0].parts[0]), "1 compression. details truncated.")
+    assert.equal(outputOf(result[2].parts[0]), "1 sweep. details truncated.")
 })
 
 function randomGenerator(seed: number): () => number {
