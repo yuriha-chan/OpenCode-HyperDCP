@@ -3,6 +3,40 @@
 All notable changes to OpenCode-HyperDCP are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [101.0.0]
+
+### Added
+
+- Transactional housekeeping with explicit entry and leave tools, durable operation
+  checkpoints, retry handling, and conversation revert/restore support.
+    - Entry placeholders show compact operation counts without working details or
+      recall results.
+    - Leaving requires a successful compression, expansion, context toggle, or
+      summary rewrite; other work requires an explicit `force=true` override.
+    - Gzip entry snapshots and cumulative base-relative deltas are loaded only when
+      operations or recovery need them. Required missing or corrupt checkpoints
+      stop the affected request without partially publishing recovery state.
+    - Entry captures a todo-status snapshot.
+- Native skill lifecycle tracking: duplicate loads require `force=true`, and
+  `unload_skill` marks a skill unloaded. Loaded status changes immediately;
+  protected skill context changes only after a successful housekeeping leave.
+  Protected calls and results are injected after the memo. Both lists start empty;
+  historical skill calls are not backfilled.
+- Structured memo editing.
+
+### Changed
+
+- Skill calls are no longer protected by default through `protectedTools`.
+  Explicit configuration remains respected; lifecycle-based protection replaces
+  the default blanket protection.
+- Block synchronization, pruning, and compression-duration attachment use indexed
+  lookups to avoid repeated matching scans.
+- Memo text rendering and append inputs are simplified.
+
+### Fixed
+
+- Message replacement behavior during context transformation.
+
 ## [100.0.0]
 
 First public release of the HyperDCP fork of
@@ -85,4 +119,5 @@ deliberate decision.
 - `set_memo` tool (replaced by `edit_memo`).
 - Recall-by-blockId as a bulk operation (superseded by targeted `recall_compressed`).
 
+[101.0.0]: https://github.com/yuriha-chan/OpenCode-HyperDCP/releases/tag/v101.0.0
 [100.0.0]: https://github.com/yuriha-chan/OpenCode-HyperDCP/releases/tag/v100.0.0

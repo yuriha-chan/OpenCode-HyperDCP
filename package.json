@@ -1,7 +1,7 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
     "name": "@architectural-composition/opencode-hyperdcp",
-    "version": "100.0.1",
+    "version": "101.0.0",
     "type": "module",
     "description": "Observable, controllable context management plugin for OpenCode: inspect, rewrite, version, and cull compressed conversation blocks",
     "main": "./dist/index.js",
@@ -31,7 +31,7 @@
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "dcp": "tsx scripts/print.ts",
-	"check:tui": "npm run build && bun --eval \"import('./dist/tui.js').then(m => console.log('Loaded:', m), e => console.error('Error:', e))\""
+        "check:tui": "npm run build && bun --eval \"import('./dist/tui.js').then(m => console.log('Loaded:', m), e => console.error('Error:', e))\""
     },
     "keywords": [
         "opencode",
@@ -68,14 +68,23 @@
     },
     "devDependencies": {
         "@opencode-ai/plugin": ">=1.4.3",
-        "@opentui/core": ">=0.4.1",
-        "@opentui/keymap": ">=0.4.1",
-        "@opentui/solid": ">=0.4.1",
+        "@opentui/core": "0.4.5",
+        "@opentui/keymap": "0.4.5",
+        "@opentui/solid": "0.4.5",
         "@types/node": "^25.5.0",
         "prettier": "^3.8.1",
+        "solid-js": "1.9.12",
         "tsup": "^8.5.1",
         "tsx": "^4.21.0",
         "typescript": "^6.0.2"
+    },
+    "overrides": {
+        "seroval": "1.6.12",
+        "zod": "4.6.7",
+        "toml": "5.0.1",
+        "@babel/core": "7.29.7",
+        "glob": "14.0.3",
+        "esbuild": "0.28.2"
     },
     "files": [
         "dist/",
