@@ -531,6 +531,7 @@ test("entry guidance lists loaded skill names and explicitly lists none", async 
     assert.match(guidance, /loaded\s+skills?/i)
     assert.match(guidance, /alpha/)
     assert.match(guidance, /beta/)
+    assert.ok(guidance.includes("Unload skills"))
     await withSkills.leave({ force: true })
 
     const withoutSkills = await createHousekeepingHarness(t)

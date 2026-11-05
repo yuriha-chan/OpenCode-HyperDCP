@@ -44,8 +44,8 @@ async function assertLeaveGuardRejects(
 
     await assert.rejects(action, (error) => {
         const message = error instanceof Error ? error.message : String(error)
-        assert.match(message, /before leaving/i)
-        assert.match(message, /force=true/i)
+        assert.ok(message.includes("You must finish the compression plan"))
+        assert.ok(message.includes("force=true"))
         return true
     })
 
@@ -61,6 +61,10 @@ test("enter returns existing uncovered ranges and actionable housekeeping guidan
 
     assert.match(guidance, /m0001[\s\S]*m0004/)
     assert.match(guidance, /4 messages/)
+    assert.match(
+        guidance,
+        /UNCOVERED MESSAGE RANGES[^\n]*\n(?:- [^\n]*\n)+\nThese messages are already in your context; do not recall them\.\n\nEligible messages:/,
+    )
     for (const name of ["compress", "edit_memo", "read_memo", "leave_housekeeping"]) {
         assert.ok(guidance.includes(name), `guidance must describe ${name}`)
     }

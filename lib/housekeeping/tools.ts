@@ -255,7 +255,7 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 )
                 if (!hasQualifyingWork && args.force !== true) {
                     throw new Error(
-                        "No compression, block expansion, context toggle, or summary rewrite was staged. Finish all intended housekeeping work before leaving, or call leave_housekeeping with force=true to override.",
+                        "You must finish the compression plan before leaving. Don't use force=true to leave forcibly unless compression was not planned or you can't compress.",
                     )
                 }
                 const checkpoint = await readHousekeepingCheckpoint(

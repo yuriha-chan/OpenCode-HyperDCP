@@ -255,7 +255,8 @@ export async function runHousekeepingCommandMutation<T>(
 
 function renderLoadedSkillsGuidance(state: SessionState): string {
     const names = state.loadedSkills.map((record) => record.name)
-    return names.length > 0 ? `Loaded skills: ${names.join(", ")}.` : "Loaded skills: none."
+    const list = names.length > 0 ? `Loaded skills: ${names.join(", ")}.` : "Loaded skills: none."
+    return `${list}\nUnload skills no longer needed.`
 }
 
 export function buildEntryGuidance(
@@ -288,6 +289,7 @@ export function buildEntryGuidance(
         priorityGuidance,
         rangeText ||
             "No eligible uncovered ranges are available. Memo and summary maintenance can still be performed.",
+        rangeText ? "These messages are already in your context; do not recall them." : "",
         `Eligible messages: ${sourceMessageIds.length}; estimated tokens: ${ranges.reduce((sum, range) => sum + range.tokenEstimate, 0)}.`,
         "Use compress, edit_memo, edit_summary, append_summary, rewrite_summary, toggle_summary_version, and expand_block to stage changes. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once to publish the accumulated draft.",
     ]
