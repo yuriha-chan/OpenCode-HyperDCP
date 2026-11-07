@@ -3,6 +3,18 @@
 All notable changes to OpenCode-HyperDCP are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [101.1.0]
+
+### Changed
+
+- Housekeeping entry guidance reminds agents that eligible messages are already in
+  context and places a skill-unload reminder after the loaded-skill list.
+- The leave guard emphasizes completing the compression plan and reserves forced
+  exit for cases where compression was not planned or cannot be performed.
+- Leave receipts explain that housekeeping messages, tool calls, and results are
+  omitted from model context. Missing tool-call history implies neither an absence
+  of compression nor automatic compression.
+
 ## [101.0.0]
 
 ### Added

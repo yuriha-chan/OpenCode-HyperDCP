@@ -1,7 +1,7 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
     "name": "@architectural-composition/opencode-hyperdcp",
-    "version": "101.0.0",
+    "version": "101.1.0",
     "type": "module",
     "description": "Observable, controllable context management plugin for OpenCode: inspect, rewrite, version, and cull compressed conversation blocks",
     "main": "./dist/index.js",
