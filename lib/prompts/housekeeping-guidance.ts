@@ -19,7 +19,7 @@ Bad example — it pretends to be epistemic knowledge, but is not reusable in la
 #455 "timeout configuration interface should show restart prompt dialogue" is duly implemented and closed. Test passed 201/201, lint & typecheck no error.
 
 Memo maintenance
-Retain useful existing entries; remove or clear only content that is superseded, redundant, or no longer applicable. Keep independent observations in separate textItems and batch related additions in one append call. Supply topics as structured objects using topicTitle, textItems, and nested topics. Each textItems entry is a plain-text string; embedded newlines split it into separate items.
+Retain useful existing entries; remove or clear only content that is superseded, redundant, or no longer applicable. Keep independent observations in separate topic and textItems and batch related additions in one append call. Supply topics as structured objects using topicTitle, textItems, and nested topics. Each textItems entry is a plain-text string; embedded newlines split it into separate items. Use parallel calls to remove multiple selected items / append multiple topics.
 
 MAINTENANCE WORKFLOW
 1. If applicable, use edit_memo to preserve durable procedural constraints, user preferences, and working commands (including exact flags, arguments, and command order). Keep reusable procedures in the memo and task-specific findings in summaries. Use read_memo only when unsure of the memo's current state, and fetch_summary_versions only when you need existing summary text or version history. Draft inspection is not required.
