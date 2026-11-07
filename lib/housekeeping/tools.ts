@@ -217,7 +217,7 @@ function buildCommitReceipt(base: HousekeepingDraft, candidate: HousekeepingDraf
             : candidate.memo
               ? "updated"
               : "cleared"
-    return `Housekeeping complete: committed ${affected}; memo ${memo}.`
+    return `Housekeeping complete: committed ${affected}; memo ${memo}.\n\nHousekeeping messages, including tool calls and results, are omitted from the model’s context. Missing tool-call history does not indicate that no compression occurred or that compression happened automatically.`
 }
 
 export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {

@@ -143,7 +143,11 @@ test("tool-before session switching reloads each session's housekeeping access",
 test("leaving an empty transaction with force succeeds once and permits another independent transaction", async (t) => {
     const h = await createHousekeepingHarness(t)
     await h.enter()
-    assert.match(await h.leave({ force: true }), /left|leave|complete|committ|applied/i)
+    const receipt = await h.leave({ force: true })
+    assert.match(receipt, /left|leave|complete|committ|applied/i)
+    assert.ok(receipt.includes("omitted from the model’s context"))
+    assert.ok(receipt.includes("does not indicate that no compression occurred"))
+    assert.ok(receipt.includes("or that compression happened automatically"))
     await assert.rejects(h.leave(), /not.*housekeeping|enter_housekeeping|no.*active/i)
     await h.enter()
     await h.guard("read_memo")
