@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import "@opentui/core"
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import { Show, For, onCleanup, createSignal, createMemo, createEffect } from "solid-js"
+import type { JSX } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,6 +15,45 @@ import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
 const DCP_MEMO_MODE = "dcp-memo"
+const PLUGIN_ID = "dcp-blocks"
+
+type DcpPage = "dcp-blocks" | "dcp-block" | "dcp-messages" | "dcp-memo"
+
+type DcpPageState = {
+    page?: DcpPage
+    sessionID?: string
+    blockId?: number
+}
+
+interface DcpUi {
+    colors(): ReturnType<typeof look>
+    current(): DcpPageState
+    openPage(page: DcpPage, data?: Record<string, unknown>): void
+    openSession(sessionID?: string): void
+    enterMode(mode: string): () => void
+    notify(input: { variant: "info" | "success" | "warning" | "error"; message: string }): void
+    chooseBlock(options: { title: string; value: number; description: string }[], onSelect: (id: number) => void): void
+    suspendRenderer(): void
+    resumeRenderer(): void
+    sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
+    readSessionMessages(sessionID: string): Promise<unknown>
+    log?(message: string): void
+}
+
+interface LegacyClient {
+    session: {
+        command(input: { sessionID: string; command: string; arguments: string }): Promise<unknown>
+        messages(input: { sessionID: string }): Promise<unknown>
+    }
+}
+
+function legacyClient(client: unknown): LegacyClient {
+    return client as LegacyClient
+}
+
+function isDcpPage(name: string): name is DcpPage {
+    return name === "dcp-blocks" || name === "dcp-block" || name === "dcp-messages" || name === "dcp-memo"
+}
 
 interface BlockInfo {
     blockId: number
@@ -206,29 +246,11 @@ function ink(map: Record<string, unknown>, name: string, fallback: string): stri
     return fallback
 }
 
-function log(api: TuiPluginApi, message: string) {
-    return api.client.app.log({
-        service: "dcp-blocks",
-        level: "info",
-        message,
-        extra: {},
-    })
-}
-
-function goHome(api: TuiPluginApi) {
-    const sessionID = api.route.current.params?.sessionID as string | undefined
-    if (sessionID) {
-        api.route.navigate("session", { sessionID })
-    } else {
-        api.route.navigate("home")
-    }
-}
-
-function goBack(api: TuiPluginApi, target: string, params?: Record<string, unknown>) {
+function goBack(ui: DcpUi, target: DcpPage | "home", params?: Record<string, unknown>) {
     if (target === "home") {
-        goHome(api)
+        ui.openSession(ui.current().sessionID)
     } else {
-        api.route.navigate(target, params)
+        ui.openPage(target, params)
     }
 }
 
@@ -239,10 +261,10 @@ function runEditor(editor: string, filePath: string): void {
     spawnSync(command, args, { stdio: "inherit" })
 }
 
-async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: number): Promise<void> {
+async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): Promise<void> {
     const block = readSingleBlock(sessionID, blockId)
     if (!block) {
-        api.ui.toast({ variant: "error", message: `Block b${blockId} not found` })
+        ui.notify({ variant: "error", message: `Block b${blockId} not found` })
         return
     }
 
@@ -253,11 +275,11 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
     writeFileSync(filePath, buildSummaryFile(original), "utf-8")
 
     const editor = process.env.VISUAL || process.env.EDITOR || "vi"
-    api.renderer.suspend()
+    ui.suspendRenderer()
     try {
         runEditor(editor, filePath)
     } finally {
-        api.renderer.resume()
+        ui.resumeRenderer()
     }
 
     let edited: string
@@ -265,42 +287,38 @@ async function editBlockSummary(api: TuiPluginApi, sessionID: string, blockId: n
         edited = parseSummaryFile(readFileSync(filePath, "utf-8"))
     } catch {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "error", message: "Could not read the edited summary" })
+        ui.notify({ variant: "error", message: "Could not read the edited summary" })
         return
     }
 
     const trimmed = edited.trim()
     if (!trimmed) {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "warning", message: "Edited summary is empty; nothing applied" })
+        ui.notify({ variant: "warning", message: "Edited summary is empty; nothing applied" })
         return
     }
     if (trimmed === original.trim()) {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "info", message: `No changes to block b${blockId}` })
+        ui.notify({ variant: "info", message: `No changes to block b${blockId}` })
         return
     }
 
     writeFileSync(filePath, edited, "utf-8")
     startBlockSummaryPoller(sessionID, blockId, originalVersionCount, originalActiveVersion)
     try {
-        await (api.client as any).session.command({
-            sessionID,
-            command: "dcp",
-            arguments: `edit-file ${blockId} ${filePath}`,
-        })
-        api.ui.toast({ variant: "success", message: `Updated summary for block b${blockId}` })
+        await ui.sendEditCommand(sessionID, `edit-file ${blockId} ${filePath}`)
+        ui.notify({ variant: "success", message: `Updated summary for block b${blockId}` })
     } catch (e) {
-        api.ui.toast({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
+        ui.notify({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
     } finally {
         rmSync(filePath, { force: true })
     }
 }
 
-function pickBlockToEdit(api: TuiPluginApi, sessionID: string): void {
+function pickBlockToEdit(ui: DcpUi, sessionID: string): void {
     const blocks = readBlocks(sessionID)
     if (blocks.length === 0) {
-        api.ui.toast({ variant: "info", message: "No compression blocks yet" })
+        ui.notify({ variant: "info", message: "No compression blocks yet" })
         return
     }
     const options = blocks.map((block) => ({
@@ -308,20 +326,9 @@ function pickBlockToEdit(api: TuiPluginApi, sessionID: string): void {
         value: block.blockId,
         description: `${block.startId}→${block.endId} — ${statusLabel(block)}`,
     }))
-    api.ui.dialog.replace(
-        () => (
-            <api.ui.DialogSelect
-                title="Edit block summary"
-                placeholder="Search blocks"
-                options={options}
-                onSelect={(option) => {
-                    api.ui.dialog.clear()
-                    void editBlockSummary(api, sessionID, option.value as number)
-                }}
-            />
-        ),
-        () => {},
-    )
+    ui.chooseBlock(options, (blockId) => {
+        void editBlockSummary(ui, sessionID, blockId)
+    })
 }
 
 let emitMemoUpdate: (() => void) | null = null
@@ -345,17 +352,17 @@ function startMemoPoller(sessionID: string, original: string): void {
     }, 200)
 }
 
-async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
+async function editMemo(ui: DcpUi, sessionID: string): Promise<void> {
     const original = readMemo(sessionID) ?? ""
     const filePath = join(tmpdir(), `dcp-memo-${Date.now()}.md`)
     writeFileSync(filePath, buildMemoFile(original), "utf-8")
 
     const editor = process.env.VISUAL || process.env.EDITOR || "vi"
-    api.renderer.suspend()
+    ui.suspendRenderer()
     try {
         runEditor(editor, filePath)
     } finally {
-        api.renderer.resume()
+        ui.resumeRenderer()
     }
 
     let edited: string
@@ -363,33 +370,29 @@ async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
         edited = parseMemoFile(readFileSync(filePath, "utf-8"))
     } catch {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "error", message: "Could not read the edited memo" })
+        ui.notify({ variant: "error", message: "Could not read the edited memo" })
         return
     }
 
     const trimmed = edited.trim()
     if (!trimmed) {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "warning", message: "Edited memo is empty; nothing applied" })
+        ui.notify({ variant: "warning", message: "Edited memo is empty; nothing applied" })
         return
     }
     if (trimmed === original.trim()) {
         rmSync(filePath, { force: true })
-        api.ui.toast({ variant: "info", message: "No changes to the memo" })
+        ui.notify({ variant: "info", message: "No changes to the memo" })
         return
     }
 
     writeFileSync(filePath, edited, "utf-8")
     startMemoPoller(sessionID, original)
     try {
-        await (api.client as any).session.command({
-            sessionID,
-            command: "dcp",
-            arguments: `memo-file ${filePath}`,
-        })
-        api.ui.toast({ variant: "success", message: "Updated the memo" })
+        await ui.sendEditCommand(sessionID, `memo-file ${filePath}`)
+        ui.notify({ variant: "success", message: "Updated the memo" })
     } catch {
-        api.ui.toast({ variant: "error", message: "Failed to apply the memo" })
+        ui.notify({ variant: "error", message: "Failed to apply the memo" })
     } finally {
         rmSync(filePath, { force: true })
     }
@@ -397,8 +400,8 @@ async function editMemo(api: TuiPluginApi, sessionID: string): Promise<void> {
 
 // --- Sidebar component ---
 
-const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
-    const skin = look(props.api.theme.current)
+const BlockList = (props: { ui: DcpUi; session_id: string }) => {
+    const skin = props.ui.colors()
     const blocks = readBlocks(props.session_id)
     const [collapsed, setCollapsed] = createSignal(false)
     const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
@@ -407,7 +410,7 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
 
     // Eagerly start SDK message fetch so cache is warm for messages page
     if (!sdkMessagesCache.has(props.session_id)) {
-        fetchAllSdkMessages(props.api, props.session_id)
+        fetchAllSdkMessages(props.ui, props.session_id)
     }
 
     return (
@@ -445,11 +448,11 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
             </Show>
             <box flexDirection="row" gap={1}>
                 <text bold inverse onMouseDown={async () => {
-                    await fetchAllSdkMessages(props.api, props.session_id)
-                    api.route.navigate("dcp-messages", { sessionID: props.session_id })
+                    await fetchAllSdkMessages(props.ui, props.session_id)
+                    props.ui.openPage("dcp-messages", { sessionID: props.session_id })
                 }} onDblClick={async () => {
-                    await fetchAllSdkMessages(props.api, props.session_id)
-                    api.route.navigate("dcp-messages", { sessionID: props.session_id })
+                    await fetchAllSdkMessages(props.ui, props.session_id)
+                    props.ui.openPage("dcp-messages", { sessionID: props.session_id })
                 }}> Messages </text>
             </box>
         </box>
@@ -458,13 +461,13 @@ const BlockList = (props: { api: TuiPluginApi; session_id: string }) => {
 
 // --- Basic page wrapper ---
 
-function PageHeader(props: { api: TuiPluginApi; title: string; backTarget?: string; backParams?: Record<string, unknown> }) {
-    const skin = look(props.api.theme.current)
+function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
+    const skin = props.ui.colors()
     const backLabel = !props.backTarget || props.backTarget === "home" ? "Session" : props.backTarget === "dcp-blocks" ? "Blocks" : "Back"
 
     return (
         <box flexDirection="row" gap={1}>
-            <box onMouseDown={() => goBack(props.api, props.backTarget ?? "home", props.backParams)}>
+            <box onMouseDown={() => goBack(props.ui, props.backTarget ?? "home", props.backParams)}>
                 <text fg={skin.text} bold inverse> ← {backLabel} </text>
             </box>
             <text>
@@ -474,12 +477,12 @@ function PageHeader(props: { api: TuiPluginApi; title: string; backTarget?: stri
     )
 }
 
-function PageShell(props: { api: TuiPluginApi; title: string; children: any; backTarget?: string; backParams?: Record<string, unknown> }) {
-    const skin = look(props.api.theme.current)
+function PageShell(props: { ui: DcpUi; title: string; children: any; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
+    const skin = props.ui.colors()
 
     return (
         <box flexDirection="column" gap={1} padding={1}>
-            <PageHeader api={props.api} title={props.title} backTarget={props.backTarget} backParams={props.backParams} />
+            <PageHeader ui={props.ui} title={props.title} backTarget={props.backTarget} backParams={props.backParams} />
             <text fg={skin.muted}>{"─".repeat(40)}</text>
             {props.children}
         </box>
@@ -488,11 +491,11 @@ function PageShell(props: { api: TuiPluginApi; title: string; children: any; bac
 
 // --- Blocks list detail page ---
 
-const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_MODE)
+const BlocksDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
+    const popMode = props.ui.enterMode(DCP_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
-    const skin = look(props.api.theme.current)
+    const skin = props.ui.colors()
     const blocks = sessionID ? readBlocks(sessionID) : []
     const stats = sessionID ? readStats(sessionID) : null
     const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
@@ -501,7 +504,7 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
 
     if (!sessionID) {
         return (
-            <PageShell api={props.api} title="DCP Blocks">
+            <PageShell ui={props.ui} title="DCP Blocks">
                 <text fg={skin.muted}>No active session</text>
             </PageShell>
         )
@@ -509,7 +512,7 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
 
     if (blocks.length === 0) {
         return (
-            <PageShell api={props.api} title="DCP Blocks">
+            <PageShell ui={props.ui} title="DCP Blocks">
                 <text fg={skin.muted}>No compression blocks yet</text>
                 {stats && (
                     <text fg={skin.muted}>All time: saved {tokenLabelPrecise(stats.totalPruneTokens)} across {stats.totalMessagesPruned} messages / {stats.totalToolsPruned} tools</text>
@@ -519,7 +522,7 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
     }
 
     return (
-        <PageShell api={props.api} title="DCP Blocks">
+        <PageShell ui={props.ui} title="DCP Blocks">
             <box flexDirection="row" gap={1}>
                 <text fg={skin.muted}>
                     {blocks.length} block{blocks.length !== 1 ? "s" : ""} — {tokenLabelPrecise(totalRaw)} raw → {tokenLabelPrecise(totalSummary)} summary
@@ -533,8 +536,8 @@ const BlocksDetail = (props: { api: TuiPluginApi; params?: Record<string, unknow
                 const clr = block.active && !isEmpty(block) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed
                 return (
                     <box key={block.blockId} flexDirection="row" gap={1} onMouseDown={() => {
-                        log(props.api, `blocks: navigate to dcp-block blockId=${block.blockId}`)
-                        props.api.route.navigate("dcp-block", { sessionID, blockId: block.blockId })
+                        props.ui.log?.(`blocks: navigate to dcp-block blockId=${block.blockId}`)
+                        props.ui.openPage("dcp-block", { sessionID, blockId: block.blockId })
                     }}>
                         <text fg={clr} bold>b{String(block.blockId).padEnd(3)}</text>
                         <text fg={skin.muted}>
@@ -571,12 +574,12 @@ function startBlockSummaryPoller(sessionID: string, blockId: number, versionCoun
     }, 200)
 }
 
-const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_BLOCK_MODE)
+const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
+    const popMode = props.ui.enterMode(DCP_BLOCK_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
     const blockId = props.params?.blockId as number | undefined
-    const skin = look(props.api.theme.current)
+    const skin = props.ui.colors()
     const [blockData, setBlockData] = createSignal<BlockInfo | null>(null)
     const [manualRevision, setManualRevision] = createSignal(0)
     emitBlockSummaryUpdate = (changedBlockId) => {
@@ -595,7 +598,7 @@ const BlockDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown
 
     return (
         <PageShell
-            api={props.api}
+            ui={props.ui}
             title="Block Detail"
             backTarget={sessionID ? "dcp-blocks" : undefined}
             backParams={sessionID ? { sessionID } : undefined}
@@ -674,10 +677,10 @@ function toolPreview(part: any): string {
 // Module-level cache for SDK messages fetched via v1 API (all messages, not just v2 projected context)
 const sdkMessagesCache = new Map<string, Array<any>>()
 
-async function fetchAllSdkMessages(api: TuiPluginApi, sessionID: string): Promise<void> {
+async function fetchAllSdkMessages(ui: DcpUi, sessionID: string): Promise<void> {
     if (sdkMessagesCache.has(sessionID)) return
     try {
-        const response = await (api.client as any).session.messages({ sessionID })
+        const response = (await ui.readSessionMessages(sessionID)) as { data?: unknown[] } | undefined
         const msgs = response?.data
         if (Array.isArray(msgs)) {
             const all = msgs.map((m: any) => ({
@@ -720,11 +723,11 @@ function extractSdkMessagePreview(msg: any): string {
 
 const PAGE_SIZE = 20
 
-const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_MODE)
+const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
+    const popMode = props.ui.enterMode(DCP_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
-    const skin = look(props.api.theme.current)
+    const skin = props.ui.colors()
     const [page, setPage] = createSignal((props.params?.page as number) ?? 0)
 
     // Module-level cache: SDK messages (populated before navigation)
@@ -732,7 +735,7 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
 
     // If cache miss (direct navigation), start the fetch as fallback
     if (sessionID && !sdkMessages) {
-        fetchAllSdkMessages(props.api, sessionID)
+        fetchAllSdkMessages(props.ui, sessionID)
     }
 
     // DCP byMessageId as compression status lookup
@@ -765,20 +768,20 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
     const pageEntries = createMemo(() => allEntries.slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE))
 
     const navTo = (newPage: number) => {
-        log(props.api, `messages: navigate to page=${newPage}`)
+        props.ui.log?.(`messages: navigate to page=${newPage}`)
         setPage(newPage)
     }
 
     if (!sessionID) {
         return (
-            <PageShell api={props.api} title="DCP Messages">
+            <PageShell ui={props.ui} title="DCP Messages">
                 <text fg={skin.muted}>No active session</text>
             </PageShell>
         )
     }
 
     return (
-        <PageShell api={props.api} title="DCP Messages">
+        <PageShell ui={props.ui} title="DCP Messages">
             <box flexDirection="row" gap={1}>
                 <text fg={skin.muted}>
                     {totalMessages} messages — page {page() + 1}/{totalPages}
@@ -826,11 +829,11 @@ const MessagesDetail = (props: { api: TuiPluginApi; params?: Record<string, unkn
 
 // --- Memo detail page ---
 
-const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown> }) => {
-    const popMode = props.api.mode.push(DCP_MEMO_MODE)
+const MemoDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
+    const popMode = props.ui.enterMode(DCP_MEMO_MODE)
     onCleanup(popMode)
     const sessionID = props.params?.sessionID as string | undefined
-    const skin = look(props.api.theme.current)
+    const skin = props.ui.colors()
     const [memoData, setMemoData] = createSignal<string | null>(null)
     const [manualRevision, setManualRevision] = createSignal(0)
     emitMemoUpdate = () => setManualRevision((v) => v + 1)
@@ -844,7 +847,7 @@ const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown>
     const readCurrent = (): string | null => memoData()
 
     return (
-        <PageShell api={props.api} title="DCP Memo">
+        <PageShell ui={props.ui} title="DCP Memo">
             <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
                 <Show when={readCurrent() !== null} fallback={<text fg={skin.muted}>No memo set</text>}>
                     <text fg={skin.muted}>{readCurrent()!.length} chars</text>
@@ -856,14 +859,124 @@ const MemoDetail = (props: { api: TuiPluginApi; params?: Record<string, unknown>
     )
 }
 
-// --- Plugin entry ---
+// --- Shared actions ---
+
+function openBlocks(ui: DcpUi): void {
+    const sessionID = ui.current().sessionID
+    ui.openPage("dcp-blocks", sessionID ? { sessionID } : undefined)
+}
+
+async function openMessages(ui: DcpUi): Promise<void> {
+    const sessionID = ui.current().sessionID
+    if (sessionID) {
+        await fetchAllSdkMessages(ui, sessionID)
+        ui.openPage("dcp-messages", { sessionID })
+    } else {
+        ui.openPage("dcp-messages")
+    }
+}
+
+function openMemo(ui: DcpUi): void {
+    const sessionID = ui.current().sessionID
+    ui.openPage("dcp-memo", sessionID ? { sessionID } : undefined)
+}
+
+function editCurrentBlock(ui: DcpUi): void {
+    const current = ui.current()
+    if (!current.sessionID) {
+        ui.notify({ variant: "info", message: "No active session" })
+        return
+    }
+    if (current.page === "dcp-block" && typeof current.blockId === "number") {
+        void editBlockSummary(ui, current.sessionID, current.blockId)
+    } else {
+        pickBlockToEdit(ui, current.sessionID)
+    }
+}
+
+function editCurrentMemo(ui: DcpUi): void {
+    const sessionID = ui.current().sessionID
+    if (!sessionID) {
+        ui.notify({ variant: "info", message: "No active session" })
+        return
+    }
+    void editMemo(ui, sessionID)
+}
+
+function backToSession(ui: DcpUi): void {
+    const current = ui.current()
+    if (current.page === "dcp-block" && current.sessionID) {
+        ui.openPage("dcp-blocks", { sessionID: current.sessionID })
+    } else if (current.sessionID) {
+        ui.openSession(current.sessionID)
+    } else {
+        ui.openSession()
+    }
+}
+
+// --- v1 native registration ---
 
 const tui: TuiPlugin = async (api, options, meta) => {
+    const ui: DcpUi = {
+        colors: () => look(api.theme.current),
+        current: () => {
+            const route = api.route.current as { name: string; params?: Record<string, unknown> }
+            return {
+                page: isDcpPage(route.name) ? route.name : undefined,
+                sessionID: typeof route.params?.sessionID === "string" ? route.params.sessionID : undefined,
+                blockId: typeof route.params?.blockId === "number" ? route.params.blockId : undefined,
+            }
+        },
+        openPage: (page, data) => api.route.navigate(page, data),
+        openSession: (sessionID) => {
+            if (sessionID) {
+                api.route.navigate("session", { sessionID })
+            } else {
+                api.route.navigate("home")
+            }
+        },
+        enterMode: (mode) => api.mode.push(mode),
+        notify: (input) => api.ui.toast(input),
+        chooseBlock: (options, onSelect) => {
+            api.ui.dialog.replace(
+                () => (
+                    <api.ui.DialogSelect
+                        title="Edit block summary"
+                        placeholder="Search blocks"
+                        options={options}
+                        onSelect={(option) => {
+                            api.ui.dialog.clear()
+                            onSelect(option.value as number)
+                        }}
+                    />
+                ),
+                () => {},
+            )
+        },
+        suspendRenderer: () => api.renderer.suspend(),
+        resumeRenderer: () => api.renderer.resume(),
+        sendEditCommand: (sessionID, argumentsText) =>
+            legacyClient(api.client).session.command({
+                sessionID,
+                command: "dcp",
+                arguments: argumentsText,
+            }),
+        readSessionMessages: (sessionID) => legacyClient(api.client).session.messages({ sessionID }),
+        log: (message) => {
+            void api.client.app.log({
+                service: "dcp-blocks",
+                level: "info",
+                message,
+                extra: {},
+            })
+        },
+    }
+
     api.slots.register({
         order: 350,
         slots: {
             sidebar_content(_ctx, value) {
-                return <BlockList api={api} session_id={value.session_id} />
+                return <BlockList ui={ui} session_id={value.session_id} />
             },
         },
     })
@@ -871,19 +984,19 @@ const tui: TuiPlugin = async (api, options, meta) => {
     api.route.register([
         {
             name: "dcp-blocks",
-            render: ({ params }) => <BlocksDetail api={api} params={params} />,
+            render: ({ params }) => <BlocksDetail ui={ui} params={params} />,
         },
         {
             name: "dcp-block",
-            render: ({ params }) => <BlockDetail api={api} params={params} />,
+            render: ({ params }) => <BlockDetail ui={ui} params={params} />,
         },
         {
             name: "dcp-messages",
-            render: ({ params }) => <MessagesDetail api={api} params={params} />,
+            render: ({ params }) => <MessagesDetail ui={ui} params={params} />,
         },
         {
             name: "dcp-memo",
-            render: ({ params }) => <MemoDetail api={api} params={params} />,
+            render: ({ params }) => <MemoDetail ui={ui} params={params} />,
         },
     ])
 
@@ -897,12 +1010,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 namespace: "palette",
                 slashName: "dcp-tui-blocks",
                 run() {
-                    const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (sessionID) {
-                        api.route.navigate("dcp-blocks", { sessionID })
-                    } else {
-                        api.route.navigate("dcp-blocks")
-                    }
+                    openBlocks(ui)
                 },
             },
             {
@@ -912,13 +1020,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 namespace: "palette",
                 slashName: "dcp-tui-messages",
                 async run() {
-                    const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (sessionID) {
-                        await fetchAllSdkMessages(api, sessionID)
-                        api.route.navigate("dcp-messages", { sessionID })
-                    } else {
-                        api.route.navigate("dcp-messages")
-                    }
+                    await openMessages(ui)
                 },
             },
             {
@@ -928,12 +1030,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 namespace: "palette",
                 slashName: "dcp-tui-memo",
                 run() {
-                    const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (sessionID) {
-                        api.route.navigate("dcp-memo", { sessionID })
-                    } else {
-                        api.route.navigate("dcp-memo")
-                    }
+                    openMemo(ui)
                 },
             },
             {
@@ -943,18 +1040,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 namespace: "palette",
                 slashName: "dcp-tui-edit",
                 run() {
-                    const current = api.route.current
-                    const sessionID = current.params?.sessionID as string | undefined
-                    const blockId = current.params?.blockId as number | undefined
-                    if (!sessionID) {
-                        api.ui.toast({ variant: "info", message: "No active session" })
-                        return
-                    }
-                    if (current.name === "dcp-block" && typeof blockId === "number") {
-                        void editBlockSummary(api, sessionID, blockId)
-                    } else {
-                        pickBlockToEdit(api, sessionID)
-                    }
+                    editCurrentBlock(ui)
                 },
             },
             {
@@ -964,12 +1050,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 namespace: "palette",
                 slashName: "dcp-tui-edit-memo",
                 run() {
-                    const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (!sessionID) {
-                        api.ui.toast({ variant: "info", message: "No active session" })
-                        return
-                    }
-                    void editMemo(api, sessionID)
+                    editCurrentMemo(ui)
                 },
             },
         ],
@@ -984,15 +1065,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 category: "Plugin",
                 hidden: true,
                 run() {
-                    const name = api.route.current.name
-                    const sessionID = api.route.current.params?.sessionID as string | undefined
-                    if (name === "dcp-block" && sessionID) {
-                        api.route.navigate("dcp-blocks", { sessionID })
-                    } else if (sessionID) {
-                        api.route.navigate("session", { sessionID })
-                    } else {
-                        api.route.navigate("home")
-                    }
+                    backToSession(ui)
                 },
             },
         ],
@@ -1010,9 +1083,222 @@ const tui: TuiPlugin = async (api, options, meta) => {
     })
 }
 
-const plugin: TuiPluginModule & { id: string } = {
-    id: "dcp-blocks",
+// --- v2 native registration ---
+
+type V2Route =
+    | { type: "home" }
+    | { type: "session"; sessionID: string }
+    | { type: "plugin"; id: string; name: string; data?: Record<string, unknown> }
+
+type V2Destination =
+    | { type: "home" }
+    | { type: "session"; sessionID: string }
+    | { type: "plugin"; name: string; data?: Record<string, unknown> }
+
+interface V2KeymapCommand {
+    id?: string
+    title?: string
+    group?: string
+    palette?: true
+    slash?: { name: string; aliases?: string[]; arguments?: true }
+    bind?: false | string
+    run(input?: string): void | false | Promise<void>
+}
+
+interface V2KeymapLayer {
+    mode?: string
+    commands?: readonly V2KeymapCommand[]
+    bindings?: readonly string[]
+}
+
+interface V2TuiContext {
+    readonly theme: Record<string, unknown>
+    readonly renderer: {
+        suspend(): void
+        resume(): void
+    }
+    readonly client: unknown
+    readonly keymap: {
+        layer(factory: () => V2KeymapLayer): void
+        mode: {
+            push(mode: string): () => void
+        }
+    }
+    readonly ui: {
+        readonly toast: {
+            show(options: {
+                variant?: "info" | "success" | "warning" | "error"
+                message: string
+                title?: string
+                duration?: number
+                sessionID?: string
+            }): void
+        }
+        readonly router: {
+            register(page: { name: string; render(input: { data?: Record<string, unknown> }): JSX.Element }): () => void
+            navigate(destination: V2Destination): void
+            current(): V2Route
+        }
+        readonly dialog: {
+            select<Value>(options: {
+                title: string
+                placeholder?: string
+                options: readonly { title: string; value: Value; description?: string }[]
+            }): Promise<Value | undefined>
+        }
+        slot(claim: { append: "sidebar.content"; render(input: { sessionID: string }): JSX.Element }): () => void
+    }
+}
+
+function v2PageState(route: V2Route): DcpPageState {
+    if (route.type === "home") return {}
+    if (route.type === "session") return { sessionID: route.sessionID }
+    if (route.id !== PLUGIN_ID) return {}
+    const data = route.data ?? {}
+    return {
+        page: isDcpPage(route.name) ? route.name : undefined,
+        sessionID: typeof data.sessionID === "string" ? data.sessionID : undefined,
+        blockId: typeof data.blockId === "number" ? data.blockId : undefined,
+    }
+}
+
+function v2EditBlockCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+    return {
+        id: "dcp-tui.edit",
+        title: "DCP Edit Block Summary",
+        group: "Plugin",
+        palette: true,
+        slash: { name: "dcp-tui-edit" },
+        bind,
+        run: () => editCurrentBlock(ui),
+    }
+}
+
+function v2EditMemoCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+    return {
+        id: "dcp-tui.edit-memo",
+        title: "DCP Edit Memo",
+        group: "Plugin",
+        palette: true,
+        slash: { name: "dcp-tui-edit-memo" },
+        bind,
+        run: () => editCurrentMemo(ui),
+    }
+}
+
+function v2BackCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+    return {
+        id: "dcp-tui.back",
+        title: "Go back to session",
+        group: "Plugin",
+        bind,
+        run: () => backToSession(ui),
+    }
+}
+
+function v2Commands(ui: DcpUi): V2KeymapCommand[] {
+    return [
+        {
+            id: "dcp-tui.blocks",
+            title: "DCP Blocks",
+            group: "Plugin",
+            palette: true,
+            slash: { name: "dcp-tui-blocks" },
+            run: () => openBlocks(ui),
+        },
+        {
+            id: "dcp-tui.messages",
+            title: "DCP Messages",
+            group: "Plugin",
+            palette: true,
+            slash: { name: "dcp-tui-messages" },
+            run: async () => {
+                await openMessages(ui)
+            },
+        },
+        {
+            id: "dcp-tui.memo",
+            title: "DCP Memo",
+            group: "Plugin",
+            palette: true,
+            slash: { name: "dcp-tui-memo" },
+            run: () => openMemo(ui),
+        },
+        v2EditBlockCommand(ui),
+        v2EditMemoCommand(ui),
+        v2BackCommand(ui),
+    ]
+}
+
+const setup = (context: V2TuiContext): void => {
+    const ui: DcpUi = {
+        colors: () => look(context.theme),
+        current: () => v2PageState(context.ui.router.current()),
+        openPage: (page, data) => context.ui.router.navigate({ type: "plugin", name: page, data }),
+        openSession: (sessionID) => context.ui.router.navigate(sessionID ? { type: "session", sessionID } : { type: "home" }),
+        enterMode: (mode) => context.keymap.mode.push(mode),
+        notify: (input) => context.ui.toast.show(input),
+        chooseBlock: (options, onSelect) => {
+            void context.ui.dialog
+                .select({ title: "Edit block summary", placeholder: "Search blocks", options })
+                .then((value) => {
+                    if (value !== undefined) onSelect(value)
+                })
+        },
+        suspendRenderer: () => context.renderer.suspend(),
+        resumeRenderer: () => context.renderer.resume(),
+        sendEditCommand: (sessionID, argumentsText) =>
+            legacyClient(context.client).session.command({
+                sessionID,
+                command: "dcp",
+                arguments: argumentsText,
+            }),
+        readSessionMessages: (sessionID) => legacyClient(context.client).session.messages({ sessionID }),
+    }
+
+    context.ui.slot({
+        append: "sidebar.content",
+        render(input) {
+            return <BlockList ui={ui} session_id={input.sessionID} />
+        },
+    })
+
+    context.ui.router.register({
+        name: "dcp-blocks",
+        render: ({ data }) => <BlocksDetail ui={ui} params={data} />,
+    })
+    context.ui.router.register({
+        name: "dcp-block",
+        render: ({ data }) => <BlockDetail ui={ui} params={data} />,
+    })
+    context.ui.router.register({
+        name: "dcp-messages",
+        render: ({ data }) => <MessagesDetail ui={ui} params={data} />,
+    })
+    context.ui.router.register({
+        name: "dcp-memo",
+        render: ({ data }) => <MemoDetail ui={ui} params={data} />,
+    })
+
+    context.keymap.layer(() => ({ mode: "global", commands: v2Commands(ui) }))
+    context.keymap.layer(() => ({
+        mode: DCP_MODE,
+        commands: [v2BackCommand(ui, "escape")],
+    }))
+    context.keymap.layer(() => ({
+        mode: DCP_BLOCK_MODE,
+        commands: [v2EditBlockCommand(ui, "e"), v2BackCommand(ui, "escape")],
+    }))
+    context.keymap.layer(() => ({
+        mode: DCP_MEMO_MODE,
+        commands: [v2EditMemoCommand(ui, "e"), v2BackCommand(ui, "escape")],
+    }))
+}
+
+const plugin: TuiPluginModule & { id: string; setup: (context: V2TuiContext) => void } = {
+    id: PLUGIN_ID,
     tui,
+    setup,
 }
 
 export default plugin
