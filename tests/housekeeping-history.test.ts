@@ -1,10 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { projectHousekeepingHistory } from "../lib/housekeeping/history"
+import { prepareModelContext } from "../lib/model-context"
 import type { HousekeepingOperation, HousekeepingTransaction, WithParts } from "../lib/state"
 
 type Part = WithParts["parts"][number]
 type Edit = { output: string; title: string }
+type TestOperation = HousekeepingOperation
+type TestCompleted = NonNullable<HousekeepingTransaction["completed"]>
+type TestTransaction = HousekeepingTransaction
 
 const sessionID = "ses_housekeeping_history"
 const EMPTY_ENTRY_PLACEHOLDER = "details truncated."
@@ -77,28 +81,22 @@ function message(id: string, parts: Part[]): WithParts {
     }
 }
 
-function operation(
-    messageId: string,
-    partId: string | null,
-    callId: string,
-    tool = "read",
-): HousekeepingOperation {
-    return { messageId, partId, callId, tool, input: {}, result: "ok" }
+function operation(messageId: string, callId: string, tool = "read"): TestOperation {
+    return { messageId, callId, tool, input: {}, result: "ok" }
 }
 
 function snapshotRef(snapshotId: string): HousekeepingTransaction["baseRef"] {
     return { kind: "snapshot", snapshotId }
 }
 
-function transaction(overrides: Partial<HousekeepingTransaction> = {}): HousekeepingTransaction {
+function transaction(overrides: Partial<TestTransaction> = {}): TestTransaction {
     return {
         id: "transaction-1",
         sessionId: sessionID,
         entryMessageId: "missing-entry",
-        entryPartId: null,
         entryCallId: "missing-entry-call",
         entryCreatedAt: 1,
-        sourceParts: [],
+        sourceMessageIds: [],
         baseRevision: 0,
         baseRef: snapshotRef("base-snapshot"),
         draftRef: snapshotRef("draft-snapshot"),
@@ -114,21 +112,30 @@ function transaction(overrides: Partial<HousekeepingTransaction> = {}): Housekee
 function completed(
     leaveMessageId: string,
     leaveCallId: string,
-    leavePartId: string | null,
     receipt: string,
-    overrides: Partial<HousekeepingTransaction> = {},
-): HousekeepingTransaction {
+    overrides: Partial<TestTransaction> = {},
+): TestTransaction {
     return transaction({
         completed: {
             leaveMessageId,
             leaveCallId,
-            leavePartId,
             receipt,
             commitRevision: 1,
             committedDraftRef: snapshotRef("committed-snapshot"),
         },
         ...overrides,
     })
+}
+
+function project(messages: WithParts[], transactions: TestTransaction[]): WithParts[] {
+    return projectHousekeepingHistory(messages, transactions)
+}
+
+function prepare(
+    request: Parameters<typeof prepareModelContext>[0],
+    history: TestTransaction[],
+): void {
+    prepareModelContext(request, history)
 }
 
 function outputOf(part: Part | undefined): string | undefined {
@@ -141,108 +148,260 @@ function titleOf(part: Part | undefined): string | undefined {
     return part?.type === "tool" && part.state.status === "completed" ? part.state.title : undefined
 }
 
-function referencePartMatches(
-    message: WithParts,
-    partIndex: number,
-    messageId: string,
-    callId: string,
-    partId: string | null = null,
-): boolean {
-    const part = message.parts[partIndex]
-    return (
-        message.info.id === messageId &&
-        part?.type === "tool" &&
-        part.callID === callId &&
-        (partId === null || part.id === partId)
-    )
+function requestWithSplitResults() {
+    const text = (text: string) => ({ type: "text", text })
+    const call = (id: string, name: string) => ({ type: "tool-call", id, name, input: {} })
+    const result = (id: string, name: string, value: string) => ({
+        type: "tool-result",
+        id,
+        name,
+        result: { type: "text", value },
+    })
+    const request = {
+        options: {},
+        messages: [
+            {
+                id: "assistant-entry",
+                role: "assistant",
+                content: [
+                    text("ordinary before"),
+                    call("enter", "enter_housekeeping"),
+                    call("read", "read"),
+                ],
+            },
+            { role: "tool", content: [result("enter", "enter_housekeeping", "full guidance")] },
+            { role: "tool", content: [result("read", "read", "ordinary result")] },
+            {
+                id: "assistant-maintenance",
+                role: "assistant",
+                content: [text("maintenance"), call("operation", "edit_memo")],
+            },
+            { role: "tool", content: [result("operation", "edit_memo", "maintenance details")] },
+            {
+                id: "assistant-leave",
+                role: "assistant",
+                content: [
+                    text("leave thinking"),
+                    call("leave", "leave_housekeeping"),
+                    call("post", "read"),
+                ],
+            },
+            { role: "tool", content: [result("leave", "leave_housekeeping", "full result")] },
+            { role: "tool", content: [result("post", "read", "post result")] },
+            {
+                id: "assistant-after",
+                role: "assistant",
+                content: [text("ordinary after")],
+            },
+        ],
+    }
+    return { request, text, call, result }
 }
 
-function referenceProject(
-    messages: WithParts[],
-    transactions: HousekeepingTransaction[],
-): WithParts[] {
-    const positions = new Map<string, number>()
-    let position = 0
-    for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
-        for (let partIndex = 0; partIndex < messages[messageIndex].parts.length; partIndex++) {
-            positions.set(`${messageIndex}:${partIndex}`, position++)
+test("model context hides completed housekeeping and its split tool results, while retaining both receipts", () => {
+    const { request, text, call, result } = requestWithSplitResults()
+    const original = structuredClone(request.messages)
+    const sourceMessages = request.messages
+    const history = [
+        completed("assistant-leave", "leave", "maintenance committed", {
+            entryMessageId: "assistant-entry",
+            entryCallId: "enter",
+        }),
+    ]
+
+    prepare(request, history)
+
+    assert.deepEqual(request.messages, [
+        {
+            id: "assistant-entry",
+            role: "assistant",
+            content: [
+                text("ordinary before"),
+                call("enter", "enter_housekeeping"),
+                call("read", "read"),
+            ],
+        },
+        { role: "tool", content: [result("enter", "enter_housekeeping", EMPTY_ENTRY_PLACEHOLDER)] },
+        { role: "tool", content: [result("read", "read", "ordinary result")] },
+        {
+            id: "assistant-leave",
+            role: "assistant",
+            content: [call("leave", "leave_housekeeping")],
+        },
+        { role: "tool", content: [result("leave", "leave_housekeeping", "maintenance committed")] },
+        { id: "assistant-after", role: "assistant", content: [text("ordinary after")] },
+    ])
+    assert.deepEqual(sourceMessages, original)
+})
+
+test("model context keeps work visible until housekeeping has completed", () => {
+    const { request } = requestWithSplitResults()
+    const original = structuredClone(request.messages)
+
+    prepare(request, [transaction({ entryMessageId: "assistant-entry", entryCallId: "enter" })])
+
+    assert.deepEqual(request.messages, original)
+})
+
+test("model context retains entry-message siblings for either order of the parallel tool calls", () => {
+    const text = (text: string) => ({ type: "text", text })
+    const call = (id: string, name: string) => ({ type: "tool-call", id, name, input: {} })
+    for (const content of [
+        [text("before entry"), call("enter", "enter_housekeeping"), call("read", "read")],
+        [text("before entry"), call("read", "read"), call("enter", "enter_housekeeping")],
+    ]) {
+        const request = {
+            options: {},
+            messages: [
+                { id: "assistant-entry", role: "assistant", content },
+                {
+                    id: "assistant-leave",
+                    role: "assistant",
+                    content: [call("leave", "leave_housekeeping")],
+                },
+            ],
         }
+        prepare(request, [
+            completed("assistant-leave", "leave", "receipt", {
+                entryMessageId: "assistant-entry",
+                entryCallId: "enter",
+            }),
+        ])
+        assert.deepEqual(request.messages[0], { id: "assistant-entry", role: "assistant", content })
     }
+})
+
+test("model context hides every leave-message sibling regardless of its position", () => {
+    const text = (text: string) => ({ type: "text", text })
+    const call = (id: string, name: string) => ({ type: "tool-call", id, name, input: {} })
+    for (const content of [
+        [text("before leave"), call("leave", "leave_housekeeping"), call("post", "read")],
+        [text("before leave"), call("post", "read"), call("leave", "leave_housekeeping")],
+    ]) {
+        const request = {
+            options: {},
+            messages: [
+                {
+                    id: "assistant-entry",
+                    role: "assistant",
+                    content: [call("enter", "enter_housekeeping")],
+                },
+                { id: "assistant-leave", role: "assistant", content },
+            ],
+        }
+        prepare(request, [
+            completed("assistant-leave", "leave", "receipt", {
+                entryMessageId: "assistant-entry",
+                entryCallId: "enter",
+            }),
+        ])
+        assert.deepEqual(request.messages[1], {
+            id: "assistant-leave",
+            role: "assistant",
+            content: [call("leave", "leave_housekeeping")],
+        })
+    }
+})
+
+function referenceMatches(
+    points: Array<{ messageId: string; callId?: string; messageIndex: number }>,
+    messageId: string,
+    callId: string,
+): number[] {
+    const positions: number[] = []
+    points.forEach((point, position) => {
+        if (point.messageId === messageId && point.callId === callId) positions.push(position)
+    })
+    return positions
+}
+
+function referenceProject(messages: WithParts[], transactions: TestTransaction[]): WithParts[] {
+    const points: Array<{ messageId: string; callId?: string; messageIndex: number }> = []
+    const messageEnds: number[] = []
+    messages.forEach((message, messageIndex) => {
+        for (const part of message.parts) {
+            points.push({
+                messageId: message.info.id,
+                callId: part.type === "tool" ? part.callID : undefined,
+                messageIndex,
+            })
+        }
+        messageEnds[messageIndex] = points.length - 1
+    })
+    const endOfMessage = (position: number) => messageEnds[points[position].messageIndex]
+
     const hidden = new Set<number>()
     const boundaryEdits = new Map<number, Edit>()
     for (const transaction of transactions) {
-        let entryPosition: number | undefined
-        let leavePosition: number | undefined
-        let sourceBoundaryPosition: number | undefined
-        const operationPositions: number[] = []
-        messages.forEach((message, messageIndex) =>
-            message.parts.forEach((part, partIndex) => {
-                const current = positions.get(`${messageIndex}:${partIndex}`)
-                if (
-                    transaction.sourceParts.some(
-                        (source) =>
-                            source.messageId === message.info.id && source.partId === part.id,
-                    )
-                ) {
-                    sourceBoundaryPosition = current
-                }
-                if (
-                    referencePartMatches(
-                        message,
-                        partIndex,
-                        transaction.entryMessageId,
-                        transaction.entryCallId,
-                        transaction.entryPartId,
-                    )
-                ) {
-                    entryPosition = current
-                    if (transaction.completed) {
-                        boundaryEdits.set(current!, {
-                            output: EMPTY_ENTRY_PLACEHOLDER,
-                            title: ENTRY_TITLE,
-                        })
-                    }
-                }
-                if (
-                    transaction.completed &&
-                    referencePartMatches(
-                        message,
-                        partIndex,
-                        transaction.completed!.leaveMessageId,
-                        transaction.completed!.leaveCallId,
-                        transaction.completed!.leavePartId,
-                    )
-                ) {
-                    leavePosition = current
-                    boundaryEdits.set(current!, {
-                        output: transaction.completed!.receipt,
-                        title: LEAVE_TITLE,
-                    })
-                }
-                for (const record of transaction.operationRecords) {
-                    if (
-                        record.messageId === message.info.id &&
-                        record.partId === part.id &&
-                        part.type === "tool" &&
-                        part.callID === record.callId
-                    ) {
-                        operationPositions.push(current!)
-                    }
-                }
-            }),
+        const entryPositions = referenceMatches(
+            points,
+            transaction.entryMessageId,
+            transaction.entryCallId,
         )
-        if (entryPosition !== undefined && leavePosition !== undefined) {
-            for (let current = entryPosition + 1; current < leavePosition; current++)
-                hidden.add(current)
-        } else if (entryPosition === undefined && sourceBoundaryPosition !== undefined) {
-            const end = leavePosition ?? Math.max(sourceBoundaryPosition, ...operationPositions)
-            if (end > sourceBoundaryPosition) {
-                for (let current = sourceBoundaryPosition + 1; current < end; current++)
-                    hidden.add(current)
+        const entryPosition = entryPositions.at(-1)
+        const leavePositions = transaction.completed
+            ? referenceMatches(
+                  points,
+                  transaction.completed.leaveMessageId,
+                  transaction.completed.leaveCallId,
+              )
+            : []
+        const leavePosition = leavePositions.at(-1)
+        if (transaction.completed) {
+            for (const position of entryPositions) {
+                boundaryEdits.set(position, {
+                    output: EMPTY_ENTRY_PLACEHOLDER,
+                    title: ENTRY_TITLE,
+                })
+            }
+            for (const position of leavePositions) {
+                boundaryEdits.set(position, {
+                    output: transaction.completed.receipt,
+                    title: LEAVE_TITLE,
+                })
             }
         }
+        if (!transaction.completed && entryPosition !== undefined) continue
+
+        let start: number | undefined
+        if (entryPosition !== undefined) {
+            start = endOfMessage(entryPosition)
+        } else {
+            const sourceIds = new Set(transaction.sourceMessageIds)
+            let sourceIndex = -1
+            messages.forEach((candidate, index) => {
+                if (sourceIds.has(candidate.info.id)) sourceIndex = index
+            })
+            if (sourceIndex >= 0) start = messageEnds[sourceIndex]
+        }
+        if (start === undefined) continue
+
+        if (leavePosition !== undefined) {
+            const leaveMessageIndex = points[leavePosition].messageIndex
+            const retained = new Set(
+                leavePositions.filter(
+                    (position) => points[position].messageIndex === leaveMessageIndex,
+                ),
+            )
+            for (let position = start + 1; position <= endOfMessage(leavePosition); position++) {
+                if (!retained.has(position)) hidden.add(position)
+            }
+            continue
+        }
+
+        let operationMaximum: number | undefined
+        for (const record of transaction.operationRecords) {
+            for (const position of referenceMatches(points, record.messageId, record.callId)) {
+                if (operationMaximum === undefined || position > operationMaximum)
+                    operationMaximum = position
+            }
+        }
+        if (operationMaximum !== undefined) {
+            for (let position = start + 1; position < operationMaximum; position++)
+                hidden.add(position)
+        }
     }
-    position = 0
+    let position = 0
     const result: WithParts[] = []
     for (const message of messages) {
         const parts = message.parts.flatMap((part) => {
@@ -271,15 +430,14 @@ test("completed transaction hides its interior and rewrites both boundaries", ()
         message("m5", [textPart("m5", "after", "after")]),
     ]
     const transactions = [
-        completed("m4", "leave", "leave-part", "receipt", {
+        completed("m4", "leave", "receipt", {
             entryMessageId: "m1",
             entryCallId: "entry",
-            entryPartId: "entry-part",
-            sourceParts: [{ messageId: "m0", partId: "before" }],
+            sourceMessageIds: ["m0"],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -301,12 +459,11 @@ test("incomplete transaction leaves its working history visible", () => {
         transaction({
             entryMessageId: "m1",
             entryCallId: "entry",
-            entryPartId: "entry-part",
-            sourceParts: [{ messageId: "m0", partId: "before" }],
+            sourceMessageIds: ["m0"],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(result, messages)
 })
@@ -320,12 +477,12 @@ test("absent entry falls back from source through the last matching operation", 
     ]
     const transactions = [
         transaction({
-            sourceParts: [{ messageId: "m0", partId: "source" }],
-            operationRecords: [operation("m2", "op-part", "op")],
+            sourceMessageIds: ["m0"],
+            operationRecords: [operation("m2", "op")],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -341,12 +498,12 @@ test("absent entry fallback ends at a present leave boundary", () => {
         message("m3", [textPart("m3", "after", "after")]),
     ]
     const transactions = [
-        completed("m2", "leave", "leave-part", "receipt", {
-            sourceParts: [{ messageId: "m0", partId: "source" }],
+        completed("m2", "leave", "receipt", {
+            sourceMessageIds: ["m0"],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -366,19 +523,17 @@ test("overlapping transaction ranges form a union", () => {
         message("m6", [toolPart("m6", "leave-2", "leave-2")]),
     ]
     const transactions = [
-        completed("m4", "leave-1", "leave-1", "receipt-1", {
+        completed("m4", "leave-1", "receipt-1", {
             entryMessageId: "m0",
             entryCallId: "entry-1",
-            entryPartId: "entry-1",
         }),
-        completed("m6", "leave-2", "leave-2", "receipt-2", {
+        completed("m6", "leave-2", "receipt-2", {
             entryMessageId: "m2",
             entryCallId: "entry-2",
-            entryPartId: "entry-2",
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -393,15 +548,14 @@ test("duplicate identities keep every matching edit and use the last boundary", 
         message("done", [toolPart("done", "leave-part", "leave")]),
     ]
     const transactions = [
-        completed("done", "leave", "leave-part", "receipt", {
+        completed("done", "leave", "receipt", {
             entryMessageId: "dup",
             entryCallId: "entry",
-            entryPartId: "dup-part",
-            sourceParts: [{ messageId: "dup", partId: "dup-part" }],
+            sourceMessageIds: ["dup"],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -412,52 +566,130 @@ test("duplicate identities keep every matching edit and use the last boundary", 
     assert.equal(outputOf(result[2].parts[0]), "receipt")
 })
 
-test("null part IDs are wildcards while non-null part IDs match exactly", () => {
+test("boundary matching ignores native part IDs and matches every recorded call", () => {
     const messages = [
         message("m0", [toolPart("m0", "first", "shared"), toolPart("m0", "second", "shared")]),
         message("m1", [textPart("m1", "inside", "inside")]),
         message("m2", [toolPart("m2", "leave-part", "leave")]),
     ]
 
-    const wildcard = projectHousekeepingHistory(messages, [
-        completed("m2", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("m2", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "shared",
-            entryPartId: null,
         }),
     ])
-    assert.deepEqual(
-        wildcard.map((item) => item.info.id),
-        ["m0", "m2"],
-    )
-    assert.equal(wildcard[0].parts.length, 2)
-    assert.equal(outputOf(wildcard[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
-    assert.equal(outputOf(wildcard[0].parts[1]), EMPTY_ENTRY_PLACEHOLDER)
 
-    const exact = projectHousekeepingHistory(messages, [
-        completed("m2", "leave", "leave-part", "receipt", {
-            entryMessageId: "m0",
-            entryCallId: "shared",
-            entryPartId: "first",
-        }),
-    ])
     assert.deepEqual(
-        exact.map((item) => item.info.id),
+        result.map((item) => item.info.id),
         ["m0", "m2"],
     )
-    assert.equal(exact[0].parts.length, 1)
-    assert.equal(outputOf(exact[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+    assert.equal(result[0].parts.length, 2)
+    assert.equal(outputOf(result[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+    assert.equal(outputOf(result[0].parts[1]), EMPTY_ENTRY_PLACEHOLDER)
 })
 
-test("operation fallback ignores non-tool parts but matches tool parts by identity", () => {
+test("recorded boundaries still match after native part IDs change", () => {
+    const transaction = completed("m2", "leave", "receipt", {
+        entryMessageId: "m0",
+        entryCallId: "shared",
+    })
+    const build = (entryPart: string, leavePart: string) => [
+        message("m0", [toolPart("m0", entryPart, "shared")]),
+        message("m1", [textPart("m1", "inside", "inside")]),
+        message("m2", [toolPart("m2", leavePart, "leave")]),
+    ]
+
+    for (const messages of [build("old-entry", "old-leave"), build("new-entry", "new-leave")]) {
+        const result = project(messages, [transaction])
+        assert.deepEqual(
+            result.map((item) => item.info.id),
+            ["m0", "m2"],
+        )
+        assert.equal(outputOf(result[0].parts[0]), EMPTY_ENTRY_PLACEHOLDER)
+        assert.equal(outputOf(result[1].parts[0]), "receipt")
+    }
+})
+
+test("entry-message ordinary content survives either order of the parallel tool calls", () => {
+    for (const parts of [
+        [
+            textPart("m0", "before-entry", "before entry"),
+            toolPart("m0", "entry-part", "entry"),
+            toolPart("m0", "read-part", "read", { tool: "read" }),
+        ],
+        [
+            textPart("m0", "before-entry", "before entry"),
+            toolPart("m0", "read-part", "read", { tool: "read" }),
+            toolPart("m0", "entry-part", "entry"),
+        ],
+    ]) {
+        const messages = [
+            message("m0", parts),
+            message("m2", [toolPart("m2", "leave-part", "leave")]),
+        ]
+        const result = project(messages, [
+            completed("m2", "leave", "receipt", {
+                entryMessageId: "m0",
+                entryCallId: "entry",
+            }),
+        ])
+        assert.deepEqual(
+            result.map((item) => item.info.id),
+            ["m0", "m2"],
+        )
+        assert.equal(result[0].parts.length, parts.length)
+        assert.equal(
+            outputOf(result[0].parts.find((part) => part.id === "entry-part")),
+            EMPTY_ENTRY_PLACEHOLDER,
+        )
+    }
+})
+
+test("leave-message thinking and other calls are hidden regardless of sibling order", () => {
+    for (const parts of [
+        [
+            textPart("m2", "leave-thinking", "leave thinking"),
+            toolPart("m2", "leave-part", "leave"),
+            toolPart("m2", "post-part", "post", { tool: "read" }),
+        ],
+        [
+            textPart("m2", "leave-thinking", "leave thinking"),
+            toolPart("m2", "post-part", "post", { tool: "read" }),
+            toolPart("m2", "leave-part", "leave"),
+        ],
+    ]) {
+        const messages = [
+            message("m0", [toolPart("m0", "entry-part", "entry")]),
+            message("m2", parts),
+        ]
+        const result = project(messages, [
+            completed("m2", "leave", "receipt", {
+                entryMessageId: "m0",
+                entryCallId: "entry",
+            }),
+        ])
+        assert.deepEqual(
+            result.map((item) => item.info.id),
+            ["m0", "m2"],
+        )
+        assert.deepEqual(
+            result[1].parts.map((part) => part.id),
+            ["leave-part"],
+        )
+        assert.equal(outputOf(result[1].parts[0]), "receipt")
+    }
+})
+
+test("operation fallback ignores non-tool parts but matches tool parts by call identity", () => {
     const textOnly = [
         message("m0", [textPart("m0", "source", "source")]),
         message("m1", [textPart("m1", "op-part", "text", { callID: "op" })]),
     ]
-    const textResult = projectHousekeepingHistory(textOnly, [
+    const textResult = project(textOnly, [
         transaction({
-            sourceParts: [{ messageId: "m0", partId: "source" }],
-            operationRecords: [operation("m1", "op-part", "op")],
+            sourceMessageIds: ["m0"],
+            operationRecords: [operation("m1", "op")],
         }),
     ])
     assert.deepEqual(
@@ -468,12 +700,12 @@ test("operation fallback ignores non-tool parts but matches tool parts by identi
     const toolMatch = [
         message("m0", [textPart("m0", "source", "source")]),
         message("m1", [textPart("m1", "hidden", "hidden")]),
-        message("m2", [toolPart("m2", "op-part", "op", { tool: "bash" })]),
+        message("m2", [toolPart("m2", "renamed-part", "op", { tool: "bash" })]),
     ]
-    const toolResult = projectHousekeepingHistory(toolMatch, [
+    const toolResult = project(toolMatch, [
         transaction({
-            sourceParts: [{ messageId: "m0", partId: "source" }],
-            operationRecords: [operation("m2", "op-part", "op", "command:unrelated")],
+            sourceMessageIds: ["m0"],
+            operationRecords: [operation("m2", "op", "command:unrelated")],
         }),
     ])
     assert.deepEqual(
@@ -488,30 +720,28 @@ test("later transactions and leave edits overwrite earlier boundary edits", () =
         message("m1", [toolPart("m1", "first-leave", "first-leave")]),
     ]
     const transactions = [
-        completed("m1", "first-leave", "first-leave", "first-receipt", {
+        completed("m1", "first-leave", "first-receipt", {
             id: "first",
             entryMessageId: "m0",
             entryCallId: "shared",
-            entryPartId: "shared-part",
         }),
-        completed("m0", "shared", "shared-part", "second-receipt", {
+        completed("m0", "shared", "second-receipt", {
             id: "second",
             entryMessageId: "missing",
             entryCallId: "missing",
-            entryPartId: null,
+            sourceMessageIds: [],
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.equal(outputOf(result[0].parts[0]), "second-receipt")
     assert.equal(titleOf(result[0].parts[0]), LEAVE_TITLE)
 
-    const samePosition = projectHousekeepingHistory(messages.slice(0, 1), [
-        completed("m0", "shared", "shared-part", "leave-wins", {
+    const samePosition = project(messages.slice(0, 1), [
+        completed("m0", "shared", "leave-wins", {
             entryMessageId: "m0",
             entryCallId: "shared",
-            entryPartId: "shared-part",
         }),
     ])
     assert.equal(outputOf(samePosition[0].parts[0]), "leave-wins")
@@ -525,14 +755,13 @@ test("non-completed boundary tools keep their original output", () => {
         message("m1", [toolPart("m1", "leave-part", "leave", { output: "raw-leave" })]),
     ]
     const transactions = [
-        completed("m1", "leave", "leave-part", "receipt", {
+        completed("m1", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.equal(outputOf(result[0].parts[0]), undefined)
     assert.equal(
@@ -551,14 +780,13 @@ test("empty messages and messages losing every part are dropped", () => {
         message("m3", [toolPart("m3", "leave-part", "leave")]),
     ]
     const transactions = [
-        completed("m3", "leave", "leave-part", "receipt", {
+        completed("m3", "leave", "receipt", {
             entryMessageId: "m1",
             entryCallId: "entry",
-            entryPartId: "entry-part",
         }),
     ]
 
-    const result = projectHousekeepingHistory(messages, transactions)
+    const result = project(messages, transactions)
 
     assert.deepEqual(
         result.map((item) => item.info.id),
@@ -579,15 +807,14 @@ test("input messages and parts are not mutated", () => {
         message("m3", [toolPart("m3", "leave-part", "leave")]),
     ]
     const transactions = [
-        completed("m3", "leave", "leave-part", "receipt", {
+        completed("m3", "leave", "receipt", {
             entryMessageId: "m1",
             entryCallId: "entry",
-            entryPartId: "entry-part",
         }),
     ]
     const snapshot = structuredClone(messages)
 
-    projectHousekeepingHistory(messages, transactions)
+    project(messages, transactions)
 
     assert.deepEqual(messages, snapshot)
 })
@@ -599,20 +826,19 @@ test("completed entry placeholder counts mixed operations in fixed category orde
         message("m2", [toolPart("m2", "leave-part", "leave")]),
     ]
     const operationRecords = [
-        operation("m1", null, "memo-1", "edit_memo"),
-        operation("m1", null, "compress-1", "compress"),
-        operation("m1", null, "toggle-1", "toggle_summary_version"),
-        operation("m1", null, "memo-2", "command:memo"),
-        operation("m1", null, "compress-2", "compress"),
-        operation("m1", null, "memo-3", "command:memo-file"),
-        operation("m1", null, "memo-4", "edit_memo"),
+        operation("m1", "memo-1", "edit_memo"),
+        operation("m1", "compress-1", "compress"),
+        operation("m1", "toggle-1", "toggle_summary_version"),
+        operation("m1", "memo-2", "command:memo"),
+        operation("m1", "compress-2", "compress"),
+        operation("m1", "memo-3", "command:memo-file"),
+        operation("m1", "memo-4", "edit_memo"),
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("m2", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("m2", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
             operationRecords,
         }),
     ])
@@ -630,23 +856,22 @@ test("completed entry placeholder inflects counts and omits zero categories", ()
         message("m1", [toolPart("m1", "leave-part", "leave")]),
     ]
     const operationRecords = [
-        operation("m0", null, "edit-1", "edit_summary"),
-        operation("m0", null, "edit-2", "append_summary"),
-        operation("m0", null, "edit-3", "rewrite_summary"),
-        operation("m0", null, "edit-4", "command:edit"),
-        operation("m0", null, "edit-5", "command:edit-file"),
-        operation("m0", null, "expand-1", "expand_block"),
-        operation("m0", null, "recompress-1", "command:recompress"),
-        operation("m0", null, "recompress-2", "command:recompress"),
-        operation("m0", null, "sweep-1", "command:sweep"),
-        operation("m0", null, "decompress-1", "command:decompress"),
+        operation("m0", "edit-1", "edit_summary"),
+        operation("m0", "edit-2", "append_summary"),
+        operation("m0", "edit-3", "rewrite_summary"),
+        operation("m0", "edit-4", "command:edit"),
+        operation("m0", "edit-5", "command:edit-file"),
+        operation("m0", "expand-1", "expand_block"),
+        operation("m0", "recompress-1", "command:recompress"),
+        operation("m0", "recompress-2", "command:recompress"),
+        operation("m0", "sweep-1", "command:sweep"),
+        operation("m0", "decompress-1", "command:decompress"),
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("m1", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("m1", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
             operationRecords,
         }),
     ])
@@ -663,20 +888,19 @@ test("completed entry placeholder ignores reads and unknown operations", () => {
         message("m1", [toolPart("m1", "leave-part", "leave")]),
     ]
     const operationRecords = [
-        operation("m0", null, "read-1", "read"),
-        operation("m0", null, "read-2", "read_memo"),
-        operation("m0", null, "read-3", "fetch_summary_versions"),
-        operation("m0", null, "read-4", "recall_compressed"),
-        operation("m0", null, "unknown-1", "bash"),
-        operation("m0", null, "unknown-2", "command:test"),
-        operation("m0", null, "unknown-3", "command:unrelated"),
+        operation("m0", "read-1", "read"),
+        operation("m0", "read-2", "read_memo"),
+        operation("m0", "read-3", "fetch_summary_versions"),
+        operation("m0", "read-4", "recall_compressed"),
+        operation("m0", "unknown-1", "bash"),
+        operation("m0", "unknown-2", "command:test"),
+        operation("m0", "unknown-3", "command:unrelated"),
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("m1", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("m1", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
             operationRecords,
         }),
     ])
@@ -689,10 +913,9 @@ test("completed entry placeholder never echoes operation inputs, results, or cal
         message("m0", [toolPart("m0", "entry-part", "entry")]),
         message("m1", [toolPart("m1", "leave-part", "leave")]),
     ]
-    const operationRecords: HousekeepingOperation[] = [
+    const operationRecords: TestOperation[] = [
         {
             messageId: "m0",
-            partId: null,
             callId: "call-secret-identifier",
             tool: "compress",
             input: { path: "INPUT_SECRET_PATH", text: "INPUT_SECRET_TEXT" },
@@ -700,11 +923,10 @@ test("completed entry placeholder never echoes operation inputs, results, or cal
         },
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("m1", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("m1", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
             operationRecords,
         }),
     ])
@@ -726,12 +948,11 @@ test("completed placeholder leaves the receipt and incomplete entries untouched"
         message("m0", [toolPart("m0", "entry-part", "entry")]),
         message("m1", [toolPart("m1", "leave-part", "leave", { output: "raw-leave" })]),
     ]
-    const completedResult = projectHousekeepingHistory(completedMessages, [
-        completed("m1", "leave", "leave-part", "receipt", {
+    const completedResult = project(completedMessages, [
+        completed("m1", "leave", "receipt", {
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
-            operationRecords: [operation("m0", null, "compress-1", "compress")],
+            operationRecords: [operation("m0", "compress-1", "compress")],
         }),
     ])
     assert.equal(outputOf(completedResult[0].parts[0]), "1 compression. details truncated.")
@@ -742,12 +963,11 @@ test("completed placeholder leaves the receipt and incomplete entries untouched"
         message("m0", [toolPart("m0", "entry-part", "entry", { output: "raw-entry" })]),
         message("m1", [textPart("m1", "inside", "inside")]),
     ]
-    const incompleteResult = projectHousekeepingHistory(incompleteMessages, [
+    const incompleteResult = project(incompleteMessages, [
         transaction({
             entryMessageId: "m0",
             entryCallId: "entry",
-            entryPartId: "entry-part",
-            operationRecords: [operation("m0", null, "compress-1", "compress")],
+            operationRecords: [operation("m0", "compress-1", "compress")],
         }),
     ])
     assert.deepEqual(incompleteResult, incompleteMessages)
@@ -760,15 +980,14 @@ test("duplicate entry boundaries share one counted placeholder", () => {
         message("done", [toolPart("done", "leave-part", "leave")]),
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("done", "leave", "leave-part", "receipt", {
+    const result = project(messages, [
+        completed("done", "leave", "receipt", {
             entryMessageId: "dup",
             entryCallId: "entry",
-            entryPartId: "dup-part",
             operationRecords: [
-                operation("dup", "dup-part", "compress-1", "compress"),
-                operation("dup", "dup-part", "compress-2", "compress"),
-                operation("dup", "dup-part", "memo-1", "edit_memo"),
+                operation("dup", "compress-1", "compress"),
+                operation("dup", "compress-2", "compress"),
+                operation("dup", "memo-1", "edit_memo"),
             ],
         }),
     ])
@@ -792,20 +1011,18 @@ test("completed entries count only their own transaction operations", () => {
         message("m5", [toolPart("m5", "leave-2", "leave-2")]),
     ]
 
-    const result = projectHousekeepingHistory(messages, [
-        completed("m2", "leave-1", "leave-1", "receipt-1", {
+    const result = project(messages, [
+        completed("m2", "leave-1", "receipt-1", {
             id: "first",
             entryMessageId: "m0",
             entryCallId: "entry-1",
-            entryPartId: "entry-1",
-            operationRecords: [operation("m1", null, "compress-1", "compress")],
+            operationRecords: [operation("m1", "compress-1", "compress")],
         }),
-        completed("m5", "leave-2", "leave-2", "receipt-2", {
+        completed("m5", "leave-2", "receipt-2", {
             id: "second",
             entryMessageId: "m3",
             entryCallId: "entry-2",
-            entryPartId: "entry-2",
-            operationRecords: [operation("m4", null, "sweep-1", "command:sweep")],
+            operationRecords: [operation("m4", "sweep-1", "command:sweep")],
         }),
     ])
 
@@ -829,7 +1046,7 @@ function pick<T>(random: () => number, values: T[]): T {
 
 function generateCase(seed: number): {
     messages: WithParts[]
-    transactions: HousekeepingTransaction[]
+    transactions: TestTransaction[]
 } {
     const random = randomGenerator(seed)
     const messageCount = 1 + Math.floor(random() * 4)
@@ -868,53 +1085,47 @@ function generateCase(seed: number): {
         }
         messages.push(message(id, parts))
     }
-    const allPartIds = [...partIds, "missing-part"]
+    const allMessageIds = [...new Set([...messages.map((item) => item.info.id), "missing-message"])]
     const allCallIds = [...callIds, "missing-call"]
-    const sourceOrEntryMessage = () =>
+    const pickDescriptor = () =>
         descriptors.length && random() < 0.85
-            ? pick(random, descriptors).messageId
-            : pick(random, [...messages.map((item) => item.info.id), "missing-message"])
-    const sourceOrPartId = () =>
-        descriptors.length && random() < 0.85
-            ? pick(random, descriptors).partId
-            : pick(random, allPartIds)
-    const sourceOrCallId = () =>
-        descriptors.length && random() < 0.85
-            ? pick(random, descriptors).callId
-            : pick(random, allCallIds)
+            ? pick(random, descriptors)
+            : {
+                  messageId: pick(random, allMessageIds),
+                  partId: pick(random, partIds),
+                  callId: pick(random, allCallIds),
+              }
     const transactionCount = Math.floor(random() * 4)
-    const transactions: HousekeepingTransaction[] = []
+    const transactions: TestTransaction[] = []
     for (let index = 0; index < transactionCount; index++) {
-        const entryMessageId = sourceOrEntryMessage()
-        const entryCallId = sourceOrCallId()
-        const entryPartId = random() < 0.5 ? null : sourceOrPartId()
-        const sourceParts = Array.from({ length: Math.floor(random() * 4) }, () => ({
-            messageId: sourceOrEntryMessage(),
-            partId: sourceOrPartId(),
-        }))
-        const operationRecords = Array.from({ length: Math.floor(random() * 3) }, () =>
-            operation(
-                sourceOrEntryMessage(),
-                random() < 0.2 ? null : sourceOrPartId(),
-                sourceOrCallId(),
-                pick(random, ["read", "bash", "command:test"]),
+        const entry = pickDescriptor()
+        const sourceMessageIds = [
+            ...new Set(
+                Array.from({ length: Math.floor(random() * 4) }, () => pick(random, allMessageIds)),
             ),
-        )
+        ]
+        const operationRecords = Array.from({ length: Math.floor(random() * 3) }, () => {
+            const operationEntry = pickDescriptor()
+            return operation(
+                operationEntry.messageId,
+                operationEntry.callId,
+                pick(random, ["read", "bash", "command:test"]),
+            )
+        })
         const isCompleted = random() < 0.55
+        const leave = pickDescriptor()
         transactions.push(
             transaction({
                 id: `transaction-${index}`,
-                entryMessageId,
-                entryCallId,
-                entryPartId,
-                sourceParts,
+                entryMessageId: entry.messageId,
+                entryCallId: entry.callId,
+                sourceMessageIds,
                 operationRecords,
                 ...(isCompleted
                     ? {
                           completed: {
-                              leaveMessageId: sourceOrEntryMessage(),
-                              leaveCallId: sourceOrCallId(),
-                              leavePartId: random() < 0.5 ? null : sourceOrPartId(),
+                              leaveMessageId: leave.messageId,
+                              leaveCallId: leave.callId,
                               receipt: `receipt-${index}`,
                               commitRevision: 1,
                               committedDraftRef: snapshotRef("committed-snapshot"),
@@ -932,7 +1143,7 @@ test("matches the frozen reference across generated small cases", () => {
         const { messages, transactions } = generateCase(seed)
         const before = structuredClone(messages)
 
-        const actual = projectHousekeepingHistory(messages, transactions)
+        const actual = project(messages, transactions)
         const expected = referenceProject(messages, transactions)
 
         assert.deepEqual(actual, expected, `seed ${seed}`)

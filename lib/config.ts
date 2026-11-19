@@ -752,12 +752,16 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
     return errors
 }
 
+type ConfigContext = Pick<PluginInput, "directory"> & Partial<Pick<PluginInput, "client">>
+
 function showConfigWarnings(
-    ctx: PluginInput,
+    ctx: ConfigContext,
     configPath: string,
     configData: Record<string, any>,
     isProject: boolean,
 ): void {
+    const client = ctx.client
+    if (!client) return
     const invalidKeys = getInvalidConfigKeys(configData)
     const typeErrors = validateConfigTypes(configData)
 
@@ -785,7 +789,7 @@ function showConfigWarnings(
 
     setTimeout(() => {
         try {
-            ctx.client.tui.showToast({
+            client.tui.showToast({
                 body: {
                     title: `DCP: ${configType} warning`,
                     message: `${configPath}\n${messages.join("\n")}`,
@@ -875,7 +879,7 @@ function findOpencodeDir(startDir: string): string | null {
     return null
 }
 
-function getConfigPaths(ctx?: PluginInput): {
+function getConfigPaths(ctx?: ConfigContext): {
     global: string | null
     configDir: string | null
     project: string | null
@@ -1109,10 +1113,12 @@ function mergeLayer(config: PluginConfig, data: Record<string, any>): PluginConf
     }
 }
 
-function scheduleParseWarning(ctx: PluginInput, title: string, message: string): void {
+function scheduleParseWarning(ctx: ConfigContext, title: string, message: string): void {
+    const client = ctx.client
+    if (!client) return
     setTimeout(() => {
         try {
-            ctx.client.tui.showToast({
+            client.tui.showToast({
                 body: {
                     title,
                     message,
@@ -1124,7 +1130,7 @@ function scheduleParseWarning(ctx: PluginInput, title: string, message: string):
     }, 7000)
 }
 
-export function getConfig(ctx: PluginInput): PluginConfig {
+export function getConfig(ctx: ConfigContext): PluginConfig {
     let config = deepCloneConfig(defaultConfig)
     const configPaths = getConfigPaths(ctx)
 

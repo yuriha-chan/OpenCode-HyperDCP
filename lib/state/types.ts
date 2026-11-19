@@ -163,15 +163,9 @@ export interface HousekeepingDeltaRef {
 
 export type HousekeepingDraftRef = HousekeepingSnapshotRef | HousekeepingDeltaRef
 
-export interface HousekeepingSourcePart {
-    messageId: string
-    partId: string
-}
-
 export interface HousekeepingOperation {
     callId: string
     messageId: string
-    partId: string | null
     tool: string
     input: unknown
     result: string
@@ -185,10 +179,9 @@ export interface HousekeepingTransaction {
     id: string
     sessionId: string
     entryMessageId: string
-    entryPartId: string | null
     entryCallId: string
     entryCreatedAt: number
-    sourceParts: HousekeepingSourcePart[]
+    sourceMessageIds: string[]
     baseRevision: number
     baseRef: HousekeepingSnapshotRef
     draftRef: HousekeepingDraftRef
@@ -208,7 +201,6 @@ export interface HousekeepingTransaction {
     reverted?: boolean
     completed?: {
         leaveMessageId: string
-        leavePartId: string | null
         leaveCallId: string
         receipt: string
         commitRevision: number

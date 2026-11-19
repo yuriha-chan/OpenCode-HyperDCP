@@ -14,7 +14,6 @@ import { HOUSEKEEPING_DRAFT_VIEW, withSessionCoordinator } from "./coordinator"
 import { ensureSessionInitialized } from "../state"
 import { findLastCompactionTimestamp, resetOnCompaction } from "../state/utils"
 import { reconcileHousekeepingHistory } from "./history"
-import { findToolCallPart } from "./history"
 import { buildPriorityMap } from "../messages/priority"
 import {
     buildCompressedBlockGuidance,
@@ -121,7 +120,6 @@ export async function runHousekeepingMutation<T>(
             const record = {
                 callId,
                 messageId: toolContext.messageID,
-                partId: findToolCallPart(messages, toolContext.messageID, callId)?.partId ?? null,
                 tool: toolName,
                 input: structuredClone(input),
                 result: typeof result === "string" ? result : "",
@@ -218,7 +216,6 @@ export async function runHousekeepingCommandMutation<T>(
         const record = {
             callId,
             messageId,
-            partId: null,
             tool: `command:${label}`,
             input: structuredClone(input),
             result: typeof result === "string" ? result : "",

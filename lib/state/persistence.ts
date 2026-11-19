@@ -86,16 +86,21 @@ function serializeTransaction(transaction: HousekeepingTransaction): Record<stri
         id: transaction.id,
         sessionId: transaction.sessionId,
         entryMessageId: transaction.entryMessageId,
-        entryPartId: transaction.entryPartId,
         entryCallId: transaction.entryCallId,
         entryCreatedAt: transaction.entryCreatedAt,
-        sourceParts: transaction.sourceParts,
+        sourceMessageIds: transaction.sourceMessageIds,
         baseRevision: transaction.baseRevision,
         baseRef: transaction.baseRef,
         draftRef: transaction.draftRef,
         operations: transaction.operations,
         operationResults: transaction.operationResults,
-        operationRecords: transaction.operationRecords,
+        operationRecords: transaction.operationRecords.map((record) => ({
+            callId: record.callId,
+            messageId: record.messageId,
+            tool: record.tool,
+            input: record.input,
+            result: record.result,
+        })),
         entryGuidance: transaction.entryGuidance,
         notifications: transaction.notifications,
         batchTopic: transaction.batchTopic,
@@ -105,7 +110,6 @@ function serializeTransaction(transaction: HousekeepingTransaction): Record<stri
         completed: transaction.completed
             ? {
                   leaveMessageId: transaction.completed.leaveMessageId,
-                  leavePartId: transaction.completed.leavePartId,
                   leaveCallId: transaction.completed.leaveCallId,
                   receipt: transaction.completed.receipt,
                   commitRevision: transaction.completed.commitRevision,
@@ -177,20 +181,28 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
         typeof value.entryCallId !== "string"
     )
         invalidTransaction("identity fields are incomplete.")
-    if (value.entryPartId !== null && typeof value.entryPartId !== "string")
-        invalidTransaction("entryPartId is not a string or null.")
     if (typeof value.entryCreatedAt !== "number")
         invalidTransaction("entryCreatedAt is not a number.")
-    if (
-        !Array.isArray(value.sourceParts) ||
-        !value.sourceParts.every(
-            (part) =>
-                isRecord(part) &&
-                typeof part.messageId === "string" &&
-                typeof part.partId === "string",
+    let sourceMessageIds: string[]
+    if (value.sourceMessageIds !== undefined) {
+        if (
+            !Array.isArray(value.sourceMessageIds) ||
+            !value.sourceMessageIds.every((messageId) => typeof messageId === "string")
         )
-    )
-        invalidTransaction("sourceParts is malformed.")
+            invalidTransaction("sourceMessageIds is malformed.")
+        sourceMessageIds = [...value.sourceMessageIds]
+    } else {
+        if (
+            !Array.isArray(value.sourceParts) ||
+            !value.sourceParts.every(
+                (part) => isRecord(part) && typeof part.messageId === "string",
+            )
+        )
+            invalidTransaction("sourceParts is malformed.")
+        sourceMessageIds = [
+            ...new Set(value.sourceParts.map((part) => part.messageId as string)),
+        ]
+    }
     if (
         !Array.isArray(value.operationOrder) ||
         !value.operationOrder.every((id) => typeof id === "string")
@@ -224,7 +236,6 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
                 isRecord(record) &&
                 typeof record.callId === "string" &&
                 typeof record.messageId === "string" &&
-                (record.partId === null || typeof record.partId === "string") &&
                 typeof record.tool === "string" &&
                 typeof record.result === "string",
         )
@@ -236,8 +247,6 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
         if (
             !isRecord(value.completed) ||
             typeof value.completed.leaveMessageId !== "string" ||
-            (value.completed.leavePartId !== null &&
-                typeof value.completed.leavePartId !== "string") ||
             typeof value.completed.leaveCallId !== "string" ||
             typeof value.completed.receipt !== "string" ||
             typeof value.completed.commitRevision !== "number"
@@ -245,7 +254,6 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
             invalidTransaction("completed marker is malformed.")
         completed = {
             leaveMessageId: value.completed.leaveMessageId,
-            leavePartId: value.completed.leavePartId,
             leaveCallId: value.completed.leaveCallId,
             receipt: value.completed.receipt,
             commitRevision: value.completed.commitRevision,
@@ -260,16 +268,21 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
         id: value.id,
         sessionId: value.sessionId,
         entryMessageId: value.entryMessageId,
-        entryPartId: value.entryPartId,
         entryCallId: value.entryCallId,
         entryCreatedAt: value.entryCreatedAt,
-        sourceParts: value.sourceParts as HousekeepingTransaction["sourceParts"],
+        sourceMessageIds,
         baseRevision: value.baseRevision,
         baseRef,
         draftRef,
         operations: value.operations as Record<string, string>,
         operationResults: value.operationResults as HousekeepingTransaction["operationResults"],
-        operationRecords: value.operationRecords as HousekeepingTransaction["operationRecords"],
+        operationRecords: (value.operationRecords as Record<string, unknown>[]).map((record) => ({
+            callId: record.callId as string,
+            messageId: record.messageId as string,
+            tool: record.tool as string,
+            input: record.input,
+            result: record.result as string,
+        })),
         entryGuidance: typeof value.entryGuidance === "string" ? value.entryGuidance : undefined,
         notifications: Array.isArray(value.notifications)
             ? (value.notifications as HousekeepingTransaction["notifications"])

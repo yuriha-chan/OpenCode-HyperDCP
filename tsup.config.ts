@@ -34,7 +34,7 @@ const solidTransformPlugin = {
 
 export default defineConfig([
     {
-        entry: ["index.ts"],
+        entry: ["index.ts", "server.ts"],
         format: ["esm"],
         dts: false,
         clean: true,

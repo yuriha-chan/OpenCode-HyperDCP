@@ -13,12 +13,22 @@ const builtinNames = new Set([
     ...builtinModules.map((name) => name.replace(/^node:/, "")),
 ])
 
-const requiredRepoFiles = ["dist/index.js", "dist/index.d.ts", "dist/tui.js", "README.md", "LICENSE"]
+const requiredRepoFiles = [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/server.js",
+    "dist/server.d.ts",
+    "dist/tui.js",
+    "README.md",
+    "LICENSE",
+]
 
 const requiredTarballFiles = [
     "package.json",
     "dist/index.js",
     "dist/index.d.ts",
+    "dist/server.js",
+    "dist/server.d.ts",
     "docs/screenshots/dcp-blocks-list.png",
     "README.md",
     "LICENSE",
@@ -64,8 +74,12 @@ function assertPackageJsonShape() {
         fail("expected package.json exports['.'].import to be './dist/index.js'")
     }
 
-    if (pkg.exports?.["./server"]?.import !== "./dist/index.js") {
-        fail("expected package.json exports['./server'].import to be './dist/index.js'")
+    if (pkg.exports?.["./server"]?.import !== "./dist/server.js") {
+        fail("expected package.json exports['./server'].import to be './dist/server.js'")
+    }
+
+    if (pkg.exports?.["./server"]?.types !== "./dist/server.d.ts") {
+        fail("expected package.json exports['./server'].types to be './dist/server.d.ts'")
     }
 
     const files = Array.isArray(pkg.files) ? pkg.files : []
@@ -164,7 +178,7 @@ function packageLooksCommonJs(pkg) {
 }
 
 function validateRuntimeImportGraph() {
-    const pending = [path.join(root, "index.ts")]
+    const pending = [path.join(root, "index.ts"), path.join(root, "server.ts")]
     const seen = new Set()
 
     while (pending.length > 0) {

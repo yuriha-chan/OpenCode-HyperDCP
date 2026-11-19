@@ -1,7 +1,6 @@
 import type {
     HousekeepingDraft,
     HousekeepingDraftRef,
-    HousekeepingSourcePart,
     HousekeepingTransaction,
     SessionState,
     WithParts,
@@ -66,41 +65,38 @@ function formatOperationCounts(transaction: HousekeepingTransaction): string {
     return `${summary ? `${summary}. ` : ""}details truncated.`
 }
 
-export function captureEligibleSourceParts(
+export function captureEligibleSourceMessages(
     messages: WithParts[],
     entryMessageId: string,
     entryCallId: string,
     transactions: HousekeepingTransaction[],
-): HousekeepingSourcePart[] {
+): string[] {
     const projected = projectHousekeepingHistory(messages, transactions)
-    const source: HousekeepingSourcePart[] = []
+    const sourceMessageIds: string[] = []
+    const seen = new Set<string>()
     for (const message of projected) {
-        for (const part of message.parts) {
-            if (
-                message.info.id === entryMessageId &&
-                part.type === "tool" &&
-                part.callID === entryCallId
-            ) {
-                return source
-            }
-            if (part.type === "tool" && HOUSEKEEPING_TOOL_NAMES.has(part.tool)) continue
-            if (part.id) source.push({ messageId: message.info.id, partId: part.id })
+        if (!seen.has(message.info.id)) {
+            seen.add(message.info.id)
+            sourceMessageIds.push(message.info.id)
         }
+        const containsEntry = message.parts.some(
+            (part) => part.type === "tool" && part.callID === entryCallId,
+        )
+        if (message.info.id === entryMessageId && containsEntry) return sourceMessageIds
     }
-    return source
+    return sourceMessageIds
 }
 
 export function projectEligibleSourceMessages(
     messages: WithParts[],
-    transaction: Pick<HousekeepingTransaction, "sourceParts">,
+    transaction: Pick<HousekeepingTransaction, "sourceMessageIds">,
 ): WithParts[] {
-    const allowed = new Set(
-        transaction.sourceParts.map((part) => `${part.messageId}\0${part.partId}`),
-    )
+    const allowed = new Set(transaction.sourceMessageIds)
     return messages.flatMap((message) => {
+        if (!allowed.has(message.info.id)) return []
         const parts: WithParts["parts"] = []
         for (const part of message.parts) {
-            if (!allowed.has(`${message.info.id}\0${part.id}`)) continue
+            if (part.type === "tool" && isHousekeepingToolName(part.tool)) continue
             if (part.type === "text" || part.type === "reasoning") {
                 const text = part.text
                     .replace(/\n?<dcp-message-id\b[^>]*>[\s\S]*?<\/dcp-message-id>/g, "")
@@ -114,92 +110,71 @@ export function projectEligibleSourceMessages(
     })
 }
 
-export function findToolCallPart(
-    messages: WithParts[],
-    messageId: string,
-    callId: string,
-): { messageId: string; partId: string; callId: string } | null {
-    const message = messages.find((item) => item.info.id === messageId)
-    const part = message?.parts.find((item) => item.type === "tool" && item.callID === callId)
-    return part?.type === "tool" ? { messageId, partId: part.id, callId } : null
+export interface ProjectionPart {
+    messageId: string
+    messageIndex: number
+    callId?: string
 }
 
-type PartPositions = Map<string, Map<string | null, number[]>>
+function markHiddenInclusive(difference: Int32Array, start: number, end: number): void {
+    if (end < start) return
+    difference[start] += 1
+    difference[end + 1] -= 1
+}
 
-function appendPosition(
-    index: PartPositions,
-    messageId: string,
-    key: string | null,
-    position: number,
+function maskingSegments(
+    difference: Int32Array,
+    start: number,
+    end: number,
+    retained: ReadonlySet<number>,
 ): void {
-    let byKey = index.get(messageId)
-    if (!byKey) {
-        byKey = new Map()
-        index.set(messageId, byKey)
+    let segmentStart = start
+    for (const position of [...retained].sort((left, right) => left - right)) {
+        if (position < start || position > end) continue
+        if (position > segmentStart) markHiddenInclusive(difference, segmentStart, position - 1)
+        segmentStart = position + 1
     }
-    const positions = byKey.get(key)
-    if (positions) positions.push(position)
-    else byKey.set(key, [position])
+    markHiddenInclusive(difference, segmentStart, end)
 }
 
-function lastPosition(positions: number[] | undefined): number | undefined {
-    return positions?.[positions.length - 1]
-}
-
-function boundaryPositions(
-    partPositions: PartPositions,
-    toolCallPositions: PartPositions,
-    parts: WithParts["parts"],
-    messageId: string,
-    callId: string,
-    partId: string | null,
-): number[] {
-    if (partId === null) {
-        return toolCallPositions.get(messageId)?.get(callId) ?? []
-    }
-    const candidates = partPositions.get(messageId)?.get(partId) ?? []
-    return candidates.filter((position) => {
-        const part = parts[position]
-        return part.type === "tool" && part.callID === callId
-    })
-}
-
-function markHiddenInterval(difference: Int32Array, start: number, end: number): void {
-    if (end <= start + 1) return
-    difference[start + 1] += 1
-    difference[end] -= 1
-}
-
-export function projectHousekeepingHistory(
-    messages: WithParts[],
-    transactions: HousekeepingTransaction[],
-): WithParts[] {
-    const partPositions: PartPositions = new Map()
-    const toolCallPositions: PartPositions = new Map()
-    const parts: WithParts["parts"] = []
-    for (const message of messages) {
-        for (const part of message.parts) {
-            const position = parts.length
-            parts.push(part)
-            appendPosition(partPositions, message.info.id, part.id, position)
-            if (part.type === "tool") {
-                appendPosition(toolCallPositions, message.info.id, part.callID, position)
-            }
-        }
-    }
+export function planHousekeepingProjection(
+    parts: readonly ProjectionPart[],
+    transactions: readonly HousekeepingTransaction[],
+    messageIds: readonly string[],
+    messageEnds: readonly number[],
+) {
     const hidden = new Int32Array(parts.length + 1)
     const boundaryEdits = new Map<number, { output: string; title: string }>()
+    const callPositions = new Map<string, Map<string, number[]>>()
+    for (const [position, part] of parts.entries()) {
+        if (part.callId === undefined) continue
+        let calls = callPositions.get(part.messageId)
+        if (!calls) {
+            calls = new Map()
+            callPositions.set(part.messageId, calls)
+        }
+        const positions = calls.get(part.callId)
+        if (positions) positions.push(position)
+        else calls.set(part.callId, [position])
+    }
+    const matchingPositions = (messageId: string, callId: string): number[] =>
+        callPositions.get(messageId)?.get(callId) ?? []
+    const endOfMessage = (position: number): number => messageEnds[parts[position].messageIndex]
+
     for (const transaction of transactions) {
-        const entryPositions = boundaryPositions(
-            partPositions,
-            toolCallPositions,
-            parts,
+        const entryPositions = matchingPositions(
             transaction.entryMessageId,
             transaction.entryCallId,
-            transaction.entryPartId,
         )
-        const entryPosition = lastPosition(entryPositions)
-        if (transaction.completed && entryPositions?.length) {
+        const entryPosition = entryPositions.at(-1)
+        const leavePositions = transaction.completed
+            ? matchingPositions(
+                  transaction.completed.leaveMessageId,
+                  transaction.completed.leaveCallId,
+              )
+            : []
+        const leavePosition = leavePositions.at(-1)
+        if (transaction.completed) {
             const output = formatOperationCounts(transaction)
             for (const current of entryPositions) {
                 boundaryEdits.set(current, {
@@ -207,19 +182,6 @@ export function projectHousekeepingHistory(
                     title: "Housekeeping entry",
                 })
             }
-        }
-        let leavePositions: number[] | undefined
-        let leavePosition: number | undefined
-        if (transaction.completed) {
-            leavePositions = boundaryPositions(
-                partPositions,
-                toolCallPositions,
-                parts,
-                transaction.completed.leaveMessageId,
-                transaction.completed.leaveCallId,
-                transaction.completed.leavePartId,
-            )
-            leavePosition = lastPosition(leavePositions)
             for (const current of leavePositions) {
                 boundaryEdits.set(current, {
                     output: transaction.completed.receipt,
@@ -227,45 +189,82 @@ export function projectHousekeepingHistory(
                 })
             }
         }
-        let sourceBoundaryPosition: number | undefined
-        for (const source of transaction.sourceParts) {
-            const candidate = lastPosition(partPositions.get(source.messageId)?.get(source.partId))
-            if (
-                candidate !== undefined &&
-                (sourceBoundaryPosition === undefined || candidate > sourceBoundaryPosition)
-            ) {
-                sourceBoundaryPosition = candidate
-            }
+        if (!transaction.completed && entryPosition !== undefined) continue
+
+        let start: number | undefined
+        if (entryPosition !== undefined) {
+            start = endOfMessage(entryPosition)
+        } else {
+            const sourceIds = new Set(transaction.sourceMessageIds)
+            let sourceIndex = -1
+            messageIds.forEach((messageId, index) => {
+                if (sourceIds.has(messageId)) sourceIndex = index
+            })
+            if (sourceIndex >= 0) start = messageEnds[sourceIndex]
         }
+        if (start === undefined) continue
+
+        if (leavePosition !== undefined) {
+            const leaveMessageIndex = parts[leavePosition].messageIndex
+            const retained = new Set(
+                leavePositions.filter(
+                    (position) => parts[position].messageIndex === leaveMessageIndex,
+                ),
+            )
+            maskingSegments(hidden, start + 1, endOfMessage(leavePosition), retained)
+            continue
+        }
+
         let operationMaximum: number | undefined
         for (const operation of transaction.operationRecords) {
-            const positions = partPositions.get(operation.messageId)?.get(operation.partId)
-            if (!positions) continue
-            for (const current of positions) {
-                const part = parts[current]
-                if (part.type !== "tool" || part.callID !== operation.callId) continue
+            for (const current of matchingPositions(operation.messageId, operation.callId)) {
                 if (operationMaximum === undefined || current > operationMaximum) {
                     operationMaximum = current
                 }
             }
         }
-        if (entryPosition !== undefined && leavePosition !== undefined) {
-            markHiddenInterval(hidden, entryPosition, leavePosition)
-        } else if (entryPosition === undefined && sourceBoundaryPosition !== undefined) {
-            const end =
-                leavePosition ??
-                Math.max(sourceBoundaryPosition, operationMaximum ?? sourceBoundaryPosition)
-            markHiddenInterval(hidden, sourceBoundaryPosition, end)
+        if (operationMaximum !== undefined) {
+            markHiddenInclusive(hidden, start + 1, operationMaximum - 1)
         }
     }
-    let position = 0
     let hiddenDepth = 0
+    for (let position = 0; position < parts.length; position++) {
+        hiddenDepth += hidden[position]
+        hidden[position] = hiddenDepth
+    }
+    return { hidden, boundaryEdits }
+}
+
+export function projectHousekeepingHistory(
+    messages: WithParts[],
+    transactions: HousekeepingTransaction[],
+): WithParts[] {
+    const parts: ProjectionPart[] = []
+    const messageIds: string[] = []
+    const messageEnds: number[] = []
+    messages.forEach((message, messageIndex) => {
+        messageIds.push(message.info.id)
+        for (const part of message.parts) {
+            parts.push({
+                messageId: message.info.id,
+                messageIndex,
+                callId: part.type === "tool" ? part.callID : undefined,
+            })
+        }
+        messageEnds.push(parts.length - 1)
+    })
+    const { hidden, boundaryEdits } = planHousekeepingProjection(
+        parts,
+        transactions,
+        messageIds,
+        messageEnds,
+    )
+    let position = 0
     const result: WithParts[] = []
     for (const message of messages) {
         const parts = message.parts.flatMap((part) => {
             const current = position++
-            hiddenDepth += hidden[current]
-            if (hiddenDepth > 0) return []
+            if (hidden[current] > 0) return []
             const edit = boundaryEdits.get(current)
             if (edit && part.type === "tool" && part.state.status === "completed") {
                 return [
@@ -313,21 +312,18 @@ export async function reconcileHousekeepingHistory(
     messages: WithParts[],
 ): Promise<boolean> {
     let changed = false
-    const hasCall = (messageId: string, callId: string, partId: string | null): boolean =>
+    const hasCall = (messageId: string, callId: string): boolean =>
         messages.some(
             (message) =>
                 message.info.id === messageId &&
                 message.parts.some(
-                    (part) =>
-                        part.type === "tool" &&
-                        part.callID === callId &&
-                        (partId === null || part.id === partId),
+                    (part) => part.type === "tool" && part.callID === callId,
                 ),
         )
     const callSurvives = (record: HousekeepingTransaction["operationRecords"][number]): boolean =>
         record.tool.startsWith("command:")
             ? messages.some((message) => message.info.id === record.messageId)
-            : hasCall(record.messageId, record.callId, record.partId)
+            : hasCall(record.messageId, record.callId)
     const readDraft = (transaction: HousekeepingTransaction, ref: HousekeepingDraftRef) =>
         readHousekeepingDraft(transaction.sessionId, ref)
     const survivingOperationRefs = (
@@ -360,12 +356,10 @@ export async function reconcileHousekeepingHistory(
             const entrySurvives = hasCall(
                 transaction.entryMessageId,
                 transaction.entryCallId,
-                transaction.entryPartId,
             )
             const leaveSurvives = hasCall(
                 transaction.completed.leaveMessageId,
                 transaction.completed.leaveCallId,
-                transaction.completed.leavePartId,
             )
             return (
                 (!entrySurvives || !leaveSurvives) && !(state.lastCompaction > 0 && !entrySurvives)
@@ -380,13 +374,11 @@ export async function reconcileHousekeepingHistory(
         const entrySurvives = hasCall(
             transaction.entryMessageId,
             transaction.entryCallId,
-            transaction.entryPartId,
         )
         const leaveSurvives = transaction.completed
             ? hasCall(
                   transaction.completed.leaveMessageId,
                   transaction.completed.leaveCallId,
-                  transaction.completed.leavePartId,
               )
             : false
         const active = state.housekeeping?.id === transaction.id ? state.housekeeping : undefined

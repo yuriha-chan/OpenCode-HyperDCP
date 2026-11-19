@@ -78,9 +78,7 @@ THE FORMAT
                     if (!rawId)
                         throw new Error(`Message ${parsed.ref} not found in current context.`)
                     const eligibleSourceIds = new Set(
-                        operationCtx.state.housekeeping?.sourceParts.map(
-                            (part) => part.messageId,
-                        ) ?? [],
+                        operationCtx.state.housekeeping?.sourceMessageIds ?? [],
                     )
                     if (!eligibleSourceIds.has(rawId)) {
                         throw new Error(

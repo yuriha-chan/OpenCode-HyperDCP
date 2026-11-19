@@ -2643,3 +2643,114 @@ test("missing required delta fails without manifest or live changes and recovers
     await writeFile(draftPath, payload)
     assert.equal(await h.readMemo(), "Delta memo.")
 })
+
+test("entry and leave persist ordered distinct source message IDs without native part identities", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    const entryId = h.ctx.state.housekeeping?.entryMessageId
+    assert.ok(entryId)
+
+    let manifest = await readPersistedFixture(h.sessionID)
+    let active = recordOf(manifest.housekeeping)
+    assert.ok(active)
+    const sourceMessageIds = active.sourceMessageIds
+    assert.ok(Array.isArray(sourceMessageIds))
+    assert.equal(new Set(sourceMessageIds).size, sourceMessageIds.length)
+    assert.equal(sourceMessageIds.at(-1), entryId)
+    assert.ok(sourceMessageIds.includes("source-1"))
+    for (const legacy of ["entryPartId", "sourceParts"]) assert.equal(active[legacy], undefined)
+
+    await h.run("edit_memo", { action: "append", textItems: ["Memo."] })
+    await h.leave({ force: true })
+
+    manifest = await readPersistedFixture(h.sessionID)
+    const completedTransaction = recordOf(manifest.housekeepingHistory?.at(-1))
+    assert.ok(completedTransaction)
+    for (const legacy of ["entryPartId", "sourceParts"])
+        assert.equal(completedTransaction[legacy], undefined)
+    assert.equal(recordOf(completedTransaction.completed)?.leavePartId, undefined)
+    const records = completedTransaction.operationRecords
+    assert.ok(Array.isArray(records))
+    for (const record of records) assert.equal(recordOf(record)?.partId, undefined)
+})
+
+test("legacy part identities restore as source message IDs and are not written again", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.run("edit_memo", { action: "append", textItems: ["Legacy."] })
+    await h.leave({ force: true })
+
+    const sourceMessageIds = ["source-1", "source-2", "source-3", "source-4"]
+    const manifest = await readPersistedFixture(h.sessionID)
+    const transaction = recordOf(manifest.housekeepingHistory?.[0])
+    assert.ok(transaction)
+    const completed = recordOf(transaction.completed)
+    assert.ok(completed)
+    transaction.sourceParts = [
+        { messageId: "source-1", partId: "legacy-source-1" },
+        { messageId: "source-1", partId: "legacy-source-1-duplicate" },
+        { messageId: "source-2", partId: "legacy-source-2" },
+        { messageId: "source-3", partId: "legacy-source-3" },
+        { messageId: "source-4", partId: "legacy-source-4" },
+    ]
+    delete transaction.sourceMessageIds
+    transaction.entryPartId = "legacy-entry-part"
+    completed.leavePartId = "legacy-leave-part"
+    for (const record of (transaction.operationRecords as unknown[]) ?? []) {
+        const value = recordOf(record)
+        if (value) value.partId = "legacy-operation-part"
+    }
+    await writePersistedFixture(h.sessionID, manifest)
+    const beforeRestart = await readFile(getSessionFilePath(h.sessionID), "utf-8")
+
+    await h.restart()
+    assert.equal(await readFile(getSessionFilePath(h.sessionID), "utf-8"), beforeRestart)
+
+    const restored = h.ctx.state.housekeepingHistory[0] as unknown as Record<string, any>
+    assert.deepEqual(restored.sourceMessageIds, sourceMessageIds)
+    assert.equal(restored.entryPartId, undefined)
+    assert.equal(restored.completed?.leavePartId, undefined)
+    for (const record of restored.operationRecords) assert.equal(record.partId, undefined)
+
+    await saveSessionStateStrict(h.ctx.state, h.ctx.logger)
+    const rewritten = recordOf((await readPersistedFixture(h.sessionID)).housekeepingHistory?.[0])
+    assert.ok(rewritten)
+    assert.deepEqual(rewritten.sourceMessageIds, sourceMessageIds)
+    for (const legacy of ["entryPartId", "sourceParts"]) assert.equal(rewritten[legacy], undefined)
+    assert.equal(recordOf(rewritten.completed)?.leavePartId, undefined)
+    for (const record of (rewritten.operationRecords as unknown[]) ?? [])
+        assert.equal(recordOf(record)?.partId, undefined)
+})
+
+test("corrupt present source identity data rejects restore instead of defaulting", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.enter()
+    await h.leave({ force: true })
+    const base = await readPersistedFixture(h.sessionID)
+    for (const corrupt of [
+        (transaction: Record<string, unknown>) => {
+            transaction.sourceMessageIds = "source-1"
+        },
+        (transaction: Record<string, unknown>) => {
+            transaction.sourceMessageIds = [1]
+        },
+        (transaction: Record<string, unknown>) => {
+            transaction.sourceMessageIds = [{}]
+        },
+    ]) {
+        const fixture = structuredClone(base)
+        const transaction = recordOf(fixture.housekeepingHistory?.[0])
+        assert.ok(transaction)
+        corrupt(transaction)
+        await writePersistedFixture(h.sessionID, fixture)
+        await assert.rejects(h.restart(), /housekeeping|source|metadata|invalid/i)
+    }
+
+    const malformedLegacy = structuredClone(base)
+    const legacy = recordOf(malformedLegacy.housekeepingHistory?.[0])
+    assert.ok(legacy)
+    delete legacy.sourceMessageIds
+    legacy.sourceParts = "source"
+    await writePersistedFixture(h.sessionID, malformedLegacy)
+    await assert.rejects(h.restart(), /housekeeping|source|metadata|invalid/i)
+})

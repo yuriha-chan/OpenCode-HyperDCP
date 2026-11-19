@@ -755,41 +755,41 @@ test("chat transform retains paired boundaries and outside parts while hiding co
             callID: "mixed-enter",
         },
     )
-    mixed.parts.push({
+    const interior = ordinaryMessage(
+        h.sessionID,
+        "interior-boundaries",
+        "assistant",
+        "Private maintenance text.",
+    )
+    interior.parts = interior.parts.map((part) => ({ ...part, id: "interior-text" }))
+    interior.parts.push({
         id: "interior-reasoning",
-        messageID: mixed.info.id,
+        messageID: interior.info.id,
         sessionID: h.sessionID,
         type: "reasoning",
         text: "Private maintenance reasoning.",
         time: { start: 1, end: 2 },
     })
-    mixed.parts.push(
-        ...ordinaryMessage(
-            h.sessionID,
-            mixed.info.id,
-            "assistant",
-            "Private maintenance text.",
-        ).parts.map((part) => ({ ...part, id: "interior-text" })),
-    )
+    h.history.push(interior)
     await h.run(
         "compress",
         {
             topic: "Parser",
             content: [{ startId: "m0001", endId: "m0002", summary: "Published parser findings." }],
         },
-        { messageID: mixed.info.id, callID: "mixed-compress" },
+        { messageID: interior.info.id, callID: "mixed-compress" },
     )
     await h.run(
         "recall_compressed",
         { action: "get", messageId: "m0001" },
         {
-            messageID: mixed.info.id,
+            messageID: interior.info.id,
             callID: "mixed-recall",
         },
     )
-    mixed.parts.push({
+    interior.parts.push({
         id: "interior-exception",
-        messageID: mixed.info.id,
+        messageID: interior.info.id,
         sessionID: h.sessionID,
         type: "tool",
         tool: "custom_inspect",
@@ -816,18 +816,11 @@ test("chat transform retains paired boundaries and outside parts while hiding co
         "leave_housekeeping",
         {},
         {
-            messageID: mixed.info.id,
+            messageID: "leave-boundaries",
             callID: "mixed-leave",
         },
     )
-    mixed.parts.push(
-        ...ordinaryMessage(
-            h.sessionID,
-            mixed.info.id,
-            "assistant",
-            "Outside text after leave.",
-        ).parts.map((part) => ({ ...part, id: "outside-after" })),
-    )
+    h.addText("outside-after-leave", "Outside text after leave.")
     const raw = structuredClone(h.history)
     const projected = await h.render()
     const text = visibleText(projected)
@@ -937,14 +930,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
             callID: "revert-edit-first",
         },
     )
-    mixed.parts.push(
-        ...ordinaryMessage(
-            h.sessionID,
-            mixed.info.id,
-            "assistant",
-            "Surviving private draft work.",
-        ).parts.map((part) => ({ ...part, id: "surviving-draft-text" })),
-    )
+    h.addText("surviving-draft-message", "Surviving private draft work.")
     const earlierDraft = structuredClone(h.history)
     await h.run(
         "edit_memo",
@@ -958,7 +944,7 @@ test("chat transform reconciles part-level leave removal, earlier draft history,
         "leave_housekeeping",
         { force: true },
         {
-            messageID: mixed.info.id,
+            messageID: "revert-leave-message",
             callID: "revert-leave",
         },
     )

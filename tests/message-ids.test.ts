@@ -117,13 +117,7 @@ test("housekeeping allocates no references or tags and never backfills interiors
     assert.equal(modelReference(await h.render(), "mixed-reference-message"), "m0005")
     const mixed = h.history.at(-1)!
     await h.run("enter_housekeeping", {}, { messageID: mixed.info.id, callID: "refs-enter" })
-    mixed.parts.push({
-        id: "mixed-internal-text",
-        messageID: mixed.info.id,
-        sessionID: h.sessionID,
-        type: "text",
-        text: "Private reference work in a mixed host message.",
-    })
+    h.addText("mixed-interior-reference", "Private reference work in a mixed host message.")
     await h.run("read_memo", {}, { messageID: mixed.info.id, callID: "refs-read" })
     h.addText("interior-reference-message", "Private reference work in an interior-only message.")
     assert.equal(assignMessageRefs(h.ctx.state, h.history), 0)
@@ -147,8 +141,7 @@ test("housekeeping allocates no references or tags and never backfills interiors
     assert.equal(modelReference(completed, mixed.info.id), "m0005")
     assert.equal(modelReference(completed, "ordinary-after-leave"), "m0006")
     assert.equal(assignMessageRefs(h.ctx.state, h.history), 0)
-    const mixedModel = completed.find((message) => message.info.id === mixed.info.id)!
-    assert.ok(!mixedModel.parts.some((part) => part.id === "mixed-internal-text"))
+    assert.ok(!completed.some((message) => message.info.id === "mixed-interior-reference"))
     for (const part of completed.flatMap((message) => message.parts)) {
         if (part.type === "tool" && part.state.status === "completed") {
             assert.doesNotMatch(part.state.output, injectedTag)

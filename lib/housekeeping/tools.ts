@@ -10,8 +10,7 @@ import {
 } from "../state/housekeeping-draft-store"
 import { finalizePendingBuffers } from "../expand-block"
 import {
-    captureEligibleSourceParts,
-    findToolCallPart,
+    captureEligibleSourceMessages,
     projectEligibleSourceMessages,
     projectHousekeepingHistory,
 } from "./history"
@@ -134,14 +133,14 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     messages,
                     ctx.state.housekeepingHistory,
                 )
-                const sourceParts = captureEligibleSourceParts(
+                const sourceMessageIds = captureEligibleSourceMessages(
                     messages,
                     toolContext.messageID,
                     callId ?? "",
                     ctx.state.housekeepingHistory,
                 )
                 const eligibleBeforeEntry = projectEligibleSourceMessages(priorWork, {
-                    sourceParts,
+                    sourceMessageIds,
                 })
                 const candidateState = structuredClone(ctx.state)
                 const guidance = buildEntryGuidance(
@@ -150,7 +149,6 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     ctx.prompts.getRuntimePrompts().housekeepingGuidance,
                     ctx.config,
                 )
-                const entryPart = findToolCallPart(messages, toolContext.messageID, callId ?? "")
                 const entryMessage = messages.find(
                     (message) => message.info.id === toolContext.messageID,
                 )
@@ -171,10 +169,9 @@ export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                     id: `${toolContext.sessionID}:${toolContext.messageID}:${callId ?? ""}`,
                     sessionId: toolContext.sessionID,
                     entryMessageId: toolContext.messageID,
-                    entryPartId: entryPart?.partId ?? null,
                     entryCallId: callId ?? "",
                     entryCreatedAt: entryMessage?.info.time.created ?? 0,
-                    sourceParts,
+                    sourceMessageIds,
                     baseRevision: candidateState.contentRevision,
                     baseRef,
                     draftRef,
@@ -228,7 +225,7 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
         async execute(args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext
             return withSessionCoordinator(ctx.state, async () => {
-                const rawMessages = await prepareToolSession(ctx, toolContext.sessionID)
+                await prepareToolSession(ctx, toolContext.sessionID)
                 const callId = callIdentity(toolContext)
                 const existingReceipt = callId
                     ? ctx.state.housekeepingHistory.find(
@@ -282,9 +279,6 @@ export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof
                 candidateState.contentRevision = transaction.baseRevision + 1
                 const completed = {
                     leaveMessageId: toolContext.messageID,
-                    leavePartId:
-                        findToolCallPart(rawMessages, toolContext.messageID, callId ?? "")
-                            ?.partId ?? null,
                     leaveCallId: callId ?? "",
                     receipt,
                     commitRevision: candidateState.revision + 1,
