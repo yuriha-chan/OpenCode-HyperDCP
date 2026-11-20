@@ -434,7 +434,7 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
                 </Show>
             </Show>
             <box flexDirection="row" gap={1}>
-                <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE} onMouseDown={async () => {
+                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD} onMouseDown={async () => {
                     await fetchAllSdkMessages(props.ui, props.session_id)
                     props.ui.openPage("dcp-messages", { sessionID: props.session_id })
                 }}> Messages </text>
@@ -452,7 +452,7 @@ function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "h
     return (
         <box flexDirection="row" gap={1}>
             <box onMouseDown={() => goBack(props.ui, props.backTarget ?? "home", props.backParams)}>
-                <text fg={skin.text} attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> ← {backLabel} </text>
+                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← {backLabel} </text>
             </box>
             <text>
                 <b>{props.title}</b>
@@ -789,13 +789,13 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
                     <box flexDirection="row" gap={1} alignItems="center">
                         {page() > 0 ? (
                                 <box onMouseDown={() => navTo(page() - 1)}>
-                                    <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> ← Newer </text>
+                                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← Newer </text>
                                 </box>
                             ) : null}
                             <text fg={skin.muted}>Page {page() + 1} of {totalPages}</text>
                             {page() < totalPages - 1 ? (
                                 <box onMouseDown={() => navTo(page() + 1)}>
-                                    <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> Older → </text>
+                                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> Older → </text>
                                 </box>
                         ) : null}
                     </box>
