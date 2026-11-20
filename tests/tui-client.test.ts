@@ -22,7 +22,13 @@ test("v1 transport sends the legacy command payload and preserves legacy message
                         },
                         {
                             info: { id: "msg_assistant", role: "assistant" },
-                            parts: [{ type: "tool", tool: "read", state: { input: { filePath: "a.ts" } } }],
+                            parts: [
+                                {
+                                    type: "tool",
+                                    tool: "read",
+                                    state: { input: { filePath: "a.ts" } },
+                                },
+                            ],
                         },
                     ],
                 }
@@ -33,7 +39,9 @@ test("v1 transport sends the legacy command payload and preserves legacy message
     const transport = createV1TuiTransport(client)
 
     await transport.sendEditCommand("session-v1", "stats")
-    assert.deepEqual(commandCalls, [{ sessionID: "session-v1", command: "dcp", arguments: "stats" }])
+    assert.deepEqual(commandCalls, [
+        { sessionID: "session-v1", command: "dcp", arguments: "stats" },
+    ])
 
     const entries = await transport.readSessionMessages("session-v1")
     assert.deepEqual(messageCalls, [{ sessionID: "session-v1" }])
@@ -82,7 +90,12 @@ test("v2 transport reads every message page in order and maps native fields", as
                                 type: "assistant",
                                 content: [
                                     { type: "text", text: "assistant text" },
-                                    { type: "tool", id: "part_tool", name: "read", state: { input: { filePath: "a.ts" } } },
+                                    {
+                                        type: "tool",
+                                        id: "part_tool",
+                                        name: "read",
+                                        state: { input: { filePath: "a.ts" } },
+                                    },
                                 ],
                             },
                         ],
@@ -93,7 +106,12 @@ test("v2 transport reads every message page in order and maps native fields", as
                     return {
                         data: [
                             { id: "msg_synthetic", type: "synthetic", text: "synthetic report" },
-                            { id: "msg_shell", type: "shell", command: "pwd", output: "shell output" },
+                            {
+                                id: "msg_shell",
+                                type: "shell",
+                                command: "pwd",
+                                output: "shell output",
+                            },
                         ],
                         cursor: {},
                     }
@@ -121,7 +139,10 @@ test("v2 transport reads every message page in order and maps native fields", as
     assert.equal(entries[0].text, "user text")
     assert.deepEqual(entries[1].content?.[0], { type: "text", text: "assistant text" })
     const toolPart = entries[1].content?.find(
-        (part) => typeof part === "object" && part !== null && (part as { type?: string }).type === "tool",
+        (part) =>
+            typeof part === "object" &&
+            part !== null &&
+            (part as { type?: string }).type === "tool",
     ) as { tool?: string } | undefined
     assert.equal(toolPart?.tool, "read")
     assert.equal(entries[2].text, "synthetic report")
@@ -144,4 +165,108 @@ test("v2 transport propagates message list failures", async () => {
         assert.equal(error, failure)
         return true
     })
+})
+
+test("v1 targeted read requests the exact message, maps parts, and propagates failures", async () => {
+    const messageCalls: Call[] = []
+    const failure = new Error("v1 targeted read failed")
+    let failNext = false
+    const client = {
+        session: {
+            message: async (input: Call) => {
+                messageCalls.push(input)
+                if (failNext) throw failure
+                return {
+                    data: {
+                        info: { id: "msg_assistant", role: "assistant" },
+                        parts: [
+                            { type: "text", text: "targeted text" },
+                            { type: "tool", tool: "read", state: { input: { filePath: "a.ts" } } },
+                        ],
+                    },
+                }
+            },
+        },
+    }
+
+    const transport = createV1TuiTransport(client)
+
+    const entry = await transport.readSessionMessage("session-v1", "msg_assistant")
+    assert.deepEqual(messageCalls, [{ sessionID: "session-v1", messageID: "msg_assistant" }])
+    assert.deepEqual(entry, {
+        id: "msg_assistant",
+        type: "assistant",
+        content: [
+            { type: "text", text: "targeted text" },
+            { type: "tool", tool: "read", state: { input: { filePath: "a.ts" } } },
+        ],
+    })
+
+    failNext = true
+    await assert.rejects(transport.readSessionMessage("session-v1", "msg_missing"), (error) => {
+        assert.equal(error, failure)
+        return true
+    })
+    assert.deepEqual(messageCalls, [
+        { sessionID: "session-v1", messageID: "msg_assistant" },
+        { sessionID: "session-v1", messageID: "msg_missing" },
+    ])
+})
+
+test("v2 targeted read uses the nested get contract, converts tool names, and propagates failures", async () => {
+    const getCalls: Call[] = []
+    const failure = new Error("v2 targeted read failed")
+    let failNext = false
+    const client = {
+        session: {
+            message: {
+                get: async (input: Call) => {
+                    getCalls.push(input)
+                    if (failNext) throw failure
+                    return {
+                        id: "msg_assistant",
+                        type: "assistant",
+                        content: [
+                            { type: "text", text: "targeted text" },
+                            {
+                                type: "tool",
+                                id: "part_tool",
+                                name: "read",
+                                state: { input: { filePath: "a.ts" } },
+                            },
+                        ],
+                    }
+                },
+            },
+        },
+    }
+
+    const transport = createV2TuiTransport(client)
+
+    const entry = await transport.readSessionMessage("session-v2", "msg_assistant")
+    assert.deepEqual(getCalls, [{ sessionID: "session-v2", messageID: "msg_assistant" }])
+    assert.deepEqual(entry, {
+        id: "msg_assistant",
+        type: "assistant",
+        content: [
+            { type: "text", text: "targeted text" },
+            {
+                type: "tool",
+                id: "part_tool",
+                name: "read",
+                tool: "read",
+                state: { input: { filePath: "a.ts" } },
+            },
+        ],
+    })
+
+    failNext = true
+    await assert.rejects(transport.readSessionMessage("session-v2", "msg_missing"), (error) => {
+        assert.equal(error, failure)
+        return true
+    })
+    assert.deepEqual(getCalls, [
+        { sessionID: "session-v2", messageID: "msg_assistant" },
+        { sessionID: "session-v2", messageID: "msg_missing" },
+    ])
 })

@@ -8,12 +8,14 @@ import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { runEditor } from "./editor"
-import { getSessionFilePath } from "../lib/paths"
-import { renderStoredMemo } from "./memo"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
 import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
-import { createV1TuiTransport, createV2TuiTransport, type TuiMessageEntry } from "./tui-client"
+import { createV1TuiTransport, createV2TuiTransport } from "./tui-client"
 import { subscribeNotificationToasts } from "../lib/notification-rpc"
+import { createTuiSessionCache, type TuiSessionCache } from "./tui-cache"
+import { createDcpStateReader, type BlockInfo, type TuiCacheSnapshot } from "./tui-state"
+import { subscribeV1Refresh, subscribeV2Refresh } from "./tui-events"
+import { clampMessagePage, retainSummaryVersion } from "./tui-presentation"
 
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
@@ -39,7 +41,7 @@ interface DcpUi {
     suspendRenderer(): void | Promise<void>
     resumeRenderer(): void | Promise<void>
     sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
-    readSessionMessages(sessionID: string): Promise<TuiMessageEntry[]>
+    cache: TuiSessionCache
     log?(message: string): void
 }
 
@@ -47,156 +49,29 @@ function isDcpPage(name: string): name is DcpPage {
     return name === "dcp-blocks" || name === "dcp-block" || name === "dcp-messages" || name === "dcp-memo"
 }
 
-interface BlockInfo {
-    blockId: number
-    active: boolean
-    activeVersionIndex: number
-    topic: string
-    batchTopic?: string
-    mode?: string
-    compressedTokens: number
-    summaryTokens: number
-    startId: string
-    endId: string
-    durationMs: number
-    deactivatedByUser: boolean
-    parentBlockIds: number[]
-    includedBlockIds: number[]
-    versions: string[]
+function formatError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error)
 }
 
-interface MessageEntry {
-    rawId: string
-    ref: string
-    tokenCount: number
-    activeBlockIds: number[]
-}
-
-function estimateTokens(text: string): number {
-    return Math.round(text.length / 4)
+function useSessionSnapshot(ui: DcpUi, sessionID: () => string | undefined) {
+    const [snapshot, setSnapshot] = createSignal<TuiCacheSnapshot>(ui.cache.get(sessionID() ?? ""))
+    createEffect(() => {
+        const id = sessionID()
+        if (!id) {
+            setSnapshot(ui.cache.get(""))
+            return
+        }
+        setSnapshot(ui.cache.get(id))
+        const stop = ui.cache.observe(id, () => setSnapshot(ui.cache.get(id)))
+        onCleanup(stop)
+    })
+    return snapshot
 }
 
 function versionTextOf(versions: string[], idx: number): string {
     if (idx <= 0) return ""
     const text = versions[idx - 1]
     return typeof text === "string" ? text : ""
-}
-
-function versionTokens(versions: string[], idx: number): number {
-    return estimateTokens(versionTextOf(versions, idx))
-}
-
-function readBlocks(sessionId: string): BlockInfo[] {
-    try {
-        const path = getSessionFilePath(sessionId)
-        const content = readFileSync(path, "utf-8")
-        const state = JSON.parse(content)
-        const blocks = state?.prune?.messages?.blocksById
-        if (!blocks || typeof blocks !== "object") return []
-        return Object.values(blocks).map((block: any) => {
-            const activeVersionIndex = block.activeVersionIndex ?? 1
-            const summaryVersions: string[] = Array.isArray(block.summaryVersions) ? block.summaryVersions : []
-            const baseSummary = typeof block.summary === "string" ? block.summary : ""
-            const versions: string[] = [baseSummary, ...summaryVersions]
-            return {
-                blockId: block.blockId ?? 0,
-                active: block.active ?? false,
-                activeVersionIndex,
-                topic: block.topic ?? "",
-                batchTopic: block.batchTopic,
-                mode: block.mode,
-                compressedTokens: block.compressedTokens ?? 0,
-                summaryTokens: versionTokens(versions, activeVersionIndex),
-                startId: block.startId ?? "",
-                endId: block.endId ?? "",
-                durationMs: block.durationMs ?? 0,
-                deactivatedByUser: block.deactivatedByUser ?? false,
-                parentBlockIds: Array.isArray(block.parentBlockIds) ? block.parentBlockIds : [],
-                includedBlockIds: Array.isArray(block.includedBlockIds) ? block.includedBlockIds : [],
-                versions,
-            }
-        })
-    } catch {
-        return []
-    }
-}
-
-function readSingleBlock(sessionId: string, blockId: number): BlockInfo | null {
-    const blocks = readBlocks(sessionId)
-    return blocks.find((b) => b.blockId === blockId) ?? null
-}
-
-function readMessages(sessionId: string): MessageEntry[] {
-    try {
-        const path = getSessionFilePath(sessionId)
-        const content = readFileSync(path, "utf-8")
-        const state = JSON.parse(content)
-
-        // Build ref map from messageIds.byRawId (ALL messages known to DCP)
-        const byRawId: Record<string, string> =
-            state?.messageIds?.byRawId && typeof state.messageIds.byRawId === "object"
-                ? state.messageIds.byRawId
-                : {}
-
-        // Build compression info from byMessageId (compressed messages only)
-        const byMessageId: Record<string, any> =
-            state?.prune?.messages?.byMessageId && typeof state.prune.messages.byMessageId === "object"
-                ? state.prune.messages.byMessageId
-                : {}
-
-        // Collect all unique rawIds from both sources, preserving byRawId order (DCP ref order)
-        const seen = new Set<string>()
-        const allRawIds: string[] = []
-        for (const rawId of Object.keys(byRawId)) {
-            if (!seen.has(rawId)) { seen.add(rawId); allRawIds.push(rawId) }
-        }
-        // Also include compressed-only messages (edge case if byRawId is somehow missing them)
-        for (const rawId of Object.keys(byMessageId)) {
-            if (!seen.has(rawId)) { seen.add(rawId); allRawIds.push(rawId) }
-        }
-
-        return allRawIds.map((rawId) => {
-            const entry = byMessageId[rawId]
-            const ref = byRawId[rawId] ?? "?"
-            return {
-                rawId,
-                ref,
-                tokenCount: entry?.tokenCount ?? 0,
-                activeBlockIds: Array.isArray(entry?.activeBlockIds) ? entry.activeBlockIds : [],
-            }
-        })
-    } catch {
-        return []
-    }
-}
-
-function readMemo(sessionId: string): string | null {
-    try {
-        const path = getSessionFilePath(sessionId)
-        const content = readFileSync(path, "utf-8")
-        const state = JSON.parse(content)
-        return renderStoredMemo(state?.memo)
-    } catch {
-        return null
-    }
-}
-
-function readStats(sessionId: string): { totalPruneTokens: number; totalMessagesPruned: number; totalToolsPruned: number; compressionRatio: number } | null {
-    try {
-        const path = getSessionFilePath(sessionId)
-        const content = readFileSync(path, "utf-8")
-        const state = JSON.parse(content)
-        const stats = state?.stats
-        if (!stats) return null
-        return {
-            totalPruneTokens: stats.totalPruneTokens ?? 0,
-            totalMessagesPruned: stats.totalMessagesPruned ?? 0,
-            totalToolsPruned: stats.totalToolsPruned ?? 0,
-            compressionRatio: stats.compressionRatio ?? 0,
-        }
-    } catch {
-        return null
-    }
 }
 
 function tokenLabel(tokens: number): string {
@@ -247,15 +122,14 @@ function goBack(ui: DcpUi, target: DcpPage | "home", params?: Record<string, unk
 }
 
 async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): Promise<void> {
-    const block = readSingleBlock(sessionID, blockId)
+    await ui.cache.refreshCommitted(sessionID)
+    const block = ui.cache.get(sessionID).state.blocks.find((candidate) => candidate.blockId === blockId)
     if (!block) {
         ui.notify({ variant: "error", message: `Block b${blockId} not found` })
         return
     }
 
     const original = versionTextOf(block.versions, block.activeVersionIndex)
-    const originalVersionCount = block.versions.length
-    const originalActiveVersion = block.activeVersionIndex
     const filePath = join(tmpdir(), `dcp-summary-${blockId}-${Date.now()}.md`)
     writeFileSync(filePath, buildSummaryFile(original), "utf-8")
 
@@ -290,9 +164,9 @@ async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): 
     }
 
     writeFileSync(filePath, edited, "utf-8")
-    startBlockSummaryPoller(sessionID, blockId, originalVersionCount, originalActiveVersion)
     try {
         await ui.sendEditCommand(sessionID, `edit-file ${blockId} ${filePath}`)
+        await ui.cache.refreshCommitted(sessionID)
         ui.notify({ variant: "success", message: `Updated summary for block b${blockId}` })
     } catch (e) {
         ui.notify({ variant: "error", message: `Failed to apply summary for block b${blockId}` })
@@ -301,8 +175,9 @@ async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): 
     }
 }
 
-function pickBlockToEdit(ui: DcpUi, sessionID: string): void {
-    const blocks = readBlocks(sessionID)
+async function pickBlockToEdit(ui: DcpUi, sessionID: string): Promise<void> {
+    await ui.cache.refreshCommitted(sessionID)
+    const blocks = ui.cache.get(sessionID).state.blocks
     if (blocks.length === 0) {
         ui.notify({ variant: "info", message: "No compression blocks yet" })
         return
@@ -317,29 +192,9 @@ function pickBlockToEdit(ui: DcpUi, sessionID: string): void {
     })
 }
 
-let emitMemoUpdate: (() => void) | null = null
-let memoPollTimer: ReturnType<typeof setInterval> | null = null
-
-function startMemoPoller(sessionID: string, original: string): void {
-    if (memoPollTimer) clearInterval(memoPollTimer)
-    const deadline = Date.now() + 30000
-    memoPollTimer = setInterval(() => {
-        if (Date.now() > deadline) {
-            if (memoPollTimer) clearInterval(memoPollTimer)
-            memoPollTimer = null
-            return
-        }
-        const current = readMemo(sessionID)
-        if (current !== null && current.trim() !== original.trim()) {
-            if (memoPollTimer) clearInterval(memoPollTimer)
-            memoPollTimer = null
-            emitMemoUpdate?.()
-        }
-    }, 200)
-}
-
 async function editMemo(ui: DcpUi, sessionID: string): Promise<void> {
-    const original = readMemo(sessionID) ?? ""
+    await ui.cache.refreshCommitted(sessionID)
+    const original = ui.cache.get(sessionID).state.memo ?? ""
     const filePath = join(tmpdir(), `dcp-memo-${Date.now()}.md`)
     writeFileSync(filePath, buildMemoFile(original), "utf-8")
 
@@ -374,9 +229,9 @@ async function editMemo(ui: DcpUi, sessionID: string): Promise<void> {
     }
 
     writeFileSync(filePath, edited, "utf-8")
-    startMemoPoller(sessionID, original)
     try {
         await ui.sendEditCommand(sessionID, `memo-file ${filePath}`)
+        await ui.cache.refreshCommitted(sessionID)
         ui.notify({ variant: "success", message: "Updated the memo" })
     } catch {
         ui.notify({ variant: "error", message: "Failed to apply the memo" })
@@ -389,16 +244,12 @@ async function editMemo(ui: DcpUi, sessionID: string): Promise<void> {
 
 const BlockList = (props: { ui: DcpUi; session_id: string }) => {
     const skin = props.ui.colors()
-    const blocks = readBlocks(props.session_id)
+    const snapshot = useSessionSnapshot(props.ui, () => props.session_id)
+    const blocks = createMemo(() => snapshot().state.blocks)
     const [collapsed, setCollapsed] = createSignal(false)
-    const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
-    const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
+    const totalRaw = createMemo(() => blocks().reduce((s, b) => s + b.compressedTokens, 0))
+    const totalSummary = createMemo(() => blocks().reduce((s, b) => s + b.summaryTokens, 0))
     const isEmpty = (block: BlockInfo) => block.summaryTokens === 0
-
-    // Eagerly start SDK message fetch so cache is warm for messages page
-    if (!sdkMessagesCache.has(props.session_id)) {
-        fetchAllSdkMessages(props.ui, props.session_id)
-    }
 
     return (
         <box flexDirection="column" gap={0}>
@@ -407,14 +258,14 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
             </text>
             <Show when={!collapsed()}>
                 <text fg={skin.muted}>
-                    <b style={{ fg: skin.text } satisfies TextNodeOptions}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
-                    {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b style={{ fg: skin.text } satisfies TextNodeOptions}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
+                    <b style={{ fg: skin.text } satisfies TextNodeOptions}>{blocks().length}</b> block{blocks().length !== 1 ? "s" : ""}
+                    {blocks().length > 0 ? <> — {tokenLabel(totalRaw())} → <b style={{ fg: skin.text } satisfies TextNodeOptions}>{tokenLabel(totalSummary())}</b> (est.)</> : ""}
                 </text>
-                <Show when={blocks.length === 0}>
+                <Show when={blocks().length === 0}>
                     <text fg={skin.muted}>No compression blocks yet</text>
                 </Show>
-                <Show when={blocks.length > 0}>
-                    <For each={blocks}>
+                <Show when={blocks().length > 0}>
+                    <For each={blocks()}>
                         {(block) => {
                             const mode = block.mode ?? "range"
                             return (
@@ -434,8 +285,7 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
                 </Show>
             </Show>
             <box flexDirection="row" gap={1}>
-                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD} onMouseDown={async () => {
-                    await fetchAllSdkMessages(props.ui, props.session_id)
+                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD} onMouseDown={() => {
                     props.ui.openPage("dcp-messages", { sessionID: props.session_id })
                 }}> Messages </text>
             </box>
@@ -478,117 +328,100 @@ function PageShell(props: { ui: DcpUi; title: string; children: any; backTarget?
 const BlocksDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
     const popMode = props.ui.enterMode(DCP_MODE)
     onCleanup(popMode)
-    const sessionID = props.params?.sessionID as string | undefined
+    const sessionID = () => props.params?.sessionID as string | undefined
     const skin = props.ui.colors()
-    const blocks = sessionID ? readBlocks(sessionID) : []
-    const stats = sessionID ? readStats(sessionID) : null
-    const totalRaw = blocks.reduce((s, b) => s + b.compressedTokens, 0)
-    const totalSummary = blocks.reduce((s, b) => s + b.summaryTokens, 0)
+    const snapshot = useSessionSnapshot(props.ui, sessionID)
+    const blocks = createMemo(() => snapshot().state.blocks)
+    const stats = createMemo(() => snapshot().state.stats)
+    const totalRaw = createMemo(() => blocks().reduce((s, b) => s + b.compressedTokens, 0))
+    const totalSummary = createMemo(() => blocks().reduce((s, b) => s + b.summaryTokens, 0))
     const isEmpty = (block: BlockInfo) => block.summaryTokens === 0
-
-    if (!sessionID) {
-        return (
-            <PageShell ui={props.ui} title="DCP Blocks">
-                <text fg={skin.muted}>No active session</text>
-            </PageShell>
-        )
-    }
-
-    if (blocks.length === 0) {
-        return (
-            <PageShell ui={props.ui} title="DCP Blocks">
-                <text fg={skin.muted}>No compression blocks yet</text>
-                {stats && (
-                    <text fg={skin.muted}>All time: saved {tokenLabelPrecise(stats.totalPruneTokens)} across {stats.totalMessagesPruned} messages / {stats.totalToolsPruned} tools</text>
-                )}
-            </PageShell>
-        )
-    }
 
     return (
         <PageShell ui={props.ui} title="DCP Blocks">
-            <box flexDirection="row" gap={1}>
-                <text fg={skin.muted}>
-                    {blocks.length} block{blocks.length !== 1 ? "s" : ""} — {tokenLabelPrecise(totalRaw)} raw → {tokenLabelPrecise(totalSummary)} summary
-                </text>
-                {stats ? <text fg={skin.muted}> | saved {tokenLabelPrecise(stats.totalPruneTokens)}</text> : null}
-            </box>
-            <text fg={skin.muted}>{"─".repeat(40)}</text>
-            {blocks.map((block) => {
-                const mode = block.mode ?? "range"
-                const topic = block.topic || null
-                const clr = block.active && !isEmpty(block) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed
-                return (
-                    <box flexDirection="row" gap={1} onMouseDown={() => {
-                        props.ui.log?.(`blocks: navigate to dcp-block blockId=${block.blockId}`)
-                        props.ui.openPage("dcp-block", { sessionID, blockId: block.blockId })
-                    }}>
-                        <text fg={clr} attributes={TextAttributes.BOLD}>b{String(block.blockId).padEnd(3)}</text>
+            <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={blocks().length > 0} fallback={
+                    <>
+                        <text fg={skin.muted}>No compression blocks yet</text>
+                        <Show when={stats()}>
+                            <text fg={skin.muted}>All time: saved {tokenLabelPrecise(stats()!.totalPruneTokens)} across {stats()!.totalMessagesPruned} messages / {stats()!.totalToolsPruned} tools</text>
+                        </Show>
+                    </>
+                }>
+                    <box flexDirection="row" gap={1}>
                         <text fg={skin.muted}>
-                            ({tokenLabelPrecise(block.compressedTokens).padStart(5)}→{tokenLabelPrecise(block.summaryTokens).padStart(5)}) {mode.padEnd(7)} {statusLabel(block).padEnd(12)} {block.startId}→{block.endId}
-                            {topic ? <b> | {topic}</b> : ""}
+                            {blocks().length} block{blocks().length !== 1 ? "s" : ""} — {tokenLabelPrecise(totalRaw())} raw → {tokenLabelPrecise(totalSummary())} summary
                         </text>
+                        <Show when={stats()}>
+                            <text fg={skin.muted}> | saved {tokenLabelPrecise(stats()!.totalPruneTokens)}</text>
+                        </Show>
                     </box>
-                )
-            })}
+                    <text fg={skin.muted}>{"─".repeat(40)}</text>
+                    <For each={blocks()}>
+                        {(block) => {
+                            const mode = block.mode ?? "range"
+                            const topic = block.topic || null
+                            const clr = block.active && !isEmpty(block) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed
+                            return (
+                                <box flexDirection="row" gap={1} onMouseDown={() => {
+                                    props.ui.log?.(`blocks: navigate to dcp-block blockId=${block.blockId}`)
+                                    const id = sessionID()
+                                    if (!id) return
+                                    props.ui.openPage("dcp-block", { sessionID: id, blockId: block.blockId })
+                                }}>
+                                    <text fg={clr} attributes={TextAttributes.BOLD}>b{String(block.blockId).padEnd(3)}</text>
+                                    <text fg={skin.muted}>
+                                        ({tokenLabelPrecise(block.compressedTokens).padStart(5)}→{tokenLabelPrecise(block.summaryTokens).padStart(5)}) {mode.padEnd(7)} {statusLabel(block).padEnd(12)} {block.startId}→{block.endId}
+                                        {topic ? <b> | {topic}</b> : ""}
+                                    </text>
+                                </box>
+                            )
+                        }}
+                    </For>
+                </Show>
+            </Show>
         </PageShell>
     )
 }
 
 // --- Individual block detail page ---
 
-let emitBlockSummaryUpdate: ((blockId: number) => void) | null = null
-let summaryPollTimer: ReturnType<typeof setInterval> | null = null
-
-function startBlockSummaryPoller(sessionID: string, blockId: number, versionCount: number, activeVersion: number): void {
-    if (summaryPollTimer) clearInterval(summaryPollTimer)
-    const deadline = Date.now() + 30000
-    summaryPollTimer = setInterval(() => {
-        if (Date.now() > deadline) {
-            if (summaryPollTimer) clearInterval(summaryPollTimer)
-            summaryPollTimer = null
-            return
-        }
-        const current = readSingleBlock(sessionID, blockId)
-        if (current && (current.versions.length !== versionCount || current.activeVersionIndex !== activeVersion)) {
-            if (summaryPollTimer) clearInterval(summaryPollTimer)
-            summaryPollTimer = null
-            emitBlockSummaryUpdate?.(blockId)
-        }
-    }, 200)
-}
-
 const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
     const popMode = props.ui.enterMode(DCP_BLOCK_MODE)
     onCleanup(popMode)
-    const sessionID = props.params?.sessionID as string | undefined
-    const blockId = props.params?.blockId as number | undefined
+    const sessionID = () => props.params?.sessionID as string | undefined
+    const blockId = () => props.params?.blockId as number | undefined
     const skin = props.ui.colors()
-    const [blockData, setBlockData] = createSignal<BlockInfo | null>(null)
-    const [manualRevision, setManualRevision] = createSignal(0)
-    emitBlockSummaryUpdate = (changedBlockId) => {
-        if (changedBlockId === blockId) setManualRevision((v) => v + 1)
-    }
-    onCleanup(() => {
-        emitBlockSummaryUpdate = null
+    const snapshot = useSessionSnapshot(props.ui, sessionID)
+    const block = createMemo(() => {
+        const id = blockId()
+        return id === undefined ? null : snapshot().state.blocks.find((candidate) => candidate.blockId === id) ?? null
+    })
+    const [selectedVersion, setSelectedVersion] = createSignal<number | null>(null)
+    let routeKey = `${sessionID() ?? ""}:${blockId() ?? ""}`
+    createEffect(() => {
+        const nextKey = `${sessionID() ?? ""}:${blockId() ?? ""}`
+        if (nextKey === routeKey) return
+        routeKey = nextKey
+        setSelectedVersion(null)
     })
     createEffect(() => {
-        manualRevision()
-        const next = sessionID && blockId ? readSingleBlock(sessionID, blockId) : null
-        setBlockData(next)
+        const selected = selectedVersion()
+        if (selected === null) return
+        const retained = retainSummaryVersion(selected, block() ?? undefined)
+        if (retained !== selected) setSelectedVersion(retained)
     })
-    const readCurrent = (): BlockInfo | null => blockData()
-    const [selectedVersion, setSelectedVersion] = createSignal<number | null>(null)
+    const readCurrent = (): BlockInfo | null => block()
 
     return (
         <PageShell
             ui={props.ui}
             title="Block Detail"
-            backTarget={sessionID ? "dcp-blocks" : undefined}
-            backParams={sessionID ? { sessionID } : undefined}
+            backTarget={sessionID() ? "dcp-blocks" : undefined}
+            backParams={sessionID() ? { sessionID: sessionID() } : undefined}
         >
-            <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
-                <Show when={readCurrent()} fallback={<text fg={skin.muted}>Block b{blockId} not found</text>}>
+            <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={readCurrent()} fallback={<text fg={skin.muted}>Block b{blockId()} not found</text>}>
                     {(() => {
                         const b = () => readCurrent()!
                         const mode = () => b().mode ?? "range"
@@ -658,21 +491,6 @@ function toolPreview(part: any): string {
     return `[${toolName}]`
 }
 
-// Module-level cache for SDK messages fetched via the active transport (v1 legacy API or v2 native message list; all messages, not just v2 projected context)
-const sdkMessagesCache = new Map<string, TuiMessageEntry[]>()
-
-async function fetchAllSdkMessages(ui: DcpUi, sessionID: string): Promise<void> {
-    if (sdkMessagesCache.has(sessionID)) return
-    try {
-        const entries = await ui.readSessionMessages(sessionID)
-        if (Array.isArray(entries)) {
-            sdkMessagesCache.set(sessionID, entries)
-        }
-    } catch {
-        // Cache stays empty; component shows DCP-only entries
-    }
-}
-
 function extractSdkMessagePreview(msg: any): string {
     if (msg.text && typeof msg.text === "string") {
         const t = msg.text.replace(/\s+/g, " ").trim()
@@ -704,103 +522,99 @@ const PAGE_SIZE = 20
 const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
     const popMode = props.ui.enterMode(DCP_MODE)
     onCleanup(popMode)
-    const sessionID = props.params?.sessionID as string | undefined
+    const sessionID = () => props.params?.sessionID as string | undefined
     const skin = props.ui.colors()
+    const snapshot = useSessionSnapshot(props.ui, sessionID)
     const [page, setPage] = createSignal((props.params?.page as number) ?? 0)
 
-    // Module-level cache: SDK messages (populated before navigation)
-    const sdkMessages = sessionID ? sdkMessagesCache.get(sessionID) : undefined
-
-    // If cache miss (direct navigation), start the fetch as fallback
-    if (sessionID && !sdkMessages) {
-        fetchAllSdkMessages(props.ui, sessionID)
-    }
-
     // DCP byMessageId as compression status lookup
-    const dcpMessages = sessionID ? readMessages(sessionID) : []
-    const dcpByRawId = new Map(dcpMessages.map((m) => [m.rawId, m]))
+    const dcpMessages = createMemo(() => snapshot().state.trackedMessages)
+    const dcpByRawId = createMemo(() => new Map(dcpMessages().map((m) => [m.rawId, m])))
 
     // Build merged display entries (newest first)
-    const allEntries: Array<{
+    const allEntries = createMemo<Array<{
         rawId: string; ref: string; tokenCount: number; activeBlockIds: number[]; role: string; preview: string
-    }> = sdkMessages && sdkMessages.length > 0
-        ? [...sdkMessages].reverse().map((msg: any, i: number) => {
-            const dcpEntry = dcpByRawId.get(msg.id)
-            return {
-                rawId: msg.id,
-                ref: dcpEntry?.ref ?? "?",
-                tokenCount: dcpEntry?.tokenCount ?? 0,
-                activeBlockIds: dcpEntry?.activeBlockIds ?? [],
-                role: msg.type || "?",
-                preview: extractSdkMessagePreview(msg),
-            }
-        })
-        : [...dcpMessages].reverse().map((entry) => ({
+    }>>(() => {
+        const sdkMessages = snapshot().messages
+        if (sdkMessages.length > 0) {
+            return [...sdkMessages].reverse().map((msg) => {
+                const dcpEntry = dcpByRawId().get(msg.id)
+                return {
+                    rawId: msg.id,
+                    ref: dcpEntry?.ref ?? "?",
+                    tokenCount: dcpEntry?.tokenCount ?? 0,
+                    activeBlockIds: dcpEntry?.activeBlockIds ?? [],
+                    role: msg.type || "?",
+                    preview: extractSdkMessagePreview(msg),
+                }
+            })
+        }
+        return [...dcpMessages()].reverse().map((entry) => ({
             ...entry,
             role: "?" as string,
             preview: "(empty)" as string,
         }))
+    })
 
-    const totalMessages = allEntries.length
-    const totalPages = Math.max(1, Math.ceil(totalMessages / PAGE_SIZE))
-    const pageEntries = createMemo(() => allEntries.slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE))
+    const totalMessages = createMemo(() => allEntries().length)
+    const totalPages = createMemo(() => Math.max(1, Math.ceil(totalMessages() / PAGE_SIZE)))
+    const pageEntries = createMemo(() => allEntries().slice(page() * PAGE_SIZE, (page() + 1) * PAGE_SIZE))
+    createEffect(() => {
+        const current = page()
+        const clamped = clampMessagePage(current, totalMessages(), PAGE_SIZE)
+        if (clamped !== current) setPage(clamped)
+    })
 
     const navTo = (newPage: number) => {
         props.ui.log?.(`messages: navigate to page=${newPage}`)
         setPage(newPage)
     }
 
-    if (!sessionID) {
-        return (
-            <PageShell ui={props.ui} title="DCP Messages">
-                <text fg={skin.muted}>No active session</text>
-            </PageShell>
-        )
-    }
-
     return (
         <PageShell ui={props.ui} title="DCP Messages">
-            <box flexDirection="row" gap={1}>
-                <text fg={skin.muted}>
-                    {totalMessages} messages — page {page() + 1}/{totalPages}
-                    {dcpMessages.length > totalMessages ? ` (${dcpMessages.length} tracked)` : ""}
-                </text>
-            </box>
-            <text fg={skin.muted}>{"─".repeat(40)}</text>
-            {allEntries.length === 0 ? (
-                <text fg={skin.muted}>No messages in this session.</text>
-            ) : pageEntries().length === 0 ? (
-                <text fg={skin.muted}>Page {page() + 1} is empty.</text>
-            ) : (
-                pageEntries().map((entry) => {
-                    const isCompressed = entry.activeBlockIds.length > 0
-                    return (
-                        <box flexDirection="row" gap={1}>
-                            <text fg={isCompressed ? skin.compressed : skin.text}>
-                                {entry.ref} {isCompressed ? "C" : "-"} {String(entry.role).padStart(4)} {tokenLabel(entry.tokenCount).padStart(6)} {entry.preview}
-                            </text>
-                        </box>
-                    )
-                })
-            )}
-            {totalMessages > PAGE_SIZE ? (
-                <>
-                    <text fg={skin.muted}>{"─".repeat(40)}</text>
-                    <box flexDirection="row" gap={1} alignItems="center">
-                        {page() > 0 ? (
-                                <box onMouseDown={() => navTo(page() - 1)}>
-                                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← Newer </text>
-                                </box>
+            <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
+                <box flexDirection="row" gap={1}>
+                    <text fg={skin.muted}>
+                        {totalMessages()} messages — page {page() + 1}/{totalPages()}
+                        {dcpMessages().length > totalMessages() ? ` (${dcpMessages().length} tracked)` : ""}
+                    </text>
+                </box>
+                <text fg={skin.muted}>{"─".repeat(40)}</text>
+                {allEntries().length === 0 ? (
+                    <text fg={skin.muted}>No messages in this session.</text>
+                ) : pageEntries().length === 0 ? (
+                    <text fg={skin.muted}>Page {page() + 1} is empty.</text>
+                ) : (
+                    pageEntries().map((entry) => {
+                        const isCompressed = entry.activeBlockIds.length > 0
+                        return (
+                            <box flexDirection="row" gap={1}>
+                                <text fg={isCompressed ? skin.compressed : skin.text}>
+                                    {entry.ref} {isCompressed ? "C" : "-"} {String(entry.role).padStart(4)} {tokenLabel(entry.tokenCount).padStart(6)} {entry.preview}
+                                </text>
+                            </box>
+                        )
+                    })
+                )}
+                {totalMessages() > PAGE_SIZE ? (
+                    <>
+                        <text fg={skin.muted}>{"─".repeat(40)}</text>
+                        <box flexDirection="row" gap={1} alignItems="center">
+                            {page() > 0 ? (
+                                    <box onMouseDown={() => navTo(page() - 1)}>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← Newer </text>
+                                    </box>
+                                ) : null}
+                                <text fg={skin.muted}>Page {page() + 1} of {totalPages()}</text>
+                                {page() < totalPages() - 1 ? (
+                                    <box onMouseDown={() => navTo(page() + 1)}>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> Older → </text>
+                                    </box>
                             ) : null}
-                            <text fg={skin.muted}>Page {page() + 1} of {totalPages}</text>
-                            {page() < totalPages - 1 ? (
-                                <box onMouseDown={() => navTo(page() + 1)}>
-                                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> Older → </text>
-                                </box>
-                        ) : null}
-                    </box>
-                </>
-            ) : null}
+                        </box>
+                    </>
+                ) : null}
+            </Show>
         </PageShell>
     )
 }
@@ -810,27 +624,18 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
 const MemoDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
     const popMode = props.ui.enterMode(DCP_MEMO_MODE)
     onCleanup(popMode)
-    const sessionID = props.params?.sessionID as string | undefined
+    const sessionID = () => props.params?.sessionID as string | undefined
     const skin = props.ui.colors()
-    const [memoData, setMemoData] = createSignal<string | null>(null)
-    const [manualRevision, setManualRevision] = createSignal(0)
-    emitMemoUpdate = () => setManualRevision((v) => v + 1)
-    onCleanup(() => {
-        emitMemoUpdate = null
-    })
-    createEffect(() => {
-        manualRevision()
-        setMemoData(sessionID ? readMemo(sessionID) : null)
-    })
-    const readCurrent = (): string | null => memoData()
+    const snapshot = useSessionSnapshot(props.ui, sessionID)
+    const memo = createMemo(() => snapshot().state.memo)
 
     return (
         <PageShell ui={props.ui} title="DCP Memo">
-            <Show when={sessionID} fallback={<text fg={skin.muted}>No active session</text>}>
-                <Show when={readCurrent() !== null} fallback={<text fg={skin.muted}>No memo set</text>}>
-                    <text fg={skin.muted}>{readCurrent()!.length} chars</text>
+            <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={memo() !== null} fallback={<text fg={skin.muted}>No memo set</text>}>
+                    <text fg={skin.muted}>{memo()!.length} chars</text>
                     <text fg={skin.muted}>{"─".repeat(40)}</text>
-                    <text fg={skin.text}>{readCurrent()!}</text>
+                    <text fg={skin.text}>{memo()!}</text>
                 </Show>
             </Show>
         </PageShell>
@@ -844,10 +649,9 @@ function openBlocks(ui: DcpUi): void {
     ui.openPage("dcp-blocks", sessionID ? { sessionID } : undefined)
 }
 
-async function openMessages(ui: DcpUi): Promise<void> {
+function openMessages(ui: DcpUi): void {
     const sessionID = ui.current().sessionID
     if (sessionID) {
-        await fetchAllSdkMessages(ui, sessionID)
         ui.openPage("dcp-messages", { sessionID })
     } else {
         ui.openPage("dcp-messages")
@@ -868,7 +672,7 @@ function editCurrentBlock(ui: DcpUi): void {
     if (current.page === "dcp-block" && typeof current.blockId === "number") {
         void editBlockSummary(ui, current.sessionID, current.blockId)
     } else {
-        pickBlockToEdit(ui, current.sessionID)
+        void pickBlockToEdit(ui, current.sessionID)
     }
 }
 
@@ -896,6 +700,26 @@ function backToSession(ui: DcpUi): void {
 
 const tui: TuiPlugin = async (api, options, meta) => {
     const transport = createV1TuiTransport(api.client)
+    const log = (message: string) => {
+        void api.client.app.log({
+            service: "dcp-blocks",
+            level: "info",
+            message,
+            extra: {},
+        })
+    }
+    const readState = createDcpStateReader()
+    const cache = createTuiSessionCache({
+        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
+        readSessionMessage: (sessionID, messageID) => transport.readSessionMessage(sessionID, messageID),
+        readState,
+        onError: (error) => log(`refresh error: ${formatError(error)}`),
+    })
+    const unsubscribeRefresh = subscribeV1Refresh(api.event, cache)
+    api.lifecycle.onDispose(() => {
+        unsubscribeRefresh()
+        cache.dispose()
+    })
     const ui: DcpUi = {
         colors: () => look(api.theme.current),
         current: () => {
@@ -935,15 +759,8 @@ const tui: TuiPlugin = async (api, options, meta) => {
         suspendRenderer: () => api.renderer.suspend(),
         resumeRenderer: () => api.renderer.resume(),
         sendEditCommand: (sessionID, argumentsText) => transport.sendEditCommand(sessionID, argumentsText),
-        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
-        log: (message) => {
-            void api.client.app.log({
-                service: "dcp-blocks",
-                level: "info",
-                message,
-                extra: {},
-            })
-        },
+        cache,
+        log,
     }
 
     api.slots.register({
@@ -993,8 +810,8 @@ const tui: TuiPlugin = async (api, options, meta) => {
                 category: "Plugin",
                 namespace: "palette",
                 slashName: "dcp-tui-messages",
-                async run() {
-                    await openMessages(ui)
+                run() {
+                    openMessages(ui)
                 },
             },
             {
@@ -1121,9 +938,7 @@ function v2Commands(ui: DcpUi): KeymapCommand[] {
             group: "Plugin",
             palette: true,
             slash: { name: "dcp-tui-messages" },
-            run: async () => {
-                await openMessages(ui)
-            },
+            run: () => openMessages(ui),
         },
         {
             id: "dcp-tui.memo",
@@ -1141,6 +956,14 @@ function v2Commands(ui: DcpUi): KeymapCommand[] {
 
 const setup: TuiPluginV2.Definition["setup"] = (context) => {
     const transport = createV2TuiTransport(context.client)
+    const readState = createDcpStateReader()
+    const cache = createTuiSessionCache({
+        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
+        readSessionMessage: (sessionID, messageID) => transport.readSessionMessage(sessionID, messageID),
+        readState,
+        onError: (error) => console.error("dcp-blocks: refresh error", error),
+    })
+    const unsubscribeRefresh = subscribeV2Refresh(context.data, cache)
     const ui: DcpUi = {
         colors: () => look(context.theme),
         current: () => v2PageState(context.ui.router.current()),
@@ -1158,7 +981,7 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
         suspendRenderer: () => context.renderer.suspend(),
         resumeRenderer: () => context.renderer.resume(),
         sendEditCommand: (sessionID, argumentsText) => transport.sendEditCommand(sessionID, argumentsText),
-        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
+        cache,
     }
 
     context.ui.slot({
@@ -1199,10 +1022,17 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
         commands: [v2EditMemoCommand(ui, "e"), v2BackCommand(ui, "escape")],
     }))
 
-    if (!context.location) return undefined
-    return subscribeNotificationToasts(context.client, context.location, (toast) => {
-        context.ui.toast.show(toast)
-    })
+    const unsubscribeToasts = context.location
+        ? subscribeNotificationToasts(context.client, context.location, (toast) => {
+            context.ui.toast.show(toast)
+        })
+        : undefined
+
+    return () => {
+        unsubscribeToasts?.()
+        unsubscribeRefresh()
+        cache.dispose()
+    }
 }
 
 const plugin: TuiPluginModule & TuiPluginV2.Definition = {

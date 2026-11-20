@@ -11,12 +11,14 @@ export type TuiMessageEntry = {
 export interface TuiTransport {
     sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
     readSessionMessages(sessionID: string): Promise<TuiMessageEntry[]>
+    readSessionMessage(sessionID: string, messageID: string): Promise<TuiMessageEntry>
 }
 
 type V1Client = {
     session: {
         command(input: { sessionID: string; command: string; arguments: string }): Promise<unknown>
         messages(input: { sessionID: string }): Promise<unknown>
+        message(input: { sessionID: string; messageID: string }): Promise<unknown>
     }
 }
 
@@ -27,6 +29,15 @@ type V1Message = {
 
 type V2Client = Pick<Plugin.Context["client"], "session" | "message">
 type V2Message = Awaited<ReturnType<V2Client["message"]["list"]>>["data"][number]
+type V2TargetedMessage = Awaited<ReturnType<V2Client["session"]["message"]["get"]>>
+
+function mapV1Message(message: V1Message): TuiMessageEntry {
+    return {
+        id: message.info?.id ?? "",
+        type: message.info?.role ?? "",
+        content: message.parts,
+    }
+}
 
 function mapV2Content(content: unknown[]): unknown[] {
     return content.map((part) => {
@@ -39,7 +50,7 @@ function mapV2Content(content: unknown[]): unknown[] {
     })
 }
 
-function mapV2Message(message: V2Message): TuiMessageEntry {
+function mapV2Message(message: V2Message | V2TargetedMessage): TuiMessageEntry {
     const entry: TuiMessageEntry = {
         id: message.id ?? "",
         type: message.type ?? "",
@@ -66,11 +77,14 @@ export function createV1TuiTransport(client: unknown): TuiTransport {
                 { data?: V1Message[] } | undefined
             const data = response?.data
             if (!Array.isArray(data)) return []
-            return data.map((message) => ({
-                id: message.info?.id ?? "",
-                type: message.info?.role ?? "",
-                content: message.parts,
-            }))
+            return data.map((message) => mapV1Message(message))
+        },
+        async readSessionMessage(sessionID: string, messageID: string): Promise<TuiMessageEntry> {
+            const response = (await api.session.message({ sessionID, messageID })) as
+                { data?: V1Message } | undefined
+            const message = response?.data
+            if (message === undefined) return { id: "", type: "" }
+            return mapV1Message(message)
         },
     }
 }
@@ -103,6 +117,10 @@ export function createV2TuiTransport(api: V2Client): TuiTransport {
                 cursor = next
             }
             return entries
+        },
+        async readSessionMessage(sessionID: string, messageID: string): Promise<TuiMessageEntry> {
+            const message = await api.session.message.get({ sessionID, messageID })
+            return mapV2Message(message)
         },
     }
 }
