@@ -1,3 +1,4 @@
+import type { SessionRequest, SessionRequestMessage } from "@opencode/plugin/promise/session"
 import { planHousekeepingProjection } from "./housekeeping/history"
 import { isOwnedDisplayOnlyMetadata } from "./native-session"
 import {
@@ -14,14 +15,41 @@ import { injectCompressNudges, messageIdTag } from "./messages/inject/inject"
 import type { CompressionPriorityMap } from "./messages/priority"
 import type { RuntimePrompts } from "./prompts/store"
 
-export interface ModelContextRequest {
-    messages: Array<{
-        id?: string
-        role?: string
-        metadata?: Record<string, unknown>
-        content: readonly unknown[]
-    }>
-    options: { stop?: readonly string[] }
+export type ModelContextRequest = Pick<SessionRequest, "messages" | "options">
+type MessagePart = SessionRequestMessage["content"][number]
+
+function mapMessageParts(
+    message: SessionRequestMessage,
+    transform: <Part extends MessagePart>(part: Part, index: number) => Part | undefined,
+): SessionRequestMessage {
+    const map = <Part extends MessagePart>(content: readonly Part[]): Part[] =>
+        content.flatMap((part, index) => {
+            const updated = transform(part, index)
+            return updated === undefined ? [] : [updated]
+        })
+    switch (message.role) {
+        case "system":
+            return { ...message, content: map(message.content) }
+        case "user":
+            return { ...message, content: map(message.content) }
+        case "assistant":
+            return { ...message, content: map(message.content) }
+        case "tool":
+            return { ...message, content: map(message.content) }
+    }
+}
+
+function insertMessageText<
+    Message extends Extract<SessionRequestMessage, { role: "user" | "assistant" }>,
+>(message: Message, text: string, index: number): Message {
+    return {
+        ...message,
+        content: [
+            ...message.content.slice(0, index),
+            { type: "text" as const, text },
+            ...message.content.slice(index),
+        ],
+    }
 }
 
 export function injectContextSkills(
@@ -42,7 +70,7 @@ export function injectContextSkills(
             ? -1
             : messages.findIndex((message) => message.id === lastSummaryId)
     const index = memoIndex >= 0 ? memoIndex + 1 : summaryIndex >= 0 ? summaryIndex + 1 : 0
-    const skills = records.flatMap((record) => {
+    const skills = records.flatMap((record): SessionRequestMessage[] => {
         const { messageId, callId } = skillMessageIdentity(record)
         return [
             {
@@ -98,36 +126,36 @@ export function injectContextNudges(
                 if (message.id !== source.info.id) return message
                 if (message.role !== "user" && message.role !== "assistant") return message
                 if (message.role === "assistant" && !hasContent(source)) return message
-                const content = [...message.content]
                 const textIndex =
                     message.role === "user"
-                        ? content.findLastIndex(
+                        ? message.content.findLastIndex(
                               (part) =>
                                   isRecord(part) &&
                                   part.type === "text" &&
                                   typeof part.text === "string",
                           )
-                        : content.findIndex(
+                        : message.content.findIndex(
                               (part) =>
                                   isRecord(part) &&
                                   part.type === "text" &&
                                   typeof part.text === "string",
                           )
                 if (textIndex >= 0) {
-                    const part = content[textIndex] as Record<string, unknown>
-                    const updated = { ...part, text: part.text as string }
-                    appendToTextPart(updated, text)
-                    content[textIndex] = updated
-                } else {
-                    const toolIndex = content.findIndex(
-                        (part) => toolPartId(part, "tool-call") !== undefined,
-                    )
-                    content.splice(toolIndex < 0 ? content.length : toolIndex, 0, {
-                        type: "text",
-                        text,
+                    return mapMessageParts(message, (part, index) => {
+                        if (index !== textIndex || part.type !== "text") return part
+                        const updated = { text: part.text }
+                        appendToTextPart(updated, text)
+                        return { ...part, text: updated.text }
                     })
                 }
-                return { ...message, content }
+                const toolIndex = message.content.findIndex(
+                    (part) => toolPartId(part, "tool-call") !== undefined,
+                )
+                return insertMessageText(
+                    message,
+                    text,
+                    toolIndex < 0 ? message.content.length : toolIndex,
+                )
             })
         },
     )
@@ -140,18 +168,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null
 }
 
-function stripText(value: Record<string, unknown>, key: string) {
+function stripText<Value extends Record<string, unknown>>(value: Value, key: string): Value {
     const original = value[key]
     if (typeof original !== "string") return value
     const clean = stripHallucinationsFromString(original)
     return clean === original ? value : { ...value, [key]: clean }
 }
 
-function stripTextPart(part: unknown): unknown {
+function stripTextPart<
+    Part extends
+        MessagePart | { type: "text"; text: string } | { type: "file"; uri: string; mime: string },
+>(part: Part): Part {
     return isRecord(part) && part.type === "text" ? stripText(part, "text") : part
 }
 
-function stripPart(part: unknown): unknown {
+function stripPart<Part extends MessagePart>(part: Part): Part {
     if (!isRecord(part) || part.type !== "tool-result" || !isRecord(part.result)) {
         return stripTextPart(part)
     }
@@ -160,7 +191,7 @@ function stripPart(part: unknown): unknown {
         return result === part.result ? part : { ...part, result }
     }
     if (part.result.type === "content" && Array.isArray(part.result.value)) {
-        const content: unknown[] = part.result.value
+        const content = part.result.value
         const value = content.map(stripTextPart)
         if (value.some((item, i) => item !== content[i])) {
             return { ...part, result: { ...part.result, value } }
@@ -204,24 +235,24 @@ function projectHousekeeping(
 
     let position = 0
     return messages.flatMap((message) => {
-        const content = message.content.flatMap((part) => {
-            const resultId = toolPartId(part, "tool-result")
-            if (resultId === undefined) return hidden[position++] > 0 ? [] : [part]
-            const call = calls.get(resultId)
-            if (call == null) return [part]
-            if (hidden[call] > 0) return []
+        const projected = mapMessageParts(message, (part) => {
+            if (part.type !== "tool-result") return hidden[position++] > 0 ? undefined : part
+            const call = calls.get(part.id)
+            if (call == null) return part
+            if (hidden[call] > 0) return undefined
             const edit = boundaryEdits.get(call)
-            return edit && isRecord(part) && part.resultType !== "error"
-                ? [{ ...part, result: { type: "text", value: edit.output } }]
-                : [part]
+            return edit && part.result.type !== "error"
+                ? { ...part, result: { type: "text" as const, value: edit.output } }
+                : part
         })
+        const content = projected.content
         if (
             content.length === message.content.length &&
             content.every((part, i) => part === message.content[i])
         ) {
             return [message]
         }
-        return content.length > 0 ? [{ ...message, content }] : []
+        return content.length > 0 ? [projected] : []
     })
 }
 
@@ -235,9 +266,9 @@ export function prepareModelContext(
         return message.id === undefined || !ownedDisplayOnlyIds.has(message.id)
     })
     request.messages = request.messages.map((message) => {
-        const content = message.content.map(stripPart)
-        return content.some((part, i) => part !== message.content[i])
-            ? { ...message, content }
+        const projected = mapMessageParts(message, stripPart)
+        return projected.content.some((part, i) => part !== message.content[i])
+            ? projected
             : message
     })
     if (history.length > 0) request.messages = projectHousekeeping(request.messages, history)
@@ -286,12 +317,13 @@ export function projectContextBlocks(
             }
         }
         if (covered(message.id)) continue
-        const content = message.content.filter((part) => {
+        const projected = mapMessageParts(message, (part) => {
             const id = toolPartId(part, "tool-result")
-            return id === undefined || calls.get(id) !== true
+            return id !== undefined && calls.get(id) === true ? undefined : part
         })
+        const content = projected.content
         if (content.length === message.content.length) result.push(message)
-        else if (content.length > 0) result.push({ ...message, content })
+        else if (content.length > 0) result.push(projected)
     }
     request.messages = result
     return lastSummaryId
@@ -329,17 +361,17 @@ export function injectContextMessageIds(
     }
     const annotatedCalls = new Set<string>()
     request.messages = request.messages.map((message) => {
-        const content = message.content.map((part) => {
+        const projected = mapMessageParts(message, (part) => {
+            if (part.type !== "tool-result") return part
             const id = toolPartId(part, "tool-result")
             const tag = id === undefined ? undefined : calls.get(id)
-            if (!tag || !isRecord(part) || !isRecord(part.result) || part.resultType === "error")
-                return part
+            if (!tag || part.result.type === "error") return part
             if (part.result.type === "text" && typeof part.result.value === "string") {
                 annotatedCalls.add(id!)
                 return { ...part, result: { ...part.result, value: part.result.value + tag } }
             }
             if (part.result.type === "content" && Array.isArray(part.result.value)) {
-                const values: unknown[] = part.result.value
+                const values = part.result.value
                 const index = values.findLastIndex(
                     (value) =>
                         isRecord(value) && value.type === "text" && typeof value.text === "string",
@@ -351,7 +383,7 @@ export function injectContextMessageIds(
                         result: {
                             ...part.result,
                             value: values.map((value, i) =>
-                                i === index && isRecord(value)
+                                i === index && value.type === "text"
                                     ? { ...value, text: value.text + tag }
                                     : value,
                             ),
@@ -361,8 +393,8 @@ export function injectContextMessageIds(
             }
             return part
         })
-        return content.some((part, i) => part !== message.content[i])
-            ? { ...message, content }
+        return projected.content.some((part, i) => part !== message.content[i])
+            ? projected
             : message
     })
     request.messages = request.messages.map((message) => {
@@ -405,19 +437,13 @@ export function injectContextMessageIds(
                     ))
             )
                 return message
-            return {
-                ...message,
-                content: [...message.content, { type: "text", text: tag.replace(/^\n+/, "") }],
-            }
+            return insertMessageText(message, tag.replace(/^\n+/, ""), message.content.length)
         }
-        return {
-            ...message,
-            content: message.content.map((part, i) => {
-                if (!selected.includes(i) || !isRecord(part)) return part
-                const text = String(part.text).replace(/\n*$/, "")
-                return { ...part, text: (text ? text + "\n\n" : "") + tag.replace(/^\n+/, "") }
-            }),
-        }
+        return mapMessageParts(message, (part, i) => {
+            if (!selected.includes(i) || part.type !== "text") return part
+            const text = String(part.text).replace(/\n*$/, "")
+            return { ...part, text: (text ? text + "\n\n" : "") + tag.replace(/^\n+/, "") }
+        })
     })
 }
 

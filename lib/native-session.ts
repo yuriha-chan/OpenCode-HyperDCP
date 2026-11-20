@@ -1,93 +1,18 @@
 import { fileURLToPath } from "node:url"
+import type { Plugin } from "@opencode/plugin"
 import type { WithParts } from "./state"
 
-export interface NativeModelRef {
-    id?: string
-    providerID?: string
-}
+export type NativeSessionInfo = Awaited<ReturnType<Plugin.Context["session"]["get"]>>
+export type NativePermissionRule = NonNullable<NativeSessionInfo["permissions"]>[number]
+export type NativeSessionMessage = Awaited<ReturnType<Plugin.Context["session"]["context"]>>[number]
+type NativeUserMessage = Extract<NativeSessionMessage, { type: "user" }>
+type NativeAssistantMessage = Extract<NativeSessionMessage, { type: "assistant" }>
+type NativeCompactionMessage = Extract<NativeSessionMessage, { type: "compaction" }>
+export type NativeFileAttachment = NonNullable<NativeUserMessage["files"]>[number]
+export type NativeAssistantContent = NativeAssistantMessage["content"][number]
+export type NativeToolState = Extract<NativeAssistantContent, { type: "tool" }>["state"]
 
-export interface NativePermissionRule {
-    action: string
-    resource: string
-    effect: "ask" | "allow" | "deny"
-}
-
-export interface NativeSessionInfo {
-    id?: string
-    parentID?: string
-    agent?: string
-    model?: NativeModelRef
-    permissions?: ReadonlyArray<NativePermissionRule>
-    revert?: {
-        messageID?: string
-    }
-}
-
-export interface NativeToolContent {
-    type: string
-    text?: string
-}
-
-export interface NativeToolState {
-    status: string
-    input?: unknown
-    metadata?: Record<string, unknown>
-    content?: ReadonlyArray<NativeToolContent>
-    error?: unknown
-}
-
-interface NativePartTime {
-    created: number
-    ran?: number
-    completed?: number
-}
-
-export type NativeAssistantContent =
-    | { type: "text"; text: string }
-    | { type: "reasoning"; text: string; time?: NativePartTime }
-    | { type: "tool"; id: string; name: string; state: NativeToolState; time: NativePartTime }
-
-export interface NativeFileAttachment {
-    data: string
-    mime: string
-    source: { type: "inline" } | { type: "uri"; uri: string }
-    name?: string
-    description?: string
-    mention?: { text: string }
-}
-
-export interface NativeSessionMessage {
-    id: string
-    type: string
-    text?: string
-    description?: string
-    files?: ReadonlyArray<NativeFileAttachment>
-    summary?: string
-    status?: string
-    agent?: string
-    model?: NativeModelRef
-    metadata?: Record<string, unknown>
-    content?: ReadonlyArray<NativeAssistantContent>
-    tokens?: {
-        input: number
-        output: number
-        reasoning: number
-        cache: { read: number; write: number }
-    }
-    time?: {
-        created?: number
-        completed?: number
-    }
-}
-
-export interface NativeSessionApi {
-    context(input: { sessionID: string }): Promise<NativeSessionMessage[]>
-    get(input: { sessionID: string }): Promise<NativeSessionInfo>
-}
-
-export function isOwnedDisplayOnlyMetadata(
-    metadata: Record<string, unknown> | undefined,
-): boolean {
+export function isOwnedDisplayOnlyMetadata(metadata: Record<string, unknown> | undefined): boolean {
     if (!metadata) return false
     const hyperdcp = metadata.hyperdcp
     return (
@@ -111,22 +36,25 @@ function partId(messageID: string, index: number): string {
     return `${messageID}:part:${index}`
 }
 
-function userInfo(message: NativeSessionMessage, sessionID: string): UserInfo {
+function userInfo(
+    message: NativeUserMessage | Extract<NativeSessionMessage, { type: "synthetic" }>,
+    sessionID: string,
+): UserInfo {
     return {
         id: message.id,
         sessionID,
         role: "user",
         time: { created: message.time?.created ?? 0 },
-        agent: message.agent ?? "user",
+        agent: "user",
         model: {
-            providerID: message.model?.providerID ?? "",
-            modelID: message.model?.id ?? "",
+            providerID: "",
+            modelID: "",
         },
     }
 }
 
 function assistantInfo(
-    message: NativeSessionMessage,
+    message: NativeAssistantMessage | NativeCompactionMessage,
     sessionID: string,
     created: number,
 ): AssistantInfo {
@@ -136,13 +64,15 @@ function assistantInfo(
         role: "assistant",
         time: {
             created,
-            ...(message.time?.completed !== undefined ? { completed: message.time.completed } : {}),
+            ...("completed" in message.time && message.time.completed !== undefined
+                ? { completed: message.time.completed }
+                : {}),
         },
         parentID: "",
-        modelID: message.model?.id ?? "",
-        providerID: message.model?.providerID ?? "",
+        modelID: message.type === "assistant" ? (message.model?.id ?? "") : "",
+        providerID: message.type === "assistant" ? (message.model?.providerID ?? "") : "",
         mode: "",
-        agent: message.agent ?? "assistant",
+        agent: message.type === "assistant" ? (message.agent ?? "assistant") : "assistant",
         path: { cwd: "", root: "" },
         cost: 0,
         tokens:
@@ -221,7 +151,7 @@ function toolState(
     }
 }
 
-function assistantParts(message: NativeSessionMessage, sessionID: string): CorePart[] {
+function assistantParts(message: NativeAssistantMessage, sessionID: string): CorePart[] {
     const created = message.time?.created ?? 0
     return (message.content ?? []).flatMap((content, index): CorePart[] => {
         if (content.type === "text")
@@ -264,7 +194,7 @@ function assistantParts(message: NativeSessionMessage, sessionID: string): CoreP
                         content.time?.created ?? created,
                         content.time?.completed ?? content.time?.ran,
                     ),
-                    metadata: content.state?.metadata,
+                    metadata: "metadata" in content.state ? content.state.metadata : undefined,
                 },
             ]
         return []

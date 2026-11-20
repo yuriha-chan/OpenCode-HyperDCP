@@ -1,8 +1,9 @@
 /** @jsxImportSource @opentui/solid */
-import "@opentui/core"
+import { TextAttributes, type TextNodeOptions } from "@opentui/core"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { Plugin as TuiPluginV2 } from "@opencode/plugin/tui"
+import type { KeymapCommand, Route } from "@opencode/plugin/tui/context"
 import { Show, For, onCleanup, createSignal, createMemo, createEffect } from "solid-js"
-import type { JSX } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -12,11 +13,7 @@ import { renderStoredMemo } from "./memo"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
 import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
 import { createV1TuiTransport, createV2TuiTransport, type TuiMessageEntry } from "./tui-client"
-import {
-    subscribeNotificationToasts,
-    type NotificationLocation,
-    type NotificationRpcClient,
-} from "../lib/notification-rpc"
+import { subscribeNotificationToasts } from "../lib/notification-rpc"
 
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
@@ -410,8 +407,8 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
             </text>
             <Show when={!collapsed()}>
                 <text fg={skin.muted}>
-                    <b fg={skin.text}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
-                    {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b fg={skin.text}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
+                    <b style={{ fg: skin.text } satisfies TextNodeOptions}>{blocks.length}</b> block{blocks.length !== 1 ? "s" : ""}
+                    {blocks.length > 0 ? <> — {tokenLabel(totalRaw)} → <b style={{ fg: skin.text } satisfies TextNodeOptions}>{tokenLabel(totalSummary)}</b> (est.)</> : ""}
                 </text>
                 <Show when={blocks.length === 0}>
                     <text fg={skin.muted}>No compression blocks yet</text>
@@ -437,10 +434,7 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
                 </Show>
             </Show>
             <box flexDirection="row" gap={1}>
-                <text bold inverse onMouseDown={async () => {
-                    await fetchAllSdkMessages(props.ui, props.session_id)
-                    props.ui.openPage("dcp-messages", { sessionID: props.session_id })
-                }} onDblClick={async () => {
+                <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE} onMouseDown={async () => {
                     await fetchAllSdkMessages(props.ui, props.session_id)
                     props.ui.openPage("dcp-messages", { sessionID: props.session_id })
                 }}> Messages </text>
@@ -458,7 +452,7 @@ function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "h
     return (
         <box flexDirection="row" gap={1}>
             <box onMouseDown={() => goBack(props.ui, props.backTarget ?? "home", props.backParams)}>
-                <text fg={skin.text} bold inverse> ← {backLabel} </text>
+                <text fg={skin.text} attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> ← {backLabel} </text>
             </box>
             <text>
                 <b>{props.title}</b>
@@ -525,11 +519,11 @@ const BlocksDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) =>
                 const topic = block.topic || null
                 const clr = block.active && !isEmpty(block) ? skin.compressed : isEmpty(block) ? skin.pruned : skin.decompressed
                 return (
-                    <box key={block.blockId} flexDirection="row" gap={1} onMouseDown={() => {
+                    <box flexDirection="row" gap={1} onMouseDown={() => {
                         props.ui.log?.(`blocks: navigate to dcp-block blockId=${block.blockId}`)
                         props.ui.openPage("dcp-block", { sessionID, blockId: block.blockId })
                     }}>
-                        <text fg={clr} bold>b{String(block.blockId).padEnd(3)}</text>
+                        <text fg={clr} attributes={TextAttributes.BOLD}>b{String(block.blockId).padEnd(3)}</text>
                         <text fg={skin.muted}>
                             ({tokenLabelPrecise(block.compressedTokens).padStart(5)}→{tokenLabelPrecise(block.summaryTokens).padStart(5)}) {mode.padEnd(7)} {statusLabel(block).padEnd(12)} {block.startId}→{block.endId}
                             {topic ? <b> | {topic}</b> : ""}
@@ -620,7 +614,7 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                                                     onMouseDown={() => setSelectedVersion(idx)}
                                                 >
                                                     <Show when={isShown()} fallback={<>{`${isActive() ? "*" : ""}v${idx}`}</>}>
-                                                        <b inverse>{`[${isActive() ? "*" : ""}v${idx}]`}</b>
+                                                        <b style={{ attributes: TextAttributes.BOLD | TextAttributes.INVERSE } satisfies TextNodeOptions}>{`[${isActive() ? "*" : ""}v${idx}]`}</b>
                                                     </Show>
                                                 </text>
                                             )
@@ -781,7 +775,7 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
                 pageEntries().map((entry) => {
                     const isCompressed = entry.activeBlockIds.length > 0
                     return (
-                        <box key={entry.rawId} flexDirection="row" gap={1}>
+                        <box flexDirection="row" gap={1}>
                             <text fg={isCompressed ? skin.compressed : skin.text}>
                                 {entry.ref} {isCompressed ? "C" : "-"} {String(entry.role).padStart(4)} {tokenLabel(entry.tokenCount).padStart(6)} {entry.preview}
                             </text>
@@ -795,13 +789,13 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
                     <box flexDirection="row" gap={1} alignItems="center">
                         {page() > 0 ? (
                                 <box onMouseDown={() => navTo(page() - 1)}>
-                                    <text bold inverse> ← Newer </text>
+                                    <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> ← Newer </text>
                                 </box>
                             ) : null}
                             <text fg={skin.muted}>Page {page() + 1} of {totalPages}</text>
                             {page() < totalPages - 1 ? (
                                 <box onMouseDown={() => navTo(page() + 1)}>
-                                    <text bold inverse> Older → </text>
+                                    <text attributes={TextAttributes.BOLD | TextAttributes.INVERSE}> Older → </text>
                                 </box>
                         ) : null}
                     </box>
@@ -1065,73 +1059,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
 
 // --- v2 native registration ---
 
-type V2Route =
-    | { type: "home" }
-    | { type: "session"; sessionID: string }
-    | { type: "plugin"; id: string; name: string; data?: Record<string, unknown> }
-
-type V2Destination =
-    | { type: "home" }
-    | { type: "session"; sessionID: string }
-    | { type: "plugin"; name: string; data?: Record<string, unknown> }
-
-interface V2KeymapCommand {
-    id?: string
-    title?: string
-    group?: string
-    palette?: true
-    slash?: { name: string; aliases?: string[]; arguments?: true }
-    bind?: false | string
-    run(input?: string): void | false | Promise<void>
-}
-
-interface V2KeymapLayer {
-    mode?: string
-    commands?: readonly V2KeymapCommand[]
-    bindings?: readonly string[]
-}
-
-interface V2TuiContext {
-    readonly theme: Record<string, unknown>
-    readonly location?: NotificationLocation
-    readonly renderer: {
-        suspend(): void | Promise<void>
-        resume(): void | Promise<void>
-    }
-    readonly client: NotificationRpcClient
-    readonly keymap: {
-        layer(factory: () => V2KeymapLayer): void
-        mode: {
-            push(mode: string): () => void
-        }
-    }
-    readonly ui: {
-        readonly toast: {
-            show(options: {
-                variant?: "info" | "success" | "warning" | "error"
-                message: string
-                title?: string
-                duration?: number
-                sessionID?: string
-            }): void
-        }
-        readonly router: {
-            register(page: { name: string; render(input: { data?: Record<string, unknown> }): JSX.Element }): () => void
-            navigate(destination: V2Destination): void
-            current(): V2Route
-        }
-        readonly dialog: {
-            select<Value>(options: {
-                title: string
-                placeholder?: string
-                options: readonly { title: string; value: Value; description?: string }[]
-            }): Promise<Value | undefined>
-        }
-        slot(claim: { append: "sidebar.content"; render(input: { sessionID: string }): JSX.Element }): () => void
-    }
-}
-
-function v2PageState(route: V2Route): DcpPageState {
+function v2PageState(route: Route): DcpPageState {
     if (route.type === "home") return {}
     if (route.type === "session") return { sessionID: route.sessionID }
     if (route.id !== PLUGIN_ID) return {}
@@ -1143,7 +1071,7 @@ function v2PageState(route: V2Route): DcpPageState {
     }
 }
 
-function v2EditBlockCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+function v2EditBlockCommand(ui: DcpUi, bind?: string): KeymapCommand {
     return {
         id: "dcp-tui.edit",
         title: "DCP Edit Block Summary",
@@ -1155,7 +1083,7 @@ function v2EditBlockCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
     }
 }
 
-function v2EditMemoCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+function v2EditMemoCommand(ui: DcpUi, bind?: string): KeymapCommand {
     return {
         id: "dcp-tui.edit-memo",
         title: "DCP Edit Memo",
@@ -1167,7 +1095,7 @@ function v2EditMemoCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
     }
 }
 
-function v2BackCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
+function v2BackCommand(ui: DcpUi, bind?: string): KeymapCommand {
     return {
         id: "dcp-tui.back",
         title: "Go back to session",
@@ -1177,7 +1105,7 @@ function v2BackCommand(ui: DcpUi, bind?: string): V2KeymapCommand {
     }
 }
 
-function v2Commands(ui: DcpUi): V2KeymapCommand[] {
+function v2Commands(ui: DcpUi): KeymapCommand[] {
     return [
         {
             id: "dcp-tui.blocks",
@@ -1211,7 +1139,7 @@ function v2Commands(ui: DcpUi): V2KeymapCommand[] {
     ]
 }
 
-const setup = (context: V2TuiContext): (() => void) | undefined => {
+const setup: TuiPluginV2.Definition["setup"] = (context) => {
     const transport = createV2TuiTransport(context.client)
     const ui: DcpUi = {
         colors: () => look(context.theme),
@@ -1277,10 +1205,7 @@ const setup = (context: V2TuiContext): (() => void) | undefined => {
     })
 }
 
-const plugin: TuiPluginModule & {
-    id: string
-    setup: (context: V2TuiContext) => (() => void) | undefined
-} = {
+const plugin: TuiPluginModule & TuiPluginV2.Definition = {
     id: PLUGIN_ID,
     tui,
     setup,

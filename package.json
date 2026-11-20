@@ -26,7 +26,7 @@
         "check:package": "npm run build && npm run verify:package",
         "prepublishOnly": "npm run check:package",
         "dev": "opencode plugin dev",
-        "typecheck": "tsc --noEmit",
+        "typecheck": "tsc --noEmit && tsc -p tsconfig.tui.json",
         "test": "node --import tsx --test tests/*.test.ts",
         "test:integration": "node --import tsx --test tests/*.integration.ts",
         "format": "prettier --write .",
@@ -68,10 +68,11 @@
         "jsonc-parser": "^3.3.1"
     },
     "devDependencies": {
+        "@opencode/plugin": "2.3.2",
         "@opencode-ai/plugin": ">=1.4.3",
-        "@opentui/core": "0.4.5",
-        "@opentui/keymap": "0.4.5",
-        "@opentui/solid": "0.4.5",
+        "@opentui/core": "0.8.4",
+        "@opentui/keymap": "0.8.4",
+        "@opentui/solid": "0.8.4",
         "@types/node": "^25.5.0",
         "prettier": "^3.8.1",
         "solid-js": "1.9.12",

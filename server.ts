@@ -1,4 +1,8 @@
+import type { Plugin } from "@opencode/plugin"
+import type { SessionContext } from "@opencode/plugin/promise/session"
+import type { ToolContext as NativeToolContext } from "@opencode/plugin/promise/tool"
 import server from "./index"
+import { buildPriorityMap } from "./lib/messages/priority"
 import { prepareSkillLoad, recordSkillLoad, unloadSkill } from "./lib/skills"
 import { compressMessages, renderCompressMessageDescription } from "./lib/compress/message"
 import { compressRanges, renderCompressRangeDescription } from "./lib/compress/range"
@@ -16,7 +20,6 @@ import {
     injectContextNudges,
     injectContextSkills,
     projectContextBlocks,
-    type ModelContextRequest,
 } from "./lib/model-context"
 import { renderContextMemo } from "./lib/memo"
 import { assignMessageRefs } from "./lib/message-ids"
@@ -76,24 +79,16 @@ import { wildcardMatch } from "./lib/host-permissions"
 import { dispatchDcpCommand } from "./lib/commands/dispatch"
 import type { CommandSendMessage } from "./lib/commands/output"
 import { finalizeCompression } from "./lib/compress/pipeline"
-import { notificationRpc, type NotificationToast } from "./lib/notification-rpc"
+import { notificationRpc } from "./lib/notification-rpc"
 import type { NotificationDelivery } from "./lib/ui/notification"
 import {
     isOwnedDisplayOnlyMessage,
     nativeSessionTodos,
     normalizeNativeHistory,
     type NativePermissionRule,
-    type NativeSessionApi,
     type NativeSessionInfo,
     type NativeSessionMessage,
 } from "./lib/native-session"
-
-type SessionContextRequest = ModelContextRequest & {
-    sessionID: string
-    agent: string
-    model?: { providerID?: string; id?: string }
-    system: Array<{ type: "text"; text: string; cache?: unknown; metadata?: unknown }>
-}
 
 function compressDisabledByNativeRules(rules: ReadonlyArray<NativePermissionRule>): boolean {
     let match: NativePermissionRule | undefined
@@ -107,7 +102,7 @@ function compressDisabledByNativeRules(rules: ReadonlyArray<NativePermissionRule
     return match?.resource === "*" && match.effect === "deny"
 }
 
-function appendSystemGuidance(system: SessionContextRequest["system"], guidance: string): void {
+function appendSystemGuidance(system: SessionContext["system"], guidance: string): void {
     if (system.length === 0) {
         system.push({ type: "text", text: guidance })
         return
@@ -115,144 +110,6 @@ function appendSystemGuidance(system: SessionContextRequest["system"], guidance:
     const index = system.length - 1
     const last = system[index]!
     system[index] = { ...last, text: `${last.text}\n\n${guidance}` }
-}
-
-interface NativeToolContext {
-    sessionID: string
-    messageID: string
-    id: string
-    agent: string
-    progress(update: Record<string, unknown>): Promise<void>
-}
-
-interface NativeToolDefinition {
-    name: string
-    description: string
-    input: unknown
-    options?: { codemode: boolean }
-    execute(input: unknown, context: NativeToolContext): Promise<{ content: string }>
-}
-
-interface NativeToolEditor {
-    add(definition: NativeToolDefinition): void
-    update(id: string, update: (definition: NativeToolDefinition) => void): void
-}
-
-interface NativeToolExecuteEvent {
-    tool: string
-    sessionID: string
-    messageID: string
-    id: string
-    agent: string
-    input: unknown
-}
-
-type NativeToolAfterEvent = NativeToolExecuteEvent &
-    (
-        | { status: "completed"; result: { content?: unknown; metadata?: Record<string, unknown> } }
-        | { status: "error"; error: unknown }
-    )
-
-interface NativePermissionInput {
-    sessionID: string
-    agent?: string
-    action: string
-    resources: string[]
-    source: { type: "tool"; messageID: string; id: string }
-}
-
-interface NativePromptInput {
-    sessionID: string
-    text: string
-    files?: unknown[]
-    agents?: unknown[]
-    skills?: unknown[]
-    delivery?: "steer" | "queue"
-}
-
-interface NativeSyntheticInput {
-    sessionID: string
-    text: string
-    metadata?: Record<string, unknown>
-    resume?: boolean
-}
-
-interface NativeCommandInvocation {
-    sessionID: string
-    prompt: {
-        text: string
-        files?: unknown[]
-        agents?: unknown[]
-        skills?: unknown[]
-    }
-    delivery?: "steer" | "queue"
-}
-
-interface NativeCommandDefinition {
-    name: string
-    description: string
-    execute(input: NativeCommandInvocation): Promise<void>
-}
-
-interface NativeCommandEditor {
-    add(definition: NativeCommandDefinition): void
-}
-
-interface HostContext {
-    location: { directory: string }
-    skill: {
-        list(input: { location: { directory: string } }): Promise<{
-            location: unknown
-            data: Array<{ id: string; name: string }>
-        }>
-    }
-    model: {
-        list(input: { location: { directory: string } }): Promise<{
-            location: unknown
-            data: Array<{ id: string; providerID: string; limit: { context: number } }>
-        }>
-    }
-    session: NativeSessionApi & {
-        hook(
-            name: "context",
-            callback: (request: SessionContextRequest) => Promise<void>,
-        ): Promise<unknown>
-        prompt(input: NativePromptInput): Promise<unknown>
-        synthetic(input: NativeSyntheticInput): Promise<unknown>
-    }
-    agent: {
-        get(input: { agentID: string }): Promise<{
-            location?: { directory?: string }
-            data: { permissions?: ReadonlyArray<NativePermissionRule> }
-        }>
-    }
-    permission: {
-        assert(input: NativePermissionInput): Promise<void>
-    }
-    command: {
-        transform(callback: (editor: NativeCommandEditor) => void): Promise<unknown>
-    }
-    tool: {
-        transform(callback: (editor: NativeToolEditor) => void): Promise<unknown>
-        hook(
-            name: "execute.before",
-            callback: (event: NativeToolExecuteEvent) => Promise<void>,
-        ): Promise<unknown>
-        hook(
-            name: "execute.after",
-            callback: (event: NativeToolAfterEvent) => Promise<void>,
-        ): Promise<unknown>
-    }
-    rpc: {
-        register(
-            definition: typeof notificationRpc,
-            handlers: Record<string, never>,
-        ): Promise<{
-            events: {
-                emit(name: "toast", payload: NotificationToast): Promise<void>
-            }
-        }>
-    }
 }
 
 function validateSessionInfo(info: NativeSessionInfo, sessionID: string): void {
@@ -360,7 +217,7 @@ const definition = {
         command,
         tool,
         rpc,
-    }: HostContext) => {
+    }: Plugin.Context) => {
         const config = getConfig(location)
         if (!config.enabled) return
         const logger = new Logger(config.debug)
@@ -456,9 +313,7 @@ const definition = {
                     (entry) => entry.sessionId === request.sessionID,
                 )
                 const ownedDisplayOnlyIds = new Set(
-                    nativeMessages
-                        .filter(isOwnedDisplayOnlyMessage)
-                        .map((message) => message.id),
+                    nativeMessages.filter(isOwnedDisplayOnlyMessage).map((message) => message.id),
                 )
                 prepareModelContext(request, history, ownedDisplayOnlyIds)
                 const memoAllowed = !(state.isSubAgent && !config.experimental.allowSubAgents)
@@ -598,8 +453,11 @@ const definition = {
                         const state = stateFor(sessionID)
                         let result: Awaited<ReturnType<typeof dispatchDcpCommand>> | undefined
                         await withSessionCoordinator(state, async () => {
-                            const { info, isSubAgent, messages: nativeMessages } =
-                                await loadNativeSession(sessionID)
+                            const {
+                                info,
+                                isSubAgent,
+                                messages: nativeMessages,
+                            } = await loadNativeSession(sessionID)
                             const messages = await reconcileSessionHistory(
                                 { state, logger, config },
                                 sessionID,
@@ -649,9 +507,7 @@ const definition = {
                             ...(input.prompt.skills === undefined
                                 ? {}
                                 : { skills: input.prompt.skills }),
-                            ...(input.delivery === undefined
-                                ? {}
-                                : { delivery: input.delivery }),
+                            ...(input.delivery === undefined ? {} : { delivery: input.delivery }),
                         })
                     },
                 })
@@ -803,7 +659,13 @@ const definition = {
                             const delivery: NotificationDelivery = {
                                 sendMessage: (text) => sendDisplayOnlyMessage(sessionID, text),
                                 showToast: async (toast) => {
-                                    await toastRpc.events.emit("toast", { ...toast, sessionID })
+                                    await toastRpc.events.emit("toast", {
+                                        ...toast,
+                                        sessionID,
+                                        ...(location.workspaceID === undefined
+                                            ? {}
+                                            : { workspaceID: location.workspaceID }),
+                                    })
                                 },
                             }
                             await finalizeCompression(
@@ -1037,7 +899,6 @@ const definition = {
             })
         })
     },
-}
+} satisfies Plugin.Plugin & { server: typeof server }
 
 export default definition
-import { buildPriorityMap } from "./lib/messages/priority"

@@ -9254,6 +9254,9 @@ test("v2 compression toasts emit through the registered notification RPC", async
         pruneNotification: "detailed",
         pruneNotificationType: "toast",
         showCompression: true,
+        configureNative(native) {
+            Object.assign(native.host.location, { workspaceID: "ws_notification" })
+        },
     })
 
     assert.equal(native.rpcRegister.mock.callCount(), 1)
@@ -9265,6 +9268,7 @@ test("v2 compression toasts emit through the registered notification RPC", async
     assert.equal(native.toastEvents.length, 1)
     const payload = native.toastEvents[0] as any
     assert.equal(payload.sessionID, sessionID)
+    assert.equal(payload.workspaceID, "ws_notification")
     assert.equal(payload.title, "DCP: Compress Notification")
     assert.equal(payload.variant, "info")
     assert.equal(payload.duration, 5000)

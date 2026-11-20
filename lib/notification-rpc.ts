@@ -1,9 +1,8 @@
+import type { Plugin } from "@opencode/plugin/tui"
+
 export type NotificationToastVariant = "info" | "success" | "warning" | "error"
 
-export type NotificationLocation = {
-    directory: string
-    workspaceID?: string
-}
+export type NotificationLocation = NonNullable<Plugin.Context["location"]>
 
 export type NotificationToast = {
     sessionID: string
@@ -13,18 +12,11 @@ export type NotificationToast = {
     duration: number
 }
 
-export type NotificationToastEvent = {
-    location: NotificationLocation
-    data: NotificationToast
+type NotificationToastPayload = NotificationToast & {
+    workspaceID?: NotificationLocation["workspaceID"]
 }
 
-export type NotificationRpcClient = {
-    rpc(definition: typeof notificationRpc): {
-        events: {
-            on(name: "toast", handler: (event: NotificationToastEvent) => void): () => void
-        }
-    }
-}
+export type NotificationRpcClient = Pick<Plugin.Context["client"], "rpc">
 
 export const notificationRpc = {
     id: "hyperdcp-notifications",
@@ -36,6 +28,7 @@ export const notificationRpc = {
                 required: ["sessionID", "title", "message", "variant", "duration"],
                 properties: {
                     sessionID: { type: "string" },
+                    workspaceID: { type: "string" },
                     title: { type: "string" },
                     message: { type: "string" },
                     variant: {
@@ -58,7 +51,9 @@ export function subscribeNotificationToasts(
     const registration = client.rpc(notificationRpc)
     return registration.events.on("toast", (event) => {
         if (event.location.directory !== location.directory) return
-        if (event.location.workspaceID !== location.workspaceID) return
-        showToast(event.data)
+        // The host validates this JSON Schema payload but exposes it as a record.
+        const { workspaceID, ...toast } = event.data as NotificationToastPayload
+        if (workspaceID !== location.workspaceID) return
+        showToast(toast)
     })
 }

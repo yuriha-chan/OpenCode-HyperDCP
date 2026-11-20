@@ -70,8 +70,8 @@ test("native notification subscription shows matching-location toasts and unsubs
     assert.equal(surface.handlerCount(), 1)
 
     surface.emit("toast", {
-        location: { directory: "/workspace/a", workspaceID: "ws_a" },
-        data: toastPayload,
+        location: { directory: "/workspace/a" },
+        data: { ...toastPayload, workspaceID: "ws_a" },
     })
     assert.deepEqual(shown, [toastPayload])
     assert.equal(surface.unsubscribeCount(), 0)
@@ -81,8 +81,8 @@ test("native notification subscription shows matching-location toasts and unsubs
     assert.equal(surface.handlerCount(), 0)
 
     surface.emit("toast", {
-        location: { directory: "/workspace/a", workspaceID: "ws_a" },
-        data: toastPayload,
+        location: { directory: "/workspace/a" },
+        data: { ...toastPayload, workspaceID: "ws_a" },
     })
     assert.deepEqual(shown, [toastPayload])
 })
@@ -98,12 +98,12 @@ test("native notification subscription ignores toasts from another location", ()
     )
 
     surface.emit("toast", {
-        location: { directory: "/workspace/b", workspaceID: "ws_a" },
-        data: toastPayload,
+        location: { directory: "/workspace/b" },
+        data: { ...toastPayload, workspaceID: "ws_a" },
     })
     surface.emit("toast", {
-        location: { directory: "/workspace/a", workspaceID: "ws_b" },
-        data: toastPayload,
+        location: { directory: "/workspace/a" },
+        data: { ...toastPayload, workspaceID: "ws_b" },
     })
     surface.emit("toast", {
         location: { directory: "/workspace/a" },
@@ -112,8 +112,8 @@ test("native notification subscription ignores toasts from another location", ()
     assert.deepEqual(shown, [])
 
     surface.emit("toast", {
-        location: { directory: "/workspace/a", workspaceID: "ws_a" },
-        data: toastPayload,
+        location: { directory: "/workspace/a" },
+        data: { ...toastPayload, workspaceID: "ws_a" },
     })
     assert.deepEqual(shown, [toastPayload])
 })
