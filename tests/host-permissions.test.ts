@@ -9060,6 +9060,29 @@ test("v2 server commands rewrite generation prompts with supplied block aspect a
     assert.equal(native.synthetic.mock.callCount(), 0)
 })
 
+test("v2 server commands persist editor memo and summary files across setup restart", async (t) => {
+    const sessionID = `ses_server_editor_${randomUUID()}`
+    const h = await createHousekeepingHarness(t, { messages: nativeFixtureMessages(sessionID) })
+    const contextMessages = await seedVersionedSummaryFixture(h)
+    const options = { root: h.root, sessionID, contextMessages, commandSurface: true }
+    const native = await createNativeHarness(t, options)
+    const memoFile = join(h.root, "memo.md")
+    const summaryFile = join(h.root, "summary.md")
+    await writeFile(memoFile, "Saved memo from editor")
+    await writeFile(summaryFile, "Saved summary from editor")
+
+    await native.runCommand(`memo-file ${memoFile}`)
+    await native.runCommand(`edit-file 1 ${summaryFile}`)
+
+    const persisted = await readFile(getSessionFilePath(sessionID), "utf8")
+    assert.match(persisted, /Saved memo from editor/)
+    assert.ok((await persistedBlock(sessionID)).summaryVersions.includes("Saved summary from editor"))
+    const restarted = await createNativeHarness(t, options)
+    assert.equal((await restarted.readMemo()).content, "Saved memo from editor")
+    assert.match(await restarted.execute("fetch_summary_versions", { blockId: 1 }), /Saved summary from editor/)
+    assert.equal(native.prompt.mock.callCount(), 0)
+})
+
 test("v2 server commands exclude owned display-only synthetic while keeping ordinary synthetic", async (t) => {
     const sessionID = `ses_server_commands_display_${randomUUID()}`
     const h = await createHousekeepingHarness(t, { messages: nativeFixtureMessages(sessionID) })

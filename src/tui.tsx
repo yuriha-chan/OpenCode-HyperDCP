@@ -6,7 +6,7 @@ import type { JSX } from "solid-js"
 import { readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { spawnSync } from "node:child_process"
+import { runEditor } from "./editor"
 import { getSessionFilePath } from "../lib/paths"
 import { renderStoredMemo } from "./memo"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
@@ -39,8 +39,8 @@ interface DcpUi {
     enterMode(mode: string): () => void
     notify(input: { variant: "info" | "success" | "warning" | "error"; message: string }): void
     chooseBlock(options: { title: string; value: number; description: string }[], onSelect: (id: number) => void): void
-    suspendRenderer(): void
-    resumeRenderer(): void
+    suspendRenderer(): void | Promise<void>
+    resumeRenderer(): void | Promise<void>
     sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
     readSessionMessages(sessionID: string): Promise<TuiMessageEntry[]>
     log?(message: string): void
@@ -249,13 +249,6 @@ function goBack(ui: DcpUi, target: DcpPage | "home", params?: Record<string, unk
     }
 }
 
-function runEditor(editor: string, filePath: string): void {
-    const parts = editor.split(/\s+/).filter(Boolean)
-    const command = parts[0] ?? "vi"
-    const args = [...parts.slice(1), filePath]
-    spawnSync(command, args, { stdio: "inherit" })
-}
-
 async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): Promise<void> {
     const block = readSingleBlock(sessionID, blockId)
     if (!block) {
@@ -270,11 +263,12 @@ async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): 
     writeFileSync(filePath, buildSummaryFile(original), "utf-8")
 
     const editor = process.env.VISUAL || process.env.EDITOR || "vi"
-    ui.suspendRenderer()
     try {
-        runEditor(editor, filePath)
-    } finally {
-        ui.resumeRenderer()
+        await runEditor(ui, editor, filePath)
+    } catch {
+        rmSync(filePath, { force: true })
+        ui.notify({ variant: "error", message: "Could not complete the summary editor" })
+        return
     }
 
     let edited: string
@@ -353,11 +347,12 @@ async function editMemo(ui: DcpUi, sessionID: string): Promise<void> {
     writeFileSync(filePath, buildMemoFile(original), "utf-8")
 
     const editor = process.env.VISUAL || process.env.EDITOR || "vi"
-    ui.suspendRenderer()
     try {
-        runEditor(editor, filePath)
-    } finally {
-        ui.resumeRenderer()
+        await runEditor(ui, editor, filePath)
+    } catch {
+        rmSync(filePath, { force: true })
+        ui.notify({ variant: "error", message: "Could not complete the memo editor" })
+        return
     }
 
     let edited: string
@@ -1100,8 +1095,8 @@ interface V2TuiContext {
     readonly theme: Record<string, unknown>
     readonly location?: NotificationLocation
     readonly renderer: {
-        suspend(): void
-        resume(): void
+        suspend(): void | Promise<void>
+        resume(): void | Promise<void>
     }
     readonly client: NotificationRpcClient
     readonly keymap: {
