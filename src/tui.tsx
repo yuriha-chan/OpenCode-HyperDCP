@@ -19,6 +19,7 @@ import { clampMessagePage, retainSummaryVersion } from "./tui-presentation"
 
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
+const DCP_MESSAGES_MODE = "dcp-messages"
 const DCP_MEMO_MODE = "dcp-memo"
 const PLUGIN_ID = "dcp-blocks"
 
@@ -43,6 +44,7 @@ interface DcpUi {
     sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
     cache: TuiSessionCache
     log?(message: string): void
+    messagesNav?: (delta: number) => void
 }
 
 function isDcpPage(name: string): name is DcpPage {
@@ -298,11 +300,12 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
 function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
     const skin = props.ui.colors()
     const backLabel = !props.backTarget || props.backTarget === "home" ? "Session" : props.backTarget === "dcp-blocks" ? "Blocks" : "Back"
+    const backText = backLabel === "Session" || backLabel === "Blocks" ? `${backLabel} (Esc)` : backLabel
 
     return (
         <box flexDirection="row" gap={1}>
             <box onMouseDown={() => goBack(props.ui, props.backTarget ?? "home", props.backParams)}>
-                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← {backLabel} </text>
+                <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← {backText} </text>
             </box>
             <text>
                 <b>{props.title}</b>
@@ -520,7 +523,7 @@ function extractSdkMessagePreview(msg: any): string {
 const PAGE_SIZE = 20
 
 const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
-    const popMode = props.ui.enterMode(DCP_MODE)
+    const popMode = props.ui.enterMode(DCP_MESSAGES_MODE)
     onCleanup(popMode)
     const sessionID = () => props.params?.sessionID as string | undefined
     const skin = props.ui.colors()
@@ -569,6 +572,11 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
         props.ui.log?.(`messages: navigate to page=${newPage}`)
         setPage(newPage)
     }
+    const nav = (delta: number) => navTo(page() + delta)
+    props.ui.messagesNav = nav
+    onCleanup(() => {
+        if (props.ui.messagesNav === nav) props.ui.messagesNav = undefined
+    })
 
     return (
         <PageShell ui={props.ui} title="DCP Messages">
@@ -602,13 +610,13 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
                         <box flexDirection="row" gap={1} alignItems="center">
                             {page() > 0 ? (
                                     <box onMouseDown={() => navTo(page() - 1)}>
-                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← Newer </text>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{" ← Newer (<) "}</text>
                                     </box>
                                 ) : null}
                                 <text fg={skin.muted}>Page {page() + 1} of {totalPages()}</text>
                                 {page() < totalPages() - 1 ? (
                                     <box onMouseDown={() => navTo(page() + 1)}>
-                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> Older → </text>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{" Older → (>) "}</text>
                                     </box>
                             ) : null}
                         </box>
@@ -683,6 +691,14 @@ function editCurrentMemo(ui: DcpUi): void {
         return
     }
     void editMemo(ui, sessionID)
+}
+
+function newerMessagesPage(ui: DcpUi): void {
+    ui.messagesNav?.(-1)
+}
+
+function olderMessagesPage(ui: DcpUi): void {
+    ui.messagesNav?.(1)
 }
 
 function backToSession(ui: DcpUi): void {
@@ -872,6 +888,37 @@ const tui: TuiPlugin = async (api, options, meta) => {
         mode: DCP_MEMO_MODE,
         bindings: [{ key: "e", cmd: "dcp-tui.edit-memo", desc: "Edit memo" }],
     })
+
+    api.keymap.registerLayer({
+        commands: [
+            {
+                name: "dcp-tui.newer",
+                title: "DCP Messages: Newer page",
+                category: "Plugin",
+                hidden: true,
+                run() {
+                    newerMessagesPage(ui)
+                },
+            },
+            {
+                name: "dcp-tui.older",
+                title: "DCP Messages: Older page",
+                category: "Plugin",
+                hidden: true,
+                run() {
+                    olderMessagesPage(ui)
+                },
+            },
+        ],
+    })
+
+    api.keymap.registerLayer({
+        mode: DCP_MESSAGES_MODE,
+        bindings: [
+            { key: "<", cmd: "dcp-tui.newer", desc: "Newer page" },
+            { key: ">", cmd: "dcp-tui.older", desc: "Older page" },
+        ],
+    })
 }
 
 // --- v2 native registration ---
@@ -919,6 +966,26 @@ function v2BackCommand(ui: DcpUi, bind?: string): KeymapCommand {
         group: "Plugin",
         bind,
         run: () => backToSession(ui),
+    }
+}
+
+function v2NewerMessagesCommand(ui: DcpUi, bind?: string): KeymapCommand {
+    return {
+        id: "dcp-tui.newer",
+        title: "DCP Messages: Newer page",
+        group: "Plugin",
+        bind,
+        run: () => newerMessagesPage(ui),
+    }
+}
+
+function v2OlderMessagesCommand(ui: DcpUi, bind?: string): KeymapCommand {
+    return {
+        id: "dcp-tui.older",
+        title: "DCP Messages: Older page",
+        group: "Plugin",
+        bind,
+        run: () => olderMessagesPage(ui),
     }
 }
 
@@ -1020,6 +1087,10 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
     context.keymap.layer(() => ({
         mode: DCP_MEMO_MODE,
         commands: [v2EditMemoCommand(ui, "e"), v2BackCommand(ui, "escape")],
+    }))
+    context.keymap.layer(() => ({
+        mode: DCP_MESSAGES_MODE,
+        commands: [v2NewerMessagesCommand(ui, "<"), v2OlderMessagesCommand(ui, ">"), v2BackCommand(ui, "escape")],
     }))
 
     const unsubscribeToasts = context.location
