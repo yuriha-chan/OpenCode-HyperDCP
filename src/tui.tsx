@@ -11,6 +11,12 @@ import { getSessionFilePath } from "../lib/paths"
 import { renderStoredMemo } from "./memo"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
 import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
+import { createV1TuiTransport, createV2TuiTransport, type TuiMessageEntry } from "./tui-client"
+import {
+    subscribeNotificationToasts,
+    type NotificationLocation,
+    type NotificationRpcClient,
+} from "../lib/notification-rpc"
 
 const DCP_MODE = "dcp-routes"
 const DCP_BLOCK_MODE = "dcp-block"
@@ -36,19 +42,8 @@ interface DcpUi {
     suspendRenderer(): void
     resumeRenderer(): void
     sendEditCommand(sessionID: string, argumentsText: string): Promise<unknown>
-    readSessionMessages(sessionID: string): Promise<unknown>
+    readSessionMessages(sessionID: string): Promise<TuiMessageEntry[]>
     log?(message: string): void
-}
-
-interface LegacyClient {
-    session: {
-        command(input: { sessionID: string; command: string; arguments: string }): Promise<unknown>
-        messages(input: { sessionID: string }): Promise<unknown>
-    }
-}
-
-function legacyClient(client: unknown): LegacyClient {
-    return client as LegacyClient
 }
 
 function isDcpPage(name: string): name is DcpPage {
@@ -674,21 +669,15 @@ function toolPreview(part: any): string {
     return `[${toolName}]`
 }
 
-// Module-level cache for SDK messages fetched via v1 API (all messages, not just v2 projected context)
-const sdkMessagesCache = new Map<string, Array<any>>()
+// Module-level cache for SDK messages fetched via the active transport (v1 legacy API or v2 native message list; all messages, not just v2 projected context)
+const sdkMessagesCache = new Map<string, TuiMessageEntry[]>()
 
 async function fetchAllSdkMessages(ui: DcpUi, sessionID: string): Promise<void> {
     if (sdkMessagesCache.has(sessionID)) return
     try {
-        const response = (await ui.readSessionMessages(sessionID)) as { data?: unknown[] } | undefined
-        const msgs = response?.data
-        if (Array.isArray(msgs)) {
-            const all = msgs.map((m: any) => ({
-                id: m.info?.id,
-                type: m.info?.role,
-                content: m.parts,
-            }))
-            sdkMessagesCache.set(sessionID, all)
+        const entries = await ui.readSessionMessages(sessionID)
+        if (Array.isArray(entries)) {
+            sdkMessagesCache.set(sessionID, entries)
         }
     } catch {
         // Cache stays empty; component shows DCP-only entries
@@ -917,6 +906,7 @@ function backToSession(ui: DcpUi): void {
 // --- v1 native registration ---
 
 const tui: TuiPlugin = async (api, options, meta) => {
+    const transport = createV1TuiTransport(api.client)
     const ui: DcpUi = {
         colors: () => look(api.theme.current),
         current: () => {
@@ -955,13 +945,8 @@ const tui: TuiPlugin = async (api, options, meta) => {
         },
         suspendRenderer: () => api.renderer.suspend(),
         resumeRenderer: () => api.renderer.resume(),
-        sendEditCommand: (sessionID, argumentsText) =>
-            legacyClient(api.client).session.command({
-                sessionID,
-                command: "dcp",
-                arguments: argumentsText,
-            }),
-        readSessionMessages: (sessionID) => legacyClient(api.client).session.messages({ sessionID }),
+        sendEditCommand: (sessionID, argumentsText) => transport.sendEditCommand(sessionID, argumentsText),
+        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
         log: (message) => {
             void api.client.app.log({
                 service: "dcp-blocks",
@@ -1113,11 +1098,12 @@ interface V2KeymapLayer {
 
 interface V2TuiContext {
     readonly theme: Record<string, unknown>
+    readonly location?: NotificationLocation
     readonly renderer: {
         suspend(): void
         resume(): void
     }
-    readonly client: unknown
+    readonly client: NotificationRpcClient
     readonly keymap: {
         layer(factory: () => V2KeymapLayer): void
         mode: {
@@ -1230,7 +1216,8 @@ function v2Commands(ui: DcpUi): V2KeymapCommand[] {
     ]
 }
 
-const setup = (context: V2TuiContext): void => {
+const setup = (context: V2TuiContext): (() => void) | undefined => {
+    const transport = createV2TuiTransport(context.client)
     const ui: DcpUi = {
         colors: () => look(context.theme),
         current: () => v2PageState(context.ui.router.current()),
@@ -1247,13 +1234,8 @@ const setup = (context: V2TuiContext): void => {
         },
         suspendRenderer: () => context.renderer.suspend(),
         resumeRenderer: () => context.renderer.resume(),
-        sendEditCommand: (sessionID, argumentsText) =>
-            legacyClient(context.client).session.command({
-                sessionID,
-                command: "dcp",
-                arguments: argumentsText,
-            }),
-        readSessionMessages: (sessionID) => legacyClient(context.client).session.messages({ sessionID }),
+        sendEditCommand: (sessionID, argumentsText) => transport.sendEditCommand(sessionID, argumentsText),
+        readSessionMessages: (sessionID) => transport.readSessionMessages(sessionID),
     }
 
     context.ui.slot({
@@ -1293,9 +1275,17 @@ const setup = (context: V2TuiContext): void => {
         mode: DCP_MEMO_MODE,
         commands: [v2EditMemoCommand(ui, "e"), v2BackCommand(ui, "escape")],
     }))
+
+    if (!context.location) return undefined
+    return subscribeNotificationToasts(context.client, context.location, (toast) => {
+        context.ui.toast.show(toast)
+    })
 }
 
-const plugin: TuiPluginModule & { id: string; setup: (context: V2TuiContext) => void } = {
+const plugin: TuiPluginModule & {
+    id: string
+    setup: (context: V2TuiContext) => (() => void) | undefined
+} = {
     id: PLUGIN_ID,
     tui,
     setup,

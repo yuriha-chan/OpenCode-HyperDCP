@@ -1,7 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
-import type { WithParts } from "./state"
-import { RECALL_COMPRESSED, RECALL_FORMAT_EXTENSION } from "./prompts/recall"
+import type { SessionState, WithParts } from "./state"
+import { RECALL_FORMAT_EXTENSION } from "./prompts/recall"
+import type { PromptStore } from "./prompts/store"
 import { parseMessageRef } from "./message-ids"
 import { filterMessages } from "./messages/shape"
 import { isIgnoredUserMessage } from "./messages/query"
@@ -12,7 +13,7 @@ import { draftState } from "./housekeeping/state"
 import { loadAndReconcileSession } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
 
-interface RecallArgs {
+export interface RecallCompressedInput {
     action: "get" | "search"
     blockId?: number
     messageId?: string
@@ -21,6 +22,11 @@ interface RecallArgs {
     query?: string
     blockIdStart?: number
     blockIdEnd?: number
+}
+
+interface RecallContext {
+    state: SessionState
+    refreshSession(sessionID: string): Promise<WithParts[]>
 }
 
 function buildSchema() {
@@ -76,7 +82,7 @@ function formatMessage(msg: WithParts): string {
     return lines.join("\n")
 }
 
-function resolveRefToRawId(ctx: ToolContext, ref: string): string | null {
+function resolveRefToRawId(ctx: Pick<RecallContext, "state">, ref: string): string | null {
     const rawId = ctx.state.messageIds.byRef.get(ref)
     if (rawId) return rawId
     return null
@@ -90,13 +96,20 @@ function findMessageIndex(messages: WithParts[], rawId: string | null): number {
     return -1
 }
 
-function collectMessageIdsForBlock(ctx: ToolContext, blockId: number): string[] | null {
+function collectMessageIdsForBlock(
+    ctx: Pick<RecallContext, "state">,
+    blockId: number,
+): string[] | null {
     const block = ctx.state.prune.messages.blocksById.get(blockId)
     if (!block) return null
     return [...block.effectiveMessageIds]
 }
 
-function collectMessageIdsForBlockRange(ctx: ToolContext, start: number, end: number): string[] {
+function collectMessageIdsForBlockRange(
+    ctx: Pick<RecallContext, "state">,
+    start: number,
+    end: number,
+): string[] {
     const ids = new Set<string>()
     for (const [id, block] of ctx.state.prune.messages.blocksById) {
         if (id >= start && id <= end) {
@@ -109,7 +122,7 @@ function collectMessageIdsForBlockRange(ctx: ToolContext, start: number, end: nu
 }
 
 function collectMessageIdsForMessageRange(
-    ctx: ToolContext,
+    ctx: Pick<RecallContext, "state">,
     messages: WithParts[],
     startRef: string,
     endRef: string,
@@ -209,44 +222,64 @@ function searchMessages(
     return lines.join("\n")
 }
 
-export function createRecallCompressedTool(ctx: ToolContext): ReturnType<typeof tool> {
-    ctx.prompts.reload()
-    const runtimePrompts = ctx.prompts.getRuntimePrompts()
+export function renderRecallCompressedDescription(prompts: PromptStore): string {
+    prompts.reload()
+    return prompts.getRuntimePrompts().recallCompressed + RECALL_FORMAT_EXTENSION
+}
 
+export async function recallCompressed(
+    ctx: RecallContext,
+    sessionID: string,
+    input: RecallCompressedInput,
+): Promise<string> {
+    return withSessionCoordinator(ctx.state, async () => {
+        const sessionMessages = await ctx.refreshSession(sessionID)
+        const messages = filterMessages(sessionMessages)
+        const historicalMessages = eligibleConversationMessages(
+            messages,
+            ctx.state.housekeepingHistory,
+        )
+        const operationCtx = ctx.state.housekeeping
+            ? { ...ctx, state: (await draftState(ctx.state)) as typeof ctx.state }
+            : ctx
+        const rawMessages = ctx.state.housekeeping
+            ? projectEligibleSourceMessages(historicalMessages, ctx.state.housekeeping)
+            : historicalMessages
+
+        if (input.action === "get") {
+            return handleGet(operationCtx, rawMessages, input)
+        }
+
+        if (input.action === "search") {
+            return handleSearch(operationCtx, rawMessages, input)
+        }
+
+        throw new Error(`Unknown action: ${input.action}`)
+    })
+}
+
+export function createRecallCompressedTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description: runtimePrompts.recallCompressed + RECALL_FORMAT_EXTENSION,
+        description: renderRecallCompressedDescription(ctx.prompts),
         args: buildSchema(),
         async execute(args, toolCtx) {
-            const input = args as RecallArgs
-            return withSessionCoordinator(ctx.state, async () => {
-                const sessionMessages = await loadAndReconcileSession(ctx, toolCtx.sessionID)
-                const messages = filterMessages(sessionMessages)
-                const historicalMessages = eligibleConversationMessages(
-                    messages,
-                    ctx.state.housekeepingHistory,
-                )
-                const operationCtx = ctx.state.housekeeping
-                    ? { ...ctx, state: (await draftState(ctx.state)) as typeof ctx.state }
-                    : ctx
-                const rawMessages = ctx.state.housekeeping
-                    ? projectEligibleSourceMessages(historicalMessages, ctx.state.housekeeping)
-                    : historicalMessages
-
-                if (input.action === "get") {
-                    return handleGet(operationCtx, rawMessages, input)
-                }
-
-                if (input.action === "search") {
-                    return handleSearch(operationCtx, rawMessages, input)
-                }
-
-                throw new Error(`Unknown action: ${input.action}`)
-            })
+            return recallCompressed(
+                {
+                    state: ctx.state,
+                    refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
+                },
+                toolCtx.sessionID,
+                args as RecallCompressedInput,
+            )
         },
     })
 }
 
-function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): string {
+function handleGet(
+    ctx: Pick<RecallContext, "state">,
+    messages: WithParts[],
+    input: RecallCompressedInput,
+): string {
     let targetIds: string[] | null = null
     let label = ""
 
@@ -305,7 +338,11 @@ function handleGet(ctx: ToolContext, messages: WithParts[], input: RecallArgs): 
     return lines.join("\n")
 }
 
-function handleSearch(ctx: ToolContext, messages: WithParts[], input: RecallArgs): string {
+function handleSearch(
+    ctx: Pick<RecallContext, "state">,
+    messages: WithParts[],
+    input: RecallCompressedInput,
+): string {
     if (!input.query) {
         throw new Error("Query is required for search action.")
     }

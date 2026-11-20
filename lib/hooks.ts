@@ -27,29 +27,9 @@ import {
 import { filterMessages, filterMessagesInPlace } from "./messages/shape"
 import { sendIgnoredMessage } from "./ui/notification"
 import { dumpTransformedMessages } from "./debug-dump"
-import {
-    applyPendingManualTrigger,
-    handleAutotoggleCommand,
-    handleContextCommand,
-    handleDebugCommand,
-    handleDecompressCommand,
-    handleEditCommand,
-    handleEditFileCommand,
-    handleHelpCommand,
-    handleManualToggleCommand,
-    handleManualTriggerCommand,
-    handleMemoCommand,
-    handleMemoFileCommand,
-    handleMessagesCommand,
-    handleProtectCommand,
-    handleRecompressCommand,
-    handleRewriteCommand,
-    handleStatsCommand,
-    handleSweepCommand,
-    handleToggleCommand,
-    handleUnprotectCommand,
-    handleViewCommand,
-} from "./commands"
+import { applyPendingManualTrigger } from "./commands"
+import { dispatchDcpCommand } from "./commands/dispatch"
+import type { CommandSendMessage } from "./commands/output"
 import { type HostPermissionSnapshot } from "./host-permissions"
 import { compressPermission, syncCompressPermissionState } from "./compress-permission"
 import {
@@ -62,7 +42,6 @@ import {
 import { findLastCompactionTimestamp, resetOnCompaction } from "./state/utils"
 import { cacheSystemPromptTokens } from "./ui/utils"
 import { projectHousekeepingHistory, reconcileHousekeepingHistory } from "./housekeeping/history"
-import { runHousekeepingCommandMutation } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
 
 function findLatestUserMessage(state: SessionState, messages: WithParts[]): string | null {
@@ -284,226 +263,35 @@ export function createCommandExecuteHandler(
                     return
                 }
 
-                const args = (input.arguments || "").trim().split(/\s+/).filter(Boolean)
-                const subcommand = args[0]?.toLowerCase() || ""
-                const subArgs = args.slice(1)
-
-                const commandCtx = {
-                    client,
-                    state,
-                    config,
-                    logger,
-                    sessionId: input.sessionID,
-                    messages,
-                }
-                const runContextMutation = <T>(
-                    label: string,
-                    operation: (context: typeof commandCtx) => Promise<T>,
-                ): Promise<T> =>
-                    state.housekeeping
-                        ? runHousekeepingCommandMutation(
-                              state,
-                              logger,
-                              label,
-                              input.arguments,
-                              messages.at(-1)?.info.id ?? "",
-                              (draft) => operation({ ...commandCtx, state: draft }),
-                          )
-                        : operation(commandCtx)
-
-                if (subcommand === "context") {
-                    await handleContextCommand(commandCtx)
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "stats") {
-                    await handleStatsCommand(commandCtx)
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "sweep") {
-                    await runContextMutation("sweep", (command) =>
-                        handleSweepCommand({ ...command, args: subArgs, workingDirectory }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "manual") {
-                    await handleManualToggleCommand(commandCtx, subArgs[0]?.toLowerCase())
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "compress") {
-                    const userFocus = subArgs.join(" ").trim()
-                    const prompt = await handleManualTriggerCommand(
-                        commandCtx,
-                        "compress",
-                        userFocus,
-                    )
-                    if (!prompt) {
-                        throw new Error("__DCP_MANUAL_TRIGGER_BLOCKED__")
-                    }
-
-                    if (state.manualMode !== "compress-pending") {
-                        state.preCompressManualMode = state.manualMode
-                    }
-                    state.manualMode = "compress-pending"
-                    state.pendingManualTrigger = {
+                const sendMessage: CommandSendMessage = (message, params) =>
+                    sendIgnoredMessage(client, input.sessionID, message, params, logger)
+                const result = await dispatchDcpCommand(
+                    {
+                        state,
+                        config,
+                        logger,
                         sessionId: input.sessionID,
-                        prompt,
-                    }
-                    const rawArgs = (input.arguments || "").trim()
-                    output.parts.length = 0
-                    output.parts.push({
-                        type: "text",
-                        text: rawArgs ? `/dcp ${rawArgs}` : `/dcp ${subcommand}`,
-                    })
-                    return
-                }
-
-                if (subcommand === "decompress") {
-                    await runContextMutation("decompress", (command) =>
-                        handleDecompressCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "recompress") {
-                    await runContextMutation("recompress", (command) =>
-                        handleRecompressCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "view") {
-                    await handleViewCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "edit") {
-                    await runContextMutation("edit", (command) =>
-                        handleEditCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "edit-file") {
-                    await runContextMutation("edit-file", (command) =>
-                        handleEditFileCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "messages") {
-                    await handleMessagesCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "protect") {
-                    await handleProtectCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "unprotect") {
-                    await handleUnprotectCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "rewrite") {
-                    const prompt = await handleRewriteCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
-                    if (!prompt) {
-                        throw new Error("__DCP_REWRITE_BLOCKED__")
-                    }
-
-                    if (state.manualMode !== "compress-pending") {
-                        state.preCompressManualMode = state.manualMode
-                    }
-                    state.manualMode = "compress-pending"
-                    state.pendingManualTrigger = {
-                        sessionId: input.sessionID,
-                        prompt,
-                    }
-                    const rawArgs = (input.arguments || "").trim()
-                    output.parts.length = 0
-                    output.parts.push({
-                        type: "text",
-                        text: rawArgs ? `/dcp ${rawArgs}` : `/dcp ${subcommand}`,
-                    })
-                    return
-                }
-
-                if (subcommand === "toggle") {
-                    await runContextMutation("toggle", (command) =>
-                        handleToggleCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "memo") {
-                    await runContextMutation("memo", (command) =>
-                        handleMemoCommand(command, subArgs),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "memo-file") {
-                    await runContextMutation("memo-file", (command) =>
-                        handleMemoFileCommand({ ...command, args: subArgs }),
-                    )
-                    output.handled = true
-                    return
-                }
-
-                if (subcommand === "debug") {
-                    await handleDebugCommand({
-                        ...commandCtx,
-                        args: subArgs,
+                        messages,
                         workingDirectory,
+                        sendMessage,
+                    },
+                    input.arguments,
+                )
+                if (result.generation) {
+                    state.pendingManualTrigger = {
+                        sessionId: input.sessionID,
+                        prompt: result.generation.prompt,
+                    }
+                    output.parts.length = 0
+                    output.parts.push({
+                        type: "text",
+                        text: result.generation.text,
                     })
-                    output.handled = true
                     return
                 }
-
-                if (subcommand === "autotoggle") {
-                    await handleAutotoggleCommand({
-                        ...commandCtx,
-                        args: subArgs,
-                    })
+                if (result.handled) {
                     output.handled = true
-                    return
                 }
-
-                await handleHelpCommand(commandCtx)
-                output.handled = true
                 return
             }
 

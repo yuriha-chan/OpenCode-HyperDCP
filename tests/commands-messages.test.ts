@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -112,7 +113,7 @@ test("/dcp messages with no args shows recent 10 messages", async () => {
     }
 
     await handleMessagesCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -146,7 +147,7 @@ test("/dcp messages with message range shows only those messages", async () => {
     }
 
     await handleMessagesCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -190,7 +191,7 @@ test("/dcp messages shows truncation for long content", async () => {
     }
 
     await handleMessagesCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -223,7 +224,7 @@ test("/dcp messages marks protected messages", async () => {
     }
 
     await handleMessagesCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -325,7 +326,7 @@ test("/dcp messages shows filename for read/edit and command for bash", async ()
     }
 
     await handleMessagesCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

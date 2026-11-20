@@ -6,6 +6,41 @@ import { wrapCompressedSummary } from "../lib/compress/state"
 import { createSessionState, type WithParts } from "../lib/state"
 import type { CompressionBlock } from "../lib/state"
 import { getCurrentTokenUsage } from "../lib/token-utils"
+import { normalizeNativeHistory } from "../lib/native-session"
+
+test("v2 assistant usage connects all native counters to shared current usage", () => {
+    const tokens = { input: 2400, output: 600, reasoning: 150, cache: { read: 300, write: 50 } }
+    const native = [
+        { id: "usage_assistant", type: "assistant", tokens, content: [], time: { created: 4 } },
+    ]
+    const original = structuredClone(native)
+    const messages = normalizeNativeHistory(native, "usage_session")
+    assert.equal(getCurrentTokenUsage(createSessionState(), messages), 3500)
+    assert.deepEqual(native, original)
+})
+
+test("v2 assistant usage preserves missing-usage and compaction selection policy", () => {
+    const tokens = { input: 100, output: 20, reasoning: 5, cache: { read: 10, write: 2 } }
+    const messages = normalizeNativeHistory(
+        [
+            { id: "usage_assistant", type: "assistant", tokens, content: [], time: { created: 4 } },
+            { id: "usage_missing", type: "assistant", content: [], time: { created: 5 } },
+            {
+                id: "usage_compaction",
+                type: "compaction",
+                status: "completed",
+                tokens,
+                time: { created: 6 },
+            },
+        ],
+        "usage_session",
+    )
+    const state = createSessionState()
+    assert.equal(getCurrentTokenUsage(state, messages), 137)
+    state.lastCompaction = 6
+    assert.equal(getCurrentTokenUsage(state, messages), 0)
+    assert.equal(getCurrentTokenUsage(createSessionState(), messages.slice(1)), 0)
+})
 
 function buildConfig(maxContextLimit: number, minContextLimit = 1): PluginConfig {
     return {

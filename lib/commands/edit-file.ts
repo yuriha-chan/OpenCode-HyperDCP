@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs"
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { saveSessionState } from "../state/persistence"
-import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
 import { parseBlockIdArg } from "./edit"
+import type { CommandSendMessage } from "./output"
 
 export interface EditFileCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -16,7 +16,7 @@ export interface EditFileCommandContext {
 }
 
 export async function handleEditFileCommand(ctx: EditFileCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
 
     const params = getCurrentParams(state, messages, logger)
 
@@ -24,37 +24,22 @@ export async function handleEditFileCommand(ctx: EditFileCommandContext): Promis
     const filePath = args[1]
 
     if (!targetArg || !filePath) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Usage: /dcp edit-file <n> <path>",
-            params,
-            logger,
-        )
+        await sendMessage("Usage: /dcp edit-file <n> <path>", params)
         return
     }
 
     const targetBlockId = parseBlockIdArg(targetArg)
     if (targetBlockId === null) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             "Please enter a compression number. Example: /dcp edit-file 2 /tmp/summary.txt",
             params,
-            logger,
         )
         return
     }
 
     const block = state.prune.messages.blocksById.get(targetBlockId)
     if (!block) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Compression ${targetBlockId} does not exist.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Compression ${targetBlockId} does not exist.`, params)
         return
     }
 
@@ -62,25 +47,13 @@ export async function handleEditFileCommand(ctx: EditFileCommandContext): Promis
     try {
         content = readFileSync(filePath, "utf-8")
     } catch {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Could not read file: ${filePath}`,
-            params,
-            logger,
-        )
+        await sendMessage(`Could not read file: ${filePath}`, params)
         return
     }
 
     const trimmed = content.trim()
     if (!trimmed) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Edited summary is empty; nothing applied.",
-            params,
-            logger,
-        )
+        await sendMessage("Edited summary is empty; nothing applied.", params)
         return
     }
 
@@ -93,12 +66,9 @@ export async function handleEditFileCommand(ctx: EditFileCommandContext): Promis
 
     await saveSessionState(state, logger)
 
-    await sendIgnoredMessage(
-        client,
-        sessionId,
+    await sendMessage(
         `Updated compression ${targetBlockId} summary (v${block.activeVersionIndex} now active).`,
         params,
-        logger,
     )
 
     logger.info("Edit-file command completed", {

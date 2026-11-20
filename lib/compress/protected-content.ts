@@ -1,4 +1,4 @@
-import type { SessionState } from "../state"
+import type { SessionState, WithParts } from "../state"
 import { isIgnoredUserMessage } from "../messages/query"
 import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
 import {
@@ -12,7 +12,6 @@ import {
     getSubAgentId,
     mergeSubagentResult,
 } from "../subagents/subagent-results"
-import { fetchSessionMessages } from "./search"
 import type { SearchContext, SelectionResolution } from "./types"
 
 export function appendProtectedUserMessages(
@@ -110,7 +109,7 @@ export function extractProtectedPromptInfo(text: string): string[] {
 }
 
 export async function appendProtectedTools(
-    client: any,
+    fetchMessages: (sessionID: string) => Promise<WithParts[]>,
     state: SessionState,
     allowSubAgents: boolean,
     summary: string,
@@ -118,6 +117,7 @@ export async function appendProtectedTools(
     searchContext: SearchContext,
     protectedTools: ProtectedToolsConfig<CompressProtectedToolSpec>,
     protectedFilePatterns: string[] = [],
+    protectTaskOutputs = true,
 ): Promise<string> {
     const collected: Array<{ tool: string; text: string; keepLast?: number }> = []
 
@@ -133,6 +133,7 @@ export async function appendProtectedTools(
         const parts = Array.isArray(message.parts) ? message.parts : []
         for (const part of parts) {
             if (part.type === "tool" && part.callID) {
+                if (!protectTaskOutputs && (part.tool === "task" || part.tool === "subagent")) continue
                 const spec = resolveProtectedTool(protectedTools, part.tool)
                 let protectTool = spec !== null && spec.protect === true
 
@@ -172,10 +173,7 @@ export async function appendProtectedTools(
                         if (subAgentSessionId) {
                             let subAgentResultText = ""
                             try {
-                                const subAgentMessages = await fetchSessionMessages(
-                                    client,
-                                    subAgentSessionId,
-                                )
+                                const subAgentMessages = await fetchMessages(subAgentSessionId)
                                 subAgentResultText = buildSubagentResultText(subAgentMessages)
                             } catch {
                                 subAgentResultText = ""

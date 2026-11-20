@@ -4,6 +4,7 @@ import type { SkillContext } from "./state"
 import { saveSessionStateStrict } from "./state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
 import { loadAndReconcileSession } from "./housekeeping/state"
+import type { SharedOperationContext } from "./housekeeping/types"
 
 const NATIVE_SKILL_TOOL = "skill"
 
@@ -48,7 +49,12 @@ function validateNativeResult(value: unknown): SkillResult {
     }
 }
 
-async function publishLoadedSkills(ctx: ToolContext, skills: SkillContext[]): Promise<void> {
+type SkillOperationContext = Pick<SharedOperationContext, "state" | "logger" | "refreshSession">
+
+async function publishLoadedSkills(
+    ctx: Pick<SkillOperationContext, "state" | "logger">,
+    skills: SkillContext[],
+): Promise<void> {
     const candidate = structuredClone(ctx.state)
     candidate.loadedSkills = structuredClone(skills)
     await saveSessionStateStrict(candidate, ctx.logger)
@@ -89,21 +95,31 @@ export function createSkillExecuteBeforeHandler(ctx: ToolContext) {
         output: { args: any },
     ): Promise<void> => {
         if (input.tool !== NATIVE_SKILL_TOOL) return
-        return withSessionCoordinator(ctx.state, async () => {
-            await loadAndReconcileSession(ctx, input.sessionID)
-            const args = validateLoadArguments(output.args)
-            const loaded = ctx.state.loadedSkills.some((record) => record.name === args.name)
-            if (!loaded) return
-            if (args.force !== true)
-                throw new Error(
-                    `Skill "${args.name}" is already loaded. Pass force=true to reload it.`,
-                )
-            await publishLoadedSkills(
-                ctx,
-                ctx.state.loadedSkills.filter((record) => record.name !== args.name),
-            )
-        })
+        return prepareSkillLoad(
+            { ...ctx, refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID) },
+            input.sessionID,
+            output.args,
+        )
     }
+}
+
+export async function prepareSkillLoad(
+    ctx: SkillOperationContext,
+    sessionID: string,
+    input: unknown,
+): Promise<void> {
+    return withSessionCoordinator(ctx.state, async () => {
+        await ctx.refreshSession(sessionID)
+        const args = validateLoadArguments(input)
+        const loaded = ctx.state.loadedSkills.some((record) => record.name === args.name)
+        if (!loaded) return
+        if (args.force !== true)
+            throw new Error(`Skill "${args.name}" is already loaded. Pass force=true to reload it.`)
+        await publishLoadedSkills(
+            ctx,
+            ctx.state.loadedSkills.filter((record) => record.name !== args.name),
+        )
+    })
 }
 
 export function createSkillExecuteAfterHandler(ctx: ToolContext) {
@@ -112,25 +128,61 @@ export function createSkillExecuteAfterHandler(ctx: ToolContext) {
         output: { title: string; output: string; metadata: any },
     ): Promise<void> => {
         if (input.tool !== NATIVE_SKILL_TOOL) return
-        return withSessionCoordinator(ctx.state, async () => {
-            await loadAndReconcileSession(ctx, input.sessionID)
-            const args = validateLoadArguments(input.args)
-            const result = validateNativeResult(output)
-            const record: SkillContext = {
-                name: args.name,
-                callId: input.callID,
-                input: structuredClone(args) as Record<string, unknown>,
-                title: result.title,
-                output: result.output,
-                metadata: structuredClone(result.metadata),
-            }
-            const skills = [...ctx.state.loadedSkills]
-            const index = skills.findIndex((entry) => entry.name === args.name)
-            if (index >= 0) skills[index] = record
-            else skills.push(record)
-            await publishLoadedSkills(ctx, skills)
-        })
+        return recordSkillLoad(
+            { ...ctx, refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID) },
+            input.sessionID,
+            input.callID,
+            input.args,
+            output,
+        )
     }
+}
+
+export async function recordSkillLoad(
+    ctx: SkillOperationContext,
+    sessionID: string,
+    callID: string,
+    input: unknown,
+    output: unknown,
+    recordInput?: Record<string, unknown>,
+): Promise<void> {
+    return withSessionCoordinator(ctx.state, async () => {
+        await ctx.refreshSession(sessionID)
+        const args = validateLoadArguments(input)
+        const result = validateNativeResult(output)
+        const record: SkillContext = {
+            name: args.name,
+            callId: callID,
+            input: structuredClone(recordInput ?? args) as Record<string, unknown>,
+            title: result.title,
+            output: result.output,
+            metadata: structuredClone(result.metadata),
+        }
+        const skills = [...ctx.state.loadedSkills]
+        const index = skills.findIndex((entry) => entry.name === args.name)
+        if (index >= 0) skills[index] = record
+        else skills.push(record)
+        await publishLoadedSkills(ctx, skills)
+    })
+}
+
+export async function unloadSkill(
+    ctx: SkillOperationContext,
+    sessionID: string,
+    name: string,
+): Promise<string> {
+    return withSessionCoordinator(ctx.state, async () => {
+        await ctx.refreshSession(sessionID)
+        if (typeof name !== "string" || name.length === 0)
+            throw new Error("Invalid unload_skill name: expected a non-empty string.")
+        const loaded = ctx.state.loadedSkills.some((record) => record.name === name)
+        if (!loaded) throw new Error(`Skill "${name}" is not loaded and cannot be unloaded.`)
+        await publishLoadedSkills(
+            ctx,
+            ctx.state.loadedSkills.filter((record) => record.name !== name),
+        )
+        return `Unloaded skill "${name}".`
+    })
 }
 
 export function createUnloadSkillTool(ctx: ToolContext): ReturnType<typeof tool> {
@@ -140,19 +192,11 @@ export function createUnloadSkillTool(ctx: ToolContext): ReturnType<typeof tool>
             name: tool.schema.string().describe("Name of the loaded skill to unload."),
         },
         async execute(args, toolContext) {
-            return withSessionCoordinator(ctx.state, async () => {
-                await loadAndReconcileSession(ctx, toolContext.sessionID)
-                if (typeof args.name !== "string" || args.name.length === 0)
-                    throw new Error("Invalid unload_skill name: expected a non-empty string.")
-                const loaded = ctx.state.loadedSkills.some((record) => record.name === args.name)
-                if (!loaded)
-                    throw new Error(`Skill "${args.name}" is not loaded and cannot be unloaded.`)
-                await publishLoadedSkills(
-                    ctx,
-                    ctx.state.loadedSkills.filter((record) => record.name !== args.name),
-                )
-                return `Unloaded skill "${args.name}".`
-            })
+            return unloadSkill(
+                { ...ctx, refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID) },
+                toolContext.sessionID,
+                args.name,
+            )
         },
     })
 }

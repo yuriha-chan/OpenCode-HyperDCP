@@ -10,11 +10,11 @@
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import type { PluginConfig } from "../config"
-import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
 import { buildCompressedBlockGuidance } from "../prompts/extensions/nudge"
 import { isIgnoredUserMessage } from "../messages/query"
 import { findUncoveredRanges, formatUncoveredRanges } from "../messages/uncovered"
+import type { CommandSendMessage } from "./output"
 
 const MANUAL_MODE_ON = "Manual mode is now ON. Use /dcp compress to trigger context tools manually."
 
@@ -60,7 +60,7 @@ function getTriggerPrompt(
 }
 
 export interface ManualCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     config: PluginConfig
     logger: Logger
@@ -72,7 +72,7 @@ export async function handleManualToggleCommand(
     ctx: ManualCommandContext,
     modeArg?: string,
 ): Promise<void> {
-    const { client, state, logger, sessionId, messages } = ctx
+    const { sendMessage, state, logger, sessionId, messages } = ctx
 
     if (modeArg === "on") {
         state.manualMode = "active"
@@ -83,13 +83,7 @@ export async function handleManualToggleCommand(
     }
 
     const params = getCurrentParams(state, messages, logger)
-    await sendIgnoredMessage(
-        client,
-        sessionId,
-        state.manualMode ? MANUAL_MODE_ON : MANUAL_MODE_OFF,
-        params,
-        logger,
-    )
+    await sendMessage(state.manualMode ? MANUAL_MODE_ON : MANUAL_MODE_OFF, params)
 
     logger.info("Manual mode toggled", { manualMode: state.manualMode })
 }

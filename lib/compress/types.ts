@@ -2,6 +2,7 @@ import type { PluginConfig } from "../config"
 import type { Logger } from "../logger"
 import type { PromptStore } from "../prompts/store"
 import type { CompressionBlock, CompressionMode, SessionState, WithParts } from "../state"
+import type { SharedOperationContext } from "../housekeeping/types"
 
 export interface ToolContext {
     client: any
@@ -9,6 +10,12 @@ export interface ToolContext {
     logger: Logger
     config: PluginConfig
     prompts: PromptStore
+}
+
+export interface CompressionOperationContext extends SharedOperationContext {
+    fetchMessages(sessionID: string): Promise<WithParts[]>
+    reportCompressionStart(title: string): Promise<void>
+    protectTaskOutputs: boolean
 }
 
 export interface CompressRangeEntry {

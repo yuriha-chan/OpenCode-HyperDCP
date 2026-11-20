@@ -1,13 +1,29 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import type { CompressionBlock } from "./state/types"
-import { runHousekeepingMutation } from "./housekeeping/state"
+import { loadAndReconcileSession, runSharedHousekeepingMutation } from "./housekeeping/state"
+import type { SharedOperationContext, ToolExecutionContext } from "./housekeeping/types"
 import { materializePendingSummary } from "./expand-block"
 
-interface ToggleSummaryVersionArgs {
+export interface ToggleSummaryVersionInput {
     blockId: number
     version: number
 }
+
+export const TOGGLE_SUMMARY_VERSION_DESCRIPTION = `Switch the active summary version of a compressed block.
+
+Use after calling fetch_summary_versions to inspect available versions, then call this tool to switch.
+Version 0 disables the summary (block content is no longer summarized in context).
+Version 1 is the original summary produced at compression time.
+Versions 2+ are rewrite summaries produced via rewrite_summary or edit_summary.
+
+Requires /dcp autotoggle on to be enabled in the session.
+
+THE FORMAT
+{
+  blockId: number,    // Block ID to toggle (e.g. 3)
+  version: number     // Target version: 0=disabled, 1=original, 2+=rewrite
+}`
 
 function versionLabel(idx: number): string {
     if (idx === 0) return "disabled"
@@ -28,22 +44,52 @@ function validateVersion(block: CompressionBlock, version: number): number {
     )
 }
 
+export async function toggleSummaryVersion(
+    ctx: SharedOperationContext,
+    toolContext: ToolExecutionContext,
+    input: ToggleSummaryVersionInput,
+): Promise<string> {
+    return runSharedHousekeepingMutation(
+        ctx,
+        toolContext,
+        "toggle_summary_version",
+        input,
+        async (operationCtx) => {
+            if (!operationCtx.state.autotoggle) {
+                throw new Error(
+                    "Autotoggle is disabled. Run /dcp autotoggle on to allow the LLM to toggle summary versions.",
+                )
+            }
+
+            const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
+            if (!block) {
+                throw new Error(
+                    `Block ${input.blockId} not found. Use fetch_summary_versions to inspect blocks.`,
+                )
+            }
+
+            const validationBlock =
+                block.pendingEditBuffer === undefined
+                    ? block
+                    : {
+                          ...block,
+                          summaryVersions: [
+                              ...block.summaryVersions,
+                              block.pendingEditBuffer.trim(),
+                          ],
+                      }
+            const newIndex = validateVersion(validationBlock, input.version)
+            materializePendingSummary(block)
+            block.activeVersionIndex = newIndex
+
+            return `Block #${block.blockId} summary set to ${versionLabel(newIndex)}.`
+        },
+    )
+}
+
 export function createToggleSummaryVersionTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description: `Switch the active summary version of a compressed block.
-
-Use after calling fetch_summary_versions to inspect available versions, then call this tool to switch.
-Version 0 disables the summary (block content is no longer summarized in context).
-Version 1 is the original summary produced at compression time.
-Versions 2+ are rewrite summaries produced via rewrite_summary or edit_summary.
-
-Requires /dcp autotoggle on to be enabled in the session.
-
-THE FORMAT
-{
-  blockId: number,    // Block ID to toggle (e.g. 3)
-  version: number     // Target version: 0=disabled, 1=original, 2+=rewrite
-}`,
+        description: TOGGLE_SUMMARY_VERSION_DESCRIPTION,
         args: {
             blockId: tool.schema
                 .number()
@@ -53,43 +99,13 @@ THE FORMAT
                 .describe("Target version: 0=disabled, 1=original, 2+=rewrite"),
         },
         async execute(args, toolCtx) {
-            return runHousekeepingMutation(
-                ctx,
-                toolCtx,
-                "toggle_summary_version",
-                args,
-                async (operationCtx) => {
-                    const input = args as ToggleSummaryVersionArgs
-
-                    if (!operationCtx.state.autotoggle) {
-                        throw new Error(
-                            "Autotoggle is disabled. Run /dcp autotoggle on to allow the LLM to toggle summary versions.",
-                        )
-                    }
-
-                    const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
-                    if (!block) {
-                        throw new Error(
-                            `Block ${input.blockId} not found. Use fetch_summary_versions to inspect blocks.`,
-                        )
-                    }
-
-                    const validationBlock =
-                        block.pendingEditBuffer === undefined
-                            ? block
-                            : {
-                                  ...block,
-                                  summaryVersions: [
-                                      ...block.summaryVersions,
-                                      block.pendingEditBuffer.trim(),
-                                  ],
-                              }
-                    const newIndex = validateVersion(validationBlock, input.version)
-                    materializePendingSummary(block)
-                    block.activeVersionIndex = newIndex
-
-                    return `Block #${block.blockId} summary set to ${versionLabel(newIndex)}.`
+            return toggleSummaryVersion(
+                {
+                    ...ctx,
+                    refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
                 },
+                toolCtx,
+                args as ToggleSummaryVersionInput,
             )
         },
     })

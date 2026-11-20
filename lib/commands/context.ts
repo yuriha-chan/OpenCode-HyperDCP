@@ -42,15 +42,15 @@
 
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount } from "../ui/utils"
 import { isIgnoredUserMessage } from "../messages/query"
 import { isMessageCompacted } from "../state/utils"
 import { countTokens, extractCompletedToolOutput, getCurrentParams } from "../token-utils"
 import type { AssistantMessage, TextPart, ToolPart } from "@opencode-ai/sdk/v2"
+import type { CommandSendMessage } from "./output"
 
 export interface ContextCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -294,12 +294,12 @@ function formatContextMessage(breakdown: TokenBreakdown): string {
 }
 
 export async function handleContextCommand(ctx: ContextCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages } = ctx
+    const { sendMessage, state, logger, sessionId, messages } = ctx
 
     const breakdown = analyzeTokens(state, messages)
 
     const message = formatContextMessage(breakdown)
 
     const params = getCurrentParams(state, messages, logger)
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await sendMessage(message, params)
 }

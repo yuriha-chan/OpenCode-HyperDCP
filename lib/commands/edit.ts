@@ -4,12 +4,12 @@ import { syncCompressionBlocks } from "../messages"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
 import { saveSessionState } from "../state/persistence"
-import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount } from "../ui/utils"
 import { getActiveCompressionTargets, resolveCompressionTarget } from "./compression-targets"
+import type { CommandSendMessage } from "./output"
 
 export interface EditCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -63,7 +63,7 @@ function formatEditableList(targets: ReturnType<typeof getActiveCompressionTarge
 }
 
 export async function handleEditCommand(ctx: EditCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
 
     const params = getCurrentParams(state, messages, logger)
     const targetArg = args[0]
@@ -74,42 +74,30 @@ export async function handleEditCommand(ctx: EditCommandContext): Promise<void> 
     if (!targetArg) {
         const availableTargets = getActiveCompressionTargets(messagesState)
         const message = formatEditableList(availableTargets)
-        await sendIgnoredMessage(client, sessionId, message, params, logger)
+        await sendMessage(message, params)
         return
     }
 
     const targetBlockId = parseBlockIdArg(targetArg)
     if (targetBlockId === null) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             "Please enter a compression number. Example: /dcp edit 2 Fixed summary here.",
             params,
-            logger,
         )
         return
     }
 
     const target = resolveCompressionTarget(messagesState, targetBlockId)
     if (!target) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Compression ${targetBlockId} does not exist.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Compression ${targetBlockId} does not exist.`, params)
         return
     }
 
     const textArgs = args.slice(1)
     if (textArgs.length === 0) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             "Please provide replacement text or use -a to append. Example: /dcp edit 2 Fixed summary here.",
             params,
-            logger,
         )
         return
     }
@@ -118,14 +106,11 @@ export async function handleEditCommand(ctx: EditCommandContext): Promise<void> 
     const content = isAppend ? textArgs.slice(1) : textArgs
 
     if (content.length === 0) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             isAppend
                 ? "Please provide text to append. Example: /dcp edit 2 -a Additional detail."
                 : "Please provide replacement text. Example: /dcp edit 2 Fixed summary here.",
             params,
-            logger,
         )
         return
     }
@@ -143,13 +128,7 @@ export async function handleEditCommand(ctx: EditCommandContext): Promise<void> 
     await saveSessionState(state, logger)
 
     const verb = isAppend ? "Appended to" : "Updated"
-    await sendIgnoredMessage(
-        client,
-        sessionId,
-        `${verb} compression ${target.displayId} summary.`,
-        params,
-        logger,
-    )
+    await sendMessage(`${verb} compression ${target.displayId} summary.`, params)
 
     logger.info("Edit command completed", {
         targetBlockId: target.displayId,

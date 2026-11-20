@@ -5,14 +5,14 @@
 
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount } from "../ui/utils"
 import { loadAllSessionStats, type AggregatedStats } from "../state/persistence"
 import { getCurrentParams } from "../token-utils"
 import { getActiveCompressionTargets } from "./compression-targets"
+import type { CommandSendMessage } from "./output"
 
 export interface StatsCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -90,7 +90,7 @@ function formatCompressionTime(ms: number): string {
 }
 
 export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages } = ctx
+    const { sendMessage, state, logger, sessionId, messages } = ctx
 
     // Session stats from in-memory state
     const sessionTokens = state.stats.totalPruneTokens
@@ -133,7 +133,7 @@ export async function handleStatsCommand(ctx: StatsCommandContext): Promise<void
     )
 
     const params = getCurrentParams(state, messages, logger)
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await sendMessage(message, params)
 
     logger.info("Stats command executed", {
         sessionTokens,

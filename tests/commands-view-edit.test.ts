@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -267,7 +268,7 @@ test("/dcp view with no args lists available compressions with summaries", async
     })
 
     await handleViewCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -321,7 +322,7 @@ test("/dcp view with no compressions handles null and empty memos", async () => 
         }
 
         await handleViewCommand({
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger,
             sessionId: sessionID,
@@ -355,7 +356,7 @@ test("/dcp view with non-numeric arg shows error", async () => {
     addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1 })
 
     await handleViewCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -385,7 +386,7 @@ test("/dcp view with non-existent block ID shows error", async () => {
     }
 
     await handleViewCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -428,7 +429,7 @@ test("/dcp view with valid block ID shows full summary and metadata", async () =
     })
 
     await handleViewCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -481,7 +482,7 @@ test("/dcp view with message-mode grouped blocks shows grouping info", async () 
     })
 
     await handleViewCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -529,7 +530,7 @@ test("/dcp edit with no args lists available compressions", async () => {
     })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -562,7 +563,7 @@ test("/dcp edit with non-numeric arg shows error", async () => {
     addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1 })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -592,7 +593,7 @@ test("/dcp edit with non-existent block ID shows error", async () => {
     }
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -624,7 +625,7 @@ test("/dcp edit with block ID but no replacement text shows error", async () => 
     addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1 })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -662,7 +663,7 @@ test("/dcp edit replaces block summary and persists", async () => {
     })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -702,7 +703,7 @@ test("/dcp edit with -a flag appends text to existing summary", async () => {
     })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -743,7 +744,7 @@ test("/dcp edit on deactivated block still works", async () => {
     })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -775,7 +776,7 @@ test("/dcp edit with -a flag and no text shows error", async () => {
     addCompressionBlock(state, rawMessages, sessionID, { blockId: 1, runId: 1 })
 
     await handleEditCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

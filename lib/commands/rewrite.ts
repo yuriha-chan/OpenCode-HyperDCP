@@ -2,7 +2,7 @@ import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
-import { sendIgnoredMessage } from "../ui/notification"
+import type { CommandSendMessage } from "./output"
 
 function parseBlockIdArg(arg: string): number | null {
     const normalized = arg.trim().toLowerCase()
@@ -14,7 +14,7 @@ function parseBlockIdArg(arg: string): number | null {
 }
 
 export interface RewriteCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -23,44 +23,26 @@ export interface RewriteCommandContext {
 }
 
 export async function handleRewriteCommand(ctx: RewriteCommandContext): Promise<string | null> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
 
     const params = getCurrentParams(state, messages, logger)
     const blockIdArg = args[0]
     const aspect = args.slice(1).join(" ").trim()
 
     if (!blockIdArg) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Usage: /dcp rewrite <n> [aspect]",
-            params,
-            logger,
-        )
+        await sendMessage("Usage: /dcp rewrite <n> [aspect]", params)
         return null
     }
 
     const blockId = parseBlockIdArg(blockIdArg)
     if (blockId === null) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Invalid block number. Usage: /dcp rewrite <n> [aspect]",
-            params,
-            logger,
-        )
+        await sendMessage("Invalid block number. Usage: /dcp rewrite <n> [aspect]", params)
         return null
     }
 
     const block = state.prune.messages.blocksById.get(blockId)
     if (!block) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Block ${blockIdArg} not found.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Block ${blockIdArg} not found.`, params)
         return null
     }
 

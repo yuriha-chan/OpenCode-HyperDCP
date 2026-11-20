@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs"
@@ -94,7 +95,7 @@ test("/dcp debug with no args shows OFF status by default", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -119,7 +120,7 @@ test("/dcp debug on <dir> enables and stores absolute directory", async () => {
     mkdirSync(dir, { recursive: true })
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -145,7 +146,7 @@ test("/dcp debug off disables debug and clears directory", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -168,7 +169,7 @@ test("/dcp debug on without directory shows usage error", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -194,7 +195,7 @@ test("/dcp debug on with non-existent directory creates it", async () => {
 
     try {
         await handleDebugCommand({
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger,
             sessionId: sessionID,
@@ -222,7 +223,7 @@ test("/dcp debug on with relative path resolves against workingDirectory", async
 
     try {
         await handleDebugCommand({
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger,
             sessionId: sessionID,
@@ -251,7 +252,7 @@ test("/dcp debug when ON shows directory in status", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -273,7 +274,7 @@ test("/dcp debug with unknown subcommand shows usage", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleDebugCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

@@ -1,6 +1,7 @@
 import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test, { type TestContext } from "node:test"
+import { normalizeNativeHistory } from "../lib/native-session"
 import {
     createHousekeepingHarness,
     ordinaryMessage,
@@ -8,6 +9,212 @@ import {
     visibleText,
     type HousekeepingHarness,
 } from "./helpers/housekeeping"
+
+test("v2 synthetic reports remain separate original sources for recall", async (t) => {
+    const sessionID = "ses_synthetic_recall"
+    const native = [
+        {
+            id: "msg_report_1",
+            type: "synthetic",
+            text: "Found parser bug",
+            description: "Child finished",
+            time: { created: 1 },
+        },
+        {
+            id: "msg_report_2",
+            type: "synthetic",
+            text: "Fixed parser bug",
+            description: "Child finished again",
+            time: { created: 2 },
+        },
+    ]
+    const original = structuredClone(native)
+    const messages = normalizeNativeHistory(native, sessionID)
+    assert.deepEqual(
+        messages.map((message) => message.info.id),
+        native.map((message) => message.id),
+    )
+    const h = await createHousekeepingHarness(t, { messages })
+    const first = await h.run("recall_compressed", { action: "get", messageId: "m0001" })
+    const second = await h.run("recall_compressed", { action: "get", messageId: "m0002" })
+    assert.match(first, /Found parser bug/)
+    assert.doesNotMatch(first, /Fixed parser bug|Child finished/)
+    assert.match(second, /Fixed parser bug/)
+    assert.doesNotMatch(second, /Found parser bug|Child finished/)
+    assert.deepEqual(native, original)
+})
+
+for (const kind of ["inline", "uri"] as const) {
+    test(`v2 ${kind} plain-text attachments remain readable original recall sources`, async (t) => {
+        const files = [
+            {
+                mime: "text/plain",
+                data: Buffer.from("Attachment parser finding: λ accepts empty records.").toString(
+                    "base64",
+                ),
+                source:
+                    kind === "inline"
+                        ? { type: "inline" as const }
+                        : { type: "uri" as const, uri: "file:///project/notes.txt" },
+                ...(kind === "inline" ? { name: "notes.txt", description: "Parser evidence" } : {}),
+            },
+        ]
+        if (kind === "inline")
+            files.push({
+                mime: "text/plain",
+                data: "",
+                source: { type: "inline" },
+                name: "empty.txt",
+            })
+        const native = [
+            { id: "msg_attached_note", type: "user", text: "Review the attached note.", files },
+        ]
+        const original = structuredClone(native)
+        const h = await createHousekeepingHarness(t, {
+            messages: normalizeNativeHistory(native, `ses_attachment_${kind}`),
+        })
+        const result = await h.run("recall_compressed", { action: "get", messageId: "m0001" })
+        assert.match(result, /Review the attached note\./)
+        assert.match(result, /Attachment parser finding: λ accepts empty records\./)
+        assert.ok(
+            result.includes(
+                `Attached file: ${kind === "inline" ? "notes.txt" : "file:///project/notes.txt"}`,
+            ),
+        )
+        if (kind === "inline") {
+            assert.match(result, /Description: Parser evidence/)
+            assert.match(result, /Attached file: empty\.txt/)
+        }
+        assert.deepEqual(native, original)
+    })
+}
+
+for (const kind of ["uri", "inline"] as const) {
+    test(`v2 ${kind} directory attachments remain readable original recall sources`, async (t) => {
+        const native = [
+            {
+                id: "msg_attached_directory",
+                type: "user",
+                text: "Review this directory.",
+                files: [
+                    {
+                        mime: "application/x-directory",
+                        data: Buffer.from("parser.ts\nλ.test.ts").toString("base64"),
+                        source:
+                            kind === "uri"
+                                ? { type: "uri" as const, uri: "file:///project/parser%20fixtures" }
+                                : { type: "inline" as const },
+                        name: "fixtures",
+                        description: "Parser examples",
+                    },
+                    {
+                        mime: "application/x-directory",
+                        data: "",
+                        source: { type: "inline" as const },
+                    },
+                ],
+            },
+        ]
+        const original = structuredClone(native)
+        const h = await createHousekeepingHarness(t, {
+            messages: normalizeNativeHistory(native, `ses_directory_${kind}`),
+        })
+        const result = await h.run("recall_compressed", { action: "get", messageId: "m0001" })
+        assert.match(result, /Review this directory\./)
+        assert.ok(
+            result.includes(
+                `Attached directory: ${kind === "uri" ? "/project/parser fixtures" : "fixtures"}\nDescription: Parser examples\n\nparser.ts\nλ.test.ts`,
+            ),
+        )
+        assert.match(result, /Attached directory: directory/)
+        assert.doesNotMatch(result, /undefined|parser%20fixtures/)
+        assert.deepEqual(native, original)
+    })
+}
+
+for (const mime of ["image/png", "application/pdf"]) {
+    test(`v2 ${mime} attachments preserve media and readable file locations`, async (t) => {
+        const data = Buffer.from("BINARY_PAYLOAD_NOT_RECALL_TEXT").toString("base64")
+        const native = [
+            {
+                id: "msg_media",
+                type: "user",
+                text: "Inspect the attachment.",
+                files: [
+                    {
+                        mime,
+                        data,
+                        name: "evidence",
+                        source: { type: "uri" as const, uri: "file:///project/media%20evidence" },
+                    },
+                ],
+            },
+        ]
+        const original = structuredClone(native)
+        const messages = normalizeNativeHistory(native, "ses_media")
+        const media = messages[0]!.parts.filter((part) => part.type === "file")
+        assert.equal(media.length, 1)
+        assert.equal(media[0]!.mime, mime)
+        assert.equal(media[0]!.filename, "evidence")
+        assert.equal(media[0]!.url, `data:${mime};base64,${data}`)
+        const h = await createHousekeepingHarness(t, { messages })
+        const result = await h.run("recall_compressed", { action: "get", messageId: "m0001" })
+        assert.match(result, /Inspect the attachment\./)
+        assert.match(result, /Attached file: \/project\/media evidence/)
+        assert.doesNotMatch(result, /BINARY_PAYLOAD_NOT_RECALL_TEXT/)
+        assert.deepEqual(native, original)
+    })
+}
+
+test("v2 media history deduplicates only matching mentioned inline images", () => {
+    const image = {
+        mime: "image/png",
+        data: "YQ==",
+        source: { type: "inline" as const },
+        mention: { text: "@image" },
+    }
+    const pdf = { mime: "application/pdf", data: "Yg==", source: { type: "inline" as const } }
+    const native = [
+        {
+            id: "msg_inline_media",
+            type: "user",
+            files: [image, { ...image }, { ...image, data: "Yw==" }, pdf, { ...pdf }],
+        },
+    ]
+    const original = structuredClone(native)
+    const messages = normalizeNativeHistory(native, "ses_inline_media")
+    const media = messages[0]!.parts.filter((part) => part.type === "file")
+    assert.deepEqual(
+        media.map((part) => part.url),
+        [
+            "data:image/png;base64,YQ==",
+            "data:image/png;base64,Yw==",
+            "data:application/pdf;base64,Yg==",
+            "data:application/pdf;base64,Yg==",
+        ],
+    )
+    assert.equal(new Set(messages[0]!.parts.map((part) => part.id)).size, messages[0]!.parts.length)
+    assert.deepEqual(native, original)
+})
+
+test("v2 empty synthetic text does not substitute its display description", () => {
+    const messages = normalizeNativeHistory(
+        [
+            {
+                id: "msg_empty_report",
+                type: "synthetic",
+                text: "",
+                description: "Display only",
+                time: { created: 7 },
+            },
+        ],
+        "ses_empty_report",
+    )
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0]!.info.role, "user")
+    assert.equal(messages[0]!.info.time.created, 7)
+    assert.equal(visibleText(messages), "")
+})
 
 async function createRecallHarness(t: TestContext, mode: "message" | "range" = "message") {
     const sessionID = `ses_recall_${t.name.replace(/\W/g, "_")}`

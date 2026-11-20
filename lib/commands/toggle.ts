@@ -2,9 +2,9 @@ import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
-import { sendIgnoredMessage } from "../ui/notification"
 import { truncate } from "../ui/utils"
 import { countTokens } from "../token-utils"
+import type { CommandSendMessage } from "./output"
 
 function parseBlockIdArg(arg: string): number | null {
     const normalized = arg.trim().toLowerCase()
@@ -16,7 +16,7 @@ function parseBlockIdArg(arg: string): number | null {
 }
 
 export interface ToggleCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -50,44 +50,26 @@ function activeSummaryFor(block: {
 }
 
 export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
 
     const params = getCurrentParams(state, messages, logger)
     const blockIdArg = args[0]
     const versionArg = args[1]
 
     if (!blockIdArg) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Usage: /dcp toggle <n> [version]",
-            params,
-            logger,
-        )
+        await sendMessage("Usage: /dcp toggle <n> [version]", params)
         return
     }
 
     const blockId = parseBlockIdArg(blockIdArg)
     if (blockId === null) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Invalid block number. Usage: /dcp toggle <n> [version]",
-            params,
-            logger,
-        )
+        await sendMessage("Invalid block number. Usage: /dcp toggle <n> [version]", params)
         return
     }
 
     const block = state.prune.messages.blocksById.get(blockId)
     if (!block) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Block ${blockIdArg} not found.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Block ${blockIdArg} not found.`, params)
         return
     }
 
@@ -109,7 +91,7 @@ export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<vo
         lines.push("")
         lines.push("Usage: /dcp toggle <n> <version>  — 0=disabled, 1=v1, 2=v2, ...")
 
-        await sendIgnoredMessage(client, sessionId, lines.join("\n"), params, logger)
+        await sendMessage(lines.join("\n"), params)
         return
     }
 
@@ -117,12 +99,9 @@ export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<vo
 
     const versionNum = Number.parseInt(versionArg, 10)
     if (!Number.isInteger(versionNum) || versionNum < 0) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             `Invalid version "${versionArg}". Use 0 for disabled, 1 for original, 2+ for rewrites.`,
             params,
-            logger,
         )
         return
     }
@@ -133,12 +112,9 @@ export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<vo
         newIndex = 1
     } else {
         if (versionNum - 2 >= versions.length) {
-            await sendIgnoredMessage(
-                client,
-                sessionId,
+            await sendMessage(
                 `Version ${versionNum} does not exist. Available: 0 (disabled) through ${versions.length + 1} (v${versions.length + 1}).`,
                 params,
-                logger,
             )
             return
         }
@@ -147,11 +123,8 @@ export async function handleToggleCommand(ctx: ToggleCommandContext): Promise<vo
 
     block.activeVersionIndex = newIndex
 
-    await sendIgnoredMessage(
-        client,
-        sessionId,
+    await sendMessage(
         `Block #${block.blockId} summary set to ${formatVersionLabel(newIndex)}.`,
         params,
-        logger,
     )
 }

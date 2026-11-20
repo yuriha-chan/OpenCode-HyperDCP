@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import type { WithParts } from "./state"
 
 export interface NativeModelRef {
@@ -46,15 +47,33 @@ export type NativeAssistantContent =
     | { type: "reasoning"; text: string; time?: NativePartTime }
     | { type: "tool"; id: string; name: string; state: NativeToolState; time: NativePartTime }
 
+export interface NativeFileAttachment {
+    data: string
+    mime: string
+    source: { type: "inline" } | { type: "uri"; uri: string }
+    name?: string
+    description?: string
+    mention?: { text: string }
+}
+
 export interface NativeSessionMessage {
     id: string
     type: string
     text?: string
+    description?: string
+    files?: ReadonlyArray<NativeFileAttachment>
     summary?: string
     status?: string
     agent?: string
     model?: NativeModelRef
+    metadata?: Record<string, unknown>
     content?: ReadonlyArray<NativeAssistantContent>
+    tokens?: {
+        input: number
+        output: number
+        reasoning: number
+        cache: { read: number; write: number }
+    }
     time?: {
         created?: number
         completed?: number
@@ -64,6 +83,22 @@ export interface NativeSessionMessage {
 export interface NativeSessionApi {
     context(input: { sessionID: string }): Promise<NativeSessionMessage[]>
     get(input: { sessionID: string }): Promise<NativeSessionInfo>
+}
+
+export function isOwnedDisplayOnlyMetadata(
+    metadata: Record<string, unknown> | undefined,
+): boolean {
+    if (!metadata) return false
+    const hyperdcp = metadata.hyperdcp
+    return (
+        typeof hyperdcp === "object" &&
+        hyperdcp !== null &&
+        (hyperdcp as Record<string, unknown>).displayOnly === true
+    )
+}
+
+export function isOwnedDisplayOnlyMessage(message: NativeSessionMessage): boolean {
+    return message.type === "synthetic" && isOwnedDisplayOnlyMetadata(message.metadata)
 }
 
 type AssistantInfo = Extract<WithParts["info"], { role: "assistant" }>
@@ -110,12 +145,18 @@ function assistantInfo(
         agent: message.agent ?? "assistant",
         path: { cwd: "", root: "" },
         cost: 0,
-        tokens: {
-            input: 0,
-            output: 0,
-            reasoning: 0,
-            cache: { read: 0, write: 0 },
-        },
+        tokens:
+            message.type === "assistant" && message.tokens
+                ? {
+                      ...message.tokens,
+                      cache: { ...message.tokens.cache },
+                  }
+                : {
+                      input: 0,
+                      output: 0,
+                      reasoning: 0,
+                      cache: { read: 0, write: 0 },
+                  },
     }
 }
 
@@ -230,13 +271,94 @@ function assistantParts(message: NativeSessionMessage, sessionID: string): CoreP
     })
 }
 
+function attachmentLocation(file: NativeFileAttachment): string | undefined {
+    if (file.source.type !== "uri") return undefined
+    try {
+        const url = new URL(file.source.uri)
+        return url.protocol === "file:" ? fileURLToPath(url) : undefined
+    } catch (error) {
+        if (error instanceof TypeError) return undefined
+        throw error
+    }
+}
+
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
+
+function userAttachmentParts(message: NativeSessionMessage, sessionID: string): CorePart[] {
+    if (message.type !== "user") return []
+    const seen = new Map<string, Set<string>>()
+    return (message.files ?? []).flatMap((file, index): CorePart[] => {
+        if (IMAGE_MIMES.has(file.mime) || file.mime === "application/pdf") {
+            if (IMAGE_MIMES.has(file.mime) && file.source.type === "inline" && file.mention?.text) {
+                const metadata = JSON.stringify([
+                    file.mime,
+                    file.name ?? null,
+                    file.description ?? null,
+                    file.mention.text,
+                ])
+                const payloads = seen.get(metadata) ?? new Set<string>()
+                if (payloads.has(file.data)) return []
+                payloads.add(file.data)
+                seen.set(metadata, payloads)
+            }
+            const location = attachmentLocation(file)
+            return [
+                ...(location === undefined
+                    ? []
+                    : [
+                          {
+                              id: `${partId(message.id, index + 1)}:location`,
+                              sessionID,
+                              messageID: message.id,
+                              type: "text" as const,
+                              text: `Attached file: ${location}`,
+                          },
+                      ]),
+                {
+                    id: partId(message.id, index + 1),
+                    sessionID,
+                    messageID: message.id,
+                    type: "file",
+                    mime: file.mime,
+                    filename: file.name,
+                    url: `data:${file.mime};base64,${file.data}`,
+                },
+            ]
+        }
+        const directory = file.mime === "application/x-directory"
+        if (file.mime !== "text/plain" && !directory) return []
+        const text = `\n\n${[
+            directory
+                ? `Attached directory: ${attachmentLocation(file) ?? file.name ?? (file.source.type === "uri" ? file.source.uri : "directory")}`
+                : `Attached file: ${file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment")}`,
+            file.description === undefined ? undefined : `Description: ${file.description}`,
+            directory && file.data.length === 0 ? undefined : "",
+            directory && file.data.length === 0
+                ? undefined
+                : Buffer.from(file.data, "base64").toString("utf8"),
+        ]
+            .filter((line): line is string => line !== undefined)
+            .join("\n")}`
+        return [
+            {
+                id: partId(message.id, index + 1),
+                sessionID,
+                messageID: message.id,
+                type: "text",
+                text,
+            },
+        ]
+    })
+}
+
 export function normalizeNativeHistory(
     messages: NativeSessionMessage[],
     sessionID: string,
 ): WithParts[] {
     return messages.flatMap((message): WithParts[] => {
         const created = message.time?.created ?? 0
-        if (message.type === "user")
+        if (message.type === "user" || message.type === "synthetic") {
+            const ignored = isOwnedDisplayOnlyMessage(message)
             return [
                 {
                     info: userInfo(message, sessionID),
@@ -247,10 +369,13 @@ export function normalizeNativeHistory(
                             messageID: message.id,
                             type: "text",
                             text: message.text ?? "",
+                            ...(ignored ? { ignored: true } : {}),
                         },
+                        ...userAttachmentParts(message, sessionID),
                     ],
                 },
             ]
+        }
         if (message.type === "assistant")
             return [
                 {

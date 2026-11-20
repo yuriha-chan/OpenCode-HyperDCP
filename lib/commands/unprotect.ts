@@ -2,10 +2,10 @@ import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
 import { parseMessageRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
-import { sendIgnoredMessage } from "../ui/notification"
+import type { CommandSendMessage } from "./output"
 
 export interface UnprotectCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -14,7 +14,7 @@ export interface UnprotectCommandContext {
 }
 
 export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
     const params = getCurrentParams(state, messages, logger)
     const targetArg = args[0]
 
@@ -29,13 +29,7 @@ export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Prom
         })
 
         if (refs.length === 0) {
-            await sendIgnoredMessage(
-                client,
-                sessionId,
-                "No messages are protected.",
-                params,
-                logger,
-            )
+            await sendMessage("No messages are protected.", params)
             return
         }
 
@@ -46,7 +40,7 @@ export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Prom
             const suffix = rawId ? ` (${rawId})` : ""
             lines.push(`  ${ref}${suffix}`)
         }
-        await sendIgnoredMessage(client, sessionId, lines.join("\n"), params, logger)
+        await sendMessage(lines.join("\n"), params)
         return
     }
 
@@ -72,33 +66,18 @@ export async function handleUnprotectCommand(ctx: UnprotectCommandContext): Prom
     }
 
     if (!formattedRef) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
+        await sendMessage(
             "Please provide a valid message ID. Example: /dcp unprotect m0005",
             params,
-            logger,
         )
         return
     }
 
     if (!state.protectedRefs.has(formattedRef)) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Message ${formattedRef} is not protected.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Message ${formattedRef} is not protected.`, params)
         return
     }
 
     state.protectedRefs.delete(formattedRef)
-    await sendIgnoredMessage(
-        client,
-        sessionId,
-        `Unprotected message ${formattedRef}. It can now be compressed.`,
-        params,
-        logger,
-    )
+    await sendMessage(`Unprotected message ${formattedRef}. It can now be compressed.`, params)
 }

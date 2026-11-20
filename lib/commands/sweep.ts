@@ -10,7 +10,6 @@
 import type { Logger } from "../logger"
 import type { SessionState, WithParts, ToolParameterEntry } from "../state"
 import type { PluginConfig } from "../config"
-import { sendIgnoredMessage } from "../ui/notification"
 import { formatPrunedItemsList } from "../ui/utils"
 import { getCurrentParams, getTotalToolTokens } from "../token-utils"
 import { isIgnoredUserMessage } from "../messages/query"
@@ -20,9 +19,10 @@ import { isMessageCompacted } from "../state/utils"
 import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
 import { isToolProtected } from "../protected-tools"
 import { syncToolCache } from "../state/tool-cache"
+import type { CommandSendMessage } from "./output"
 
 export interface SweepCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     config: PluginConfig
     logger: Logger
@@ -124,7 +124,7 @@ function formatSweepMessage(
 }
 
 export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void> {
-    const { client, state, config, logger, sessionId, messages, args, workingDirectory } = ctx
+    const { sendMessage, state, config, logger, sessionId, messages, args, workingDirectory } = ctx
 
     const params = getCurrentParams(state, messages, logger)
     const protectedTools = config.commands.protectedTools
@@ -153,7 +153,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         if (lastUserMsgIndex === -1) {
             // No user message found - show message and return
             const message = formatNoUserMessage()
-            await sendIgnoredMessage(client, sessionId, message, params, logger)
+            await sendMessage(message, params)
             logger.info("Sweep command: no user message found")
             return
         } else {
@@ -211,7 +211,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
             workingDirectory,
             skippedProtected,
         )
-        await sendIgnoredMessage(client, sessionId, message, params, logger)
+        await sendMessage(message, params)
         logger.info("Sweep command: no new tools to sweep", { skippedProtected })
         return
     }
@@ -250,7 +250,7 @@ export async function handleSweepCommand(ctx: SweepCommandContext): Promise<void
         workingDirectory,
         skippedProtected,
     )
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await sendMessage(message, params)
 
     logger.info("Sweep command completed", {
         toolsSwept: newToolIds.length,

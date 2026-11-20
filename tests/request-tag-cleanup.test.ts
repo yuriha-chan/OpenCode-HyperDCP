@@ -26,6 +26,7 @@ async function captureContextHook() {
         | undefined
     await definition.setup({
         location: { directory: dataDirectory },
+        model: { list: async () => ({ location: { directory: dataDirectory }, data: [] }) },
         session: {
             hook: async (name: string, callback: NonNullable<typeof transform>) => {
                 assert.equal(name, "context")
@@ -50,9 +51,21 @@ async function captureContextHook() {
         permission: {
             assert: async () => {},
         },
-        tool: {
+        rpc: {
+            register: async () => ({
+                dispose: async () => {},
+                events: { emit: async () => {} },
+            }),
+        },
+        command: {
             transform: async (callback: (editor: { add(): void }) => void) => {
                 callback({ add() {} })
+                return { dispose: async () => {} }
+            },
+        },
+        tool: {
+            transform: async (callback: (editor: { add(): void; update(): void }) => void) => {
+                callback({ add() {}, update() {} })
                 return { dispose: async () => {} }
             },
             hook: async () => ({ dispose: async () => {} }),

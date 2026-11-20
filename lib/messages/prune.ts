@@ -3,11 +3,8 @@ import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import { isMessageCompacted } from "../state/utils"
 import { renderContextMemo } from "../memo"
-import {
-    createSyntheticSkillMessage,
-    createSyntheticUserMessage,
-    replaceBlockIdsWithBlocked,
-} from "./utils"
+import { createSyntheticSkillMessage, createSyntheticUserMessage } from "./utils"
+import { contextBlockSummary } from "./block-summary"
 import { isIgnoredUserMessage } from "./query"
 import { isMessageWithInfo } from "./shape"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
@@ -205,57 +202,23 @@ const filterCompressedRanges = (
         const userMessage = eligibility.eligibleUser
 
         // Check if there's a summary to inject at this anchor point
-        const blockId = state.prune.messages.activeByAnchorMessageId.get(msgId)
-        const summary =
-            blockId !== undefined ? state.prune.messages.blocksById.get(blockId) : undefined
-        if (summary) {
-            const versionIndex =
-                typeof summary.activeVersionIndex === "number" ? summary.activeVersionIndex : 1
-            let rawSummaryContent: string
+        const renderedSummary = contextBlockSummary(state, logger, config, msgId)
+        if (renderedSummary) {
+            const { block: summary, content: summaryContent } = renderedSummary
+            if (userMessage) {
+                const userInfo = userMessage.info as UserMessage
+                const summarySeed = `${summary.blockId}:${summary.anchorMessageId}`
+                result.push(createSyntheticUserMessage(userMessage, summaryContent, summarySeed))
+                lastBlockIndex = result.length - 1
 
-            if (versionIndex === 0) {
-                rawSummaryContent = "" // disabled
-            } else if (
-                versionIndex >= 2 &&
-                Array.isArray(summary.summaryVersions) &&
-                versionIndex - 2 < summary.summaryVersions.length
-            ) {
-                rawSummaryContent = summary.summaryVersions[versionIndex - 2]
-            } else {
-                rawSummaryContent = (summary as { summary?: string }).summary ?? ""
-            }
-
-            if (
-                summary.active !== true ||
-                typeof rawSummaryContent !== "string" ||
-                rawSummaryContent.length === 0
-            ) {
-                logger.warn("Skipping malformed compress summary", {
+                logger.info("Injected compress summary", {
                     anchorMessageId: msgId,
-                    blockId: (summary as { blockId?: unknown }).blockId,
+                    summaryLength: summaryContent.length,
                 })
             } else {
-                if (userMessage) {
-                    const userInfo = userMessage.info as UserMessage
-                    const summaryContent =
-                        config.compress.mode === "message"
-                            ? replaceBlockIdsWithBlocked(rawSummaryContent)
-                            : rawSummaryContent
-                    const summarySeed = `${summary.blockId}:${summary.anchorMessageId}`
-                    result.push(
-                        createSyntheticUserMessage(userMessage, summaryContent, summarySeed),
-                    )
-                    lastBlockIndex = result.length - 1
-
-                    logger.info("Injected compress summary", {
-                        anchorMessageId: msgId,
-                        summaryLength: summaryContent.length,
-                    })
-                } else {
-                    logger.warn("No user message found for compress summary", {
-                        anchorMessageId: msgId,
-                    })
-                }
+                logger.warn("No user message found for compress summary", {
+                    anchorMessageId: msgId,
+                })
             }
         }
 
@@ -273,11 +236,7 @@ const filterCompressedRanges = (
     let memoIndex = -1
     if (memoContent.length > 0) {
         if (latestEligibleUser) {
-            const memoMsg = createSyntheticUserMessage(
-                latestEligibleUser,
-                memoContent,
-                "dcp_memo",
-            )
+            const memoMsg = createSyntheticUserMessage(latestEligibleUser, memoContent, "dcp_memo")
             memoIndex = lastBlockIndex >= 0 ? lastBlockIndex + 1 : 0
             result.splice(memoIndex, 0, memoMsg)
         }

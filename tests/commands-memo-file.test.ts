@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -122,7 +123,7 @@ test("/dcp memo-file applies file content to the memo", async () => {
     const path = writeTempFile("Remember the plan\nsecond line")
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -146,7 +147,7 @@ test("/dcp memo-file overwrites an existing memo", async () => {
     const path = writeTempFile("new memo")
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -167,7 +168,7 @@ test("/dcp memo-file without arguments shows usage", async () => {
     const { client, ignoredMessages, promptCalls } = makeClient()
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -190,7 +191,7 @@ test("/dcp memo-file reports a missing file", async () => {
     const { client, ignoredMessages, promptCalls } = makeClient()
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -214,7 +215,7 @@ test("/dcp memo-file normalizes an empty file to a null memo", async () => {
     const path = writeTempFile("   \n\t\n")
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -237,7 +238,7 @@ test("/dcp memo set replaces the structured memo and retains header-only section
 
     await handleMemoCommand(
         {
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger: new Logger(false),
             sessionId: sessionID,
@@ -262,7 +263,7 @@ test("blank /dcp memo set normalizes the memo to null", async () => {
 
     await handleMemoCommand(
         {
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger: new Logger(false),
             sessionId: sessionID,
@@ -284,7 +285,7 @@ test("/dcp memo clear removes the entire structured tree", async () => {
 
     await handleMemoCommand(
         {
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger: new Logger(false),
             sessionId: sessionID,
@@ -306,7 +307,7 @@ test("/dcp memo set repairs malformed headings without restoring the previous me
 
     await handleMemoCommand(
         {
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger: new Logger(false),
             sessionId: sessionID,
@@ -328,7 +329,7 @@ test("/dcp memo show renders nested headings and plain text items", async () => 
 
     await handleMemoCommand(
         {
-            client,
+            sendMessage: ignoredSender(client, sessionID),
             state,
             logger: new Logger(false),
             sessionId: sessionID,
@@ -351,7 +352,7 @@ test("memo-file parses and replaces a structured memo instead of merging old con
     const path = writeTempFile("# Plan\n- first step\n## Empty")
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger: new Logger(false),
         sessionId: sessionID,
@@ -374,7 +375,7 @@ test("memo-file keeps repaired supplied content instead of restoring the previou
     const path = writeTempFile("# Topic/Name\n- supplied content")
 
     await handleMemoFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger: new Logger(false),
         sessionId: sessionID,

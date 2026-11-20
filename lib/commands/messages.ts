@@ -3,11 +3,11 @@ import type { SessionState, WithParts } from "../state"
 import { assignMessageRefs, parseMessageRef } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/query"
 import { getCurrentParams } from "../token-utils"
-import { sendIgnoredMessage } from "../ui/notification"
 import { syncCompressionBlocks } from "../messages"
+import type { CommandSendMessage } from "./output"
 
 export interface MessagesCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -58,7 +58,7 @@ function isCompressed(state: SessionState, rawId: string): boolean {
 }
 
 export async function handleMessagesCommand(ctx: MessagesCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
     const params = getCurrentParams(state, messages, logger)
 
     assignMessageRefs(state, messages)
@@ -93,12 +93,9 @@ export async function handleMessagesCommand(ctx: MessagesCommandContext): Promis
             : -1
         const endIndex = endRawId ? visibleMessages.findIndex((m) => m.info.id === endRawId) : -1
         if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
-            await sendIgnoredMessage(
-                client,
-                sessionId,
+            await sendMessage(
                 "Invalid message range. Use /dcp messages m0001 m0005 format.",
                 params,
-                logger,
             )
             return
         }
@@ -109,7 +106,7 @@ export async function handleMessagesCommand(ctx: MessagesCommandContext): Promis
     }
 
     if (selected.length === 0) {
-        await sendIgnoredMessage(client, sessionId, "No messages to display.", params, logger)
+        await sendMessage("No messages to display.", params)
         return
     }
 
@@ -126,5 +123,5 @@ export async function handleMessagesCommand(ctx: MessagesCommandContext): Promis
         lines.push(`  ${ref}  ${status} ${role.padEnd(9)} ${preview}`)
     }
 
-    await sendIgnoredMessage(client, sessionId, lines.join("\n"), params, logger)
+    await sendMessage(lines.join("\n"), params)
 }

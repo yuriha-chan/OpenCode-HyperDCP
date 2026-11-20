@@ -38,6 +38,7 @@ export const injectCompressNudges = (
     prompts: RuntimePrompts,
     compressionPriorities?: CompressionPriorityMap,
     uncoveredMessages: WithParts[] = messages,
+    injectNudge?: (message: WithParts, text: string) => void,
 ): void => {
     if (state.housekeeping) return
     if (!prompts.contextLimitNudge && !prompts.turnNudge && !prompts.iterationNudge) return
@@ -140,11 +141,29 @@ export const injectCompressNudges = (
 
     const nudgedPrompts = { ...prompts }
 
-    applyAnchoredNudges(state, config, messages, nudgedPrompts, compressionPriorities)
+    applyAnchoredNudges(state, config, messages, nudgedPrompts, compressionPriorities, injectNudge)
 
     if (anchorsChanged) {
         void saveSessionState(state, logger)
     }
+}
+
+export function messageIdTag(
+    state: SessionState,
+    config: PluginConfig,
+    message: WithParts,
+    compressionPriorities?: CompressionPriorityMap,
+): string | undefined {
+    if (state.housekeeping || compressPermission(state, config) === "deny") return
+    if (isIgnoredUserMessage(message)) return
+    const messageRef = state.messageIds.byRawId.get(message.info.id)
+    if (!messageRef) return
+    const blocked = isProtectedUserMessage(config, message) || state.protectedRefs.has(messageRef)
+    const priority =
+        config.compress.mode === "message" && !blocked
+            ? compressionPriorities?.get(message.info.id)?.priority
+            : undefined
+    return formatMessageIdTag(blocked ? "BLOCKED" : messageRef, priority ? { priority } : undefined)
 }
 
 export const injectMessageIds = (
@@ -165,25 +184,8 @@ export const injectMessageIds = (
         ]),
     )
     for (const message of messages) {
-        if (isIgnoredUserMessage(message)) {
-            continue
-        }
-
-        const messageRef = state.messageIds.byRawId.get(message.info.id)
-        if (!messageRef) {
-            continue
-        }
-
-        const isBlockedMessage =
-            isProtectedUserMessage(config, message) || state.protectedRefs.has(messageRef)
-        const priority =
-            config.compress.mode === "message" && !isBlockedMessage
-                ? compressionPriorities?.get(message.info.id)?.priority
-                : undefined
-        const tag = formatMessageIdTag(
-            isBlockedMessage ? "BLOCKED" : messageRef,
-            priority ? { priority } : undefined,
-        )
+        const tag = messageIdTag(state, config, message, compressionPriorities)
+        if (!tag) continue
 
         if (message.parts.some((part) => part.type === "tool" && boundaryCalls.has(part.callID))) {
             for (const part of message.parts) {

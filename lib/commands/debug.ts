@@ -3,11 +3,11 @@ import { existsSync } from "fs"
 import { isAbsolute, resolve } from "path"
 import type { Logger } from "../logger"
 import type { SessionState, WithParts } from "../state"
-import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
+import type { CommandSendMessage } from "./output"
 
 export interface DebugCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -24,26 +24,20 @@ function formatStatus(state: SessionState): string {
 }
 
 export async function handleDebugCommand(ctx: DebugCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args, workingDirectory } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args, workingDirectory } = ctx
     const params = getCurrentParams(state, messages, logger)
     const subcommand = (args[0] || "").toLowerCase()
 
     if (subcommand === "off") {
         state.debug = { enabled: false, directory: null }
-        await sendIgnoredMessage(client, sessionId, formatStatus(state), params, logger)
+        await sendMessage(formatStatus(state), params)
         return
     }
 
     if (subcommand === "on") {
         const dirArg = args[1]
         if (!dirArg) {
-            await sendIgnoredMessage(
-                client,
-                sessionId,
-                "Usage: /dcp debug on <dirname>",
-                params,
-                logger,
-            )
+            await sendMessage("Usage: /dcp debug on <dirname>", params)
             return
         }
 
@@ -56,20 +50,14 @@ export async function handleDebugCommand(ctx: DebugCommandContext): Promise<void
         }
 
         state.debug = { enabled: true, directory: resolvedDir }
-        await sendIgnoredMessage(client, sessionId, formatStatus(state), params, logger)
+        await sendMessage(formatStatus(state), params)
         return
     }
 
     if (subcommand === "") {
-        await sendIgnoredMessage(client, sessionId, formatStatus(state), params, logger)
+        await sendMessage(formatStatus(state), params)
         return
     }
 
-    await sendIgnoredMessage(
-        client,
-        sessionId,
-        "Usage: /dcp debug [on <dirname> | off]",
-        params,
-        logger,
-    )
+    await sendMessage("Usage: /dcp debug [on <dirname> | off]", params)
 }

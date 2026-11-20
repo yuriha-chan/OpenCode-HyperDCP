@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -96,7 +97,7 @@ test("/dcp autotoggle with no args shows OFF status by default", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -116,7 +117,7 @@ test("/dcp autotoggle on enables the flag", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -137,7 +138,7 @@ test("/dcp autotoggle off disables the flag", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -157,7 +158,7 @@ test("/dcp autotoggle with unknown subcommand shows usage", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -178,7 +179,7 @@ test("/dcp autotoggle status when ON shows enabled in output", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -263,7 +264,7 @@ test("/dcp autotoggle on persists the flag to disk", async () => {
     const { client } = makeClient()
 
     await handleAutotoggleCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

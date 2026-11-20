@@ -45,17 +45,23 @@ export const createSyntheticUserMessage = (
     }
 }
 
+export const skillMessageIdentity = (record: SkillContext) => {
+    const seed = `${record.name}\0${record.callId}`
+    const hash = createHash("sha256").update(seed).digest("hex")
+    return {
+        createdAt: parseInt(hash.slice(0, 8), 16),
+        messageId: generateStableId("msg_dcp_skill", seed),
+        partId: generateStableId("prt_dcp_skill", seed),
+        callId: generateStableId("call_dcp_skill", seed),
+    }
+}
+
 export const createSyntheticSkillMessage = (
     baseMessage: WithParts,
     record: SkillContext,
 ): WithParts => {
     const userInfo = baseMessage.info as UserMessage
-    const seed = `${record.name}\0${record.callId}`
-    const hash = createHash("sha256").update(seed).digest("hex")
-    const createdAt = parseInt(hash.slice(0, 8), 16)
-    const messageId = generateStableId("msg_dcp_skill", seed)
-    const partId = generateStableId("prt_dcp_skill", seed)
-    const callId = generateStableId("call_dcp_skill", seed)
+    const { createdAt, messageId, partId, callId } = skillMessageIdentity(record)
     const info: AssistantMessage = {
         id: messageId,
         sessionID: userInfo.sessionID,
@@ -131,7 +137,7 @@ const findLastTextPart = (message: WithParts): TextPart | null => {
     return null
 }
 
-export const appendToTextPart = (part: TextPart, injection: string): boolean => {
+export const appendToTextPart = (part: Pick<TextPart, "text">, injection: string): boolean => {
     if (typeof part.text !== "string") {
         return false
     }

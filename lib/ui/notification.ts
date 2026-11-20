@@ -169,8 +169,18 @@ function formatCompressionMetrics(removedTokens: number, summaryTokens: number):
     return metrics.join(", ")
 }
 
-export async function sendCompressNotification(
-    client: any,
+export interface NotificationDelivery {
+    sendMessage(text: string, params: any): Promise<void>
+    showToast(toast: {
+        title: string
+        message: string
+        variant: "info" | "success" | "warning" | "error"
+        duration: number
+    }): Promise<void>
+}
+
+export async function deliverCompressNotification(
+    delivery: NotificationDelivery,
     logger: Logger,
     config: PluginConfig,
     state: SessionState,
@@ -290,19 +300,47 @@ export async function sendCompressNotification(
         toastMessage =
             config.pruneNotification === "minimal" ? toastMessage : truncateToastBody(toastMessage)
 
-        await client.tui.showToast({
-            body: {
-                title: "DCP: Compress Notification",
-                message: toastMessage,
-                variant: "info",
-                duration: 5000,
-            },
+        await delivery.showToast({
+            title: "DCP: Compress Notification",
+            message: toastMessage,
+            variant: "info",
+            duration: 5000,
         })
         return true
     }
 
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await delivery.sendMessage(message, params)
     return true
+}
+
+export async function sendCompressNotification(
+    client: any,
+    logger: Logger,
+    config: PluginConfig,
+    state: SessionState,
+    sessionId: string,
+    entries: CompressionNotificationEntry[],
+    batchTopic: string | undefined,
+    sessionMessageIds: string[],
+    params: any,
+): Promise<boolean> {
+    return deliverCompressNotification(
+        {
+            sendMessage: (text, messageParams) =>
+                sendIgnoredMessage(client, sessionId, text, messageParams, logger),
+            showToast: async (toast) => {
+                await client.tui.showToast({ body: toast })
+            },
+        },
+        logger,
+        config,
+        state,
+        sessionId,
+        entries,
+        batchTopic,
+        sessionMessageIds,
+        params,
+    )
 }
 
 export async function sendIgnoredMessage(

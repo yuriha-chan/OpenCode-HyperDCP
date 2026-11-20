@@ -7,11 +7,11 @@ import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import type { SessionState, WithParts } from "../state"
 import { compressPermission } from "../compress-permission"
-import { sendIgnoredMessage } from "../ui/notification"
 import { getCurrentParams } from "../token-utils"
+import type { CommandSendMessage } from "./output"
 
 export interface HelpCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     config: PluginConfig
     logger: Logger
@@ -73,13 +73,13 @@ function formatHelpMessage(state: SessionState, config: PluginConfig): string {
 }
 
 export async function handleHelpCommand(ctx: HelpCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages } = ctx
+    const { sendMessage, state, logger, sessionId, messages } = ctx
 
     const { config } = ctx
     const message = formatHelpMessage(state, config)
 
     const params = getCurrentParams(state, messages, logger)
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await sendMessage(message, params)
 
     logger.info("Help command executed")
 }

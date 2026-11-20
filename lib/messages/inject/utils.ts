@@ -297,13 +297,14 @@ function applyAnchoredNudge(
     anchorMessageIds: Set<string>,
     messages: WithParts[],
     nudgeText: string,
+    injectNudge: (message: WithParts, text: string) => void,
 ): void {
     if (!nudgeText.trim()) {
         return
     }
 
     for (const { message } of collectAnchoredMessages(anchorMessageIds, messages)) {
-        injectAnchoredNudge(message, nudgeText)
+        injectNudge(message, nudgeText)
     }
 }
 
@@ -313,10 +314,21 @@ export function applyAnchoredNudges(
     messages: WithParts[],
     prompts: RuntimePrompts,
     _compressionPriorities?: CompressionPriorityMap,
+    injectNudge: (message: WithParts, text: string) => void = injectAnchoredNudge,
 ): void {
     const turnNudgeAnchors = collectTurnNudgeAnchors(state, config, messages)
 
-    applyAnchoredNudge(state.nudges.contextLimitAnchors, messages, prompts.contextLimitNudge)
-    applyAnchoredNudge(turnNudgeAnchors, messages, prompts.turnNudge)
-    applyAnchoredNudge(state.nudges.iterationNudgeAnchors, messages, prompts.iterationNudge)
+    applyAnchoredNudge(
+        state.nudges.contextLimitAnchors,
+        messages,
+        prompts.contextLimitNudge,
+        injectNudge,
+    )
+    applyAnchoredNudge(turnNudgeAnchors, messages, prompts.turnNudge, injectNudge)
+    applyAnchoredNudge(
+        state.nudges.iterationNudgeAnchors,
+        messages,
+        prompts.iterationNudge,
+        injectNudge,
+    )
 }

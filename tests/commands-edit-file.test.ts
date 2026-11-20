@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -138,7 +139,7 @@ test("/dcp edit-file applies file content as a new active version", async () => 
     const path = writeTempFile("Brand new summary\nsecond line")
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -163,7 +164,7 @@ test("/dcp edit-file appends on top of existing versions", async () => {
     const path = writeTempFile("third version")
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -184,7 +185,7 @@ test("/dcp edit-file without arguments shows usage", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -206,7 +207,7 @@ test("/dcp edit-file reports a missing file", async () => {
     const { client, ignoredMessages } = makeClient()
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -229,7 +230,7 @@ test("/dcp edit-file rejects an empty file", async () => {
     const path = writeTempFile("   \n\t\n")
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -252,7 +253,7 @@ test("/dcp edit-file rejects an invalid block id", async () => {
     const path = writeTempFile("content")
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -274,7 +275,7 @@ test("/dcp edit-file reports an unknown block", async () => {
     const path = writeTempFile("content")
 
     await handleEditFileCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

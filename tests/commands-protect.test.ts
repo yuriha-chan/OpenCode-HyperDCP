@@ -1,3 +1,4 @@
+import { ignoredSender } from "./helpers/command-output"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { join } from "node:path"
@@ -124,7 +125,7 @@ test("/dcp protect with no args lists protected messages", async () => {
     }
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -158,7 +159,7 @@ test("/dcp protect <n> adds message ref to protected set", async () => {
     assert.equal(state.protectedRefs.size, 0)
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -190,7 +191,7 @@ test("/dcp protect numeric arg works", async () => {
     }
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -220,7 +221,7 @@ test("/dcp protect already-protected message shows info", async () => {
     }
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -250,7 +251,7 @@ test("/dcp protect invalid ref shows error", async () => {
     }
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -279,7 +280,7 @@ test("/dcp protect non-existent ref shows error", async () => {
     }
 
     await handleProtectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -311,7 +312,7 @@ test("/dcp unprotect with no args lists protected messages", async () => {
     }
 
     await handleUnprotectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -344,7 +345,7 @@ test("/dcp unprotect <n> removes message ref from protected set", async () => {
     assert.ok(state.protectedRefs.has("m0001"))
 
     await handleUnprotectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,
@@ -374,7 +375,7 @@ test("/dcp unprotect not-protected message shows info", async () => {
     }
 
     await handleUnprotectCommand({
-        client,
+        sendMessage: ignoredSender(client, sessionID),
         state,
         logger,
         sessionId: sessionID,

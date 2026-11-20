@@ -5,12 +5,17 @@ import { assignMessageRefs } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/query"
 import { deduplicate, purgeErrors } from "../strategies"
 import { getCurrentParams, getCurrentTokenUsage } from "../token-utils"
-import { sendCompressNotification } from "../ui/notification"
-import type { ToolContext } from "./types"
+import {
+    deliverCompressNotification,
+    sendIgnoredMessage,
+    type NotificationDelivery,
+} from "../ui/notification"
+import type { CompressionOperationContext, ToolContext } from "./types"
 import { buildSearchContext, fetchSessionMessages } from "./search"
 import type { SearchContext } from "./types"
 import { applyPendingCompressionDurations } from "./timing"
 import { projectEligibleSourceMessages } from "../housekeeping/history"
+import { loadAndReconcileSession } from "../housekeeping/state"
 
 interface RunContext {
     ask(input: {
@@ -40,11 +45,7 @@ export async function prepareSession(
     toolCtx: RunContext,
     title: string,
 ): Promise<PreparedSession> {
-    if (ctx.state.manualMode && ctx.state.manualMode !== "compress-pending") {
-        throw new Error(
-            "Manual mode: compress blocked. Do not retry until `<compress triggered manually>` appears in user context.",
-        )
-    }
+    assertCompressionManualMode(ctx.state)
 
     await toolCtx.ask({
         permission: "compress",
@@ -66,6 +67,21 @@ export async function prepareSession(
         ctx.config.manualMode.enabled,
     )
 
+    return prepareCompressionMessages(ctx, rawMessages)
+}
+
+export function assertCompressionManualMode(state: ToolContext["state"]): void {
+    if (state.manualMode && state.manualMode !== "compress-pending") {
+        throw new Error(
+            "Manual mode: compress blocked. Do not retry until `<compress triggered manually>` appears in user context.",
+        )
+    }
+}
+
+export function prepareCompressionMessages(
+    ctx: Pick<ToolContext, "state" | "logger" | "config">,
+    rawMessages: WithParts[],
+): PreparedSession {
     const eligibleMessages = ctx.state.housekeeping
         ? projectEligibleSourceMessages(rawMessages, ctx.state.housekeeping)
         : rawMessages
@@ -82,12 +98,34 @@ export async function prepareSession(
     }
 }
 
-export async function finalizeSession(
+export function compressionOperationContext(
     ctx: ToolContext,
     toolCtx: RunContext,
+): CompressionOperationContext {
+    return {
+        ...ctx,
+        refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
+        fetchMessages: (sessionID) => fetchSessionMessages(ctx.client, sessionID),
+        reportCompressionStart: async (title) => {
+            await toolCtx.ask({
+                permission: "compress",
+                patterns: ["*"],
+                always: ["*"],
+                metadata: {},
+            })
+            toolCtx.metadata({ title })
+        },
+        protectTaskOutputs: true,
+    }
+}
+
+export async function finalizeCompression(
+    ctx: Pick<ToolContext, "state" | "logger" | "config">,
+    sessionID: string,
     rawMessages: WithParts[],
     entries: NotificationEntry[],
     batchTopic: string | undefined,
+    delivery: NotificationDelivery,
 ): Promise<void> {
     if (ctx.state.housekeeping) return
     if (ctx.state.manualMode !== "compress-pending") {
@@ -101,15 +139,31 @@ export async function finalizeSession(
         .filter((msg) => !isIgnoredUserMessage(msg))
         .map((msg) => msg.info.id)
 
-    await sendCompressNotification(
-        ctx.client,
+    await deliverCompressNotification(
+        delivery,
         ctx.logger,
         ctx.config,
         ctx.state,
-        toolCtx.sessionID,
+        sessionID,
         entries,
         batchTopic,
         sessionMessageIds,
         params,
     )
+}
+
+export async function finalizeSession(
+    ctx: ToolContext,
+    toolCtx: RunContext,
+    rawMessages: WithParts[],
+    entries: NotificationEntry[],
+    batchTopic: string | undefined,
+): Promise<void> {
+    await finalizeCompression(ctx, toolCtx.sessionID, rawMessages, entries, batchTopic, {
+        sendMessage: (text, params) =>
+            sendIgnoredMessage(ctx.client, toolCtx.sessionID, text, params, ctx.logger),
+        showToast: async (toast) => {
+            await ctx.client.tui.showToast({ body: toast })
+        },
+    })
 }

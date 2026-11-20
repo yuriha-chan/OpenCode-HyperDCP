@@ -4,7 +4,6 @@ import { syncCompressionBlocks } from "../messages"
 import { parseBlockRef } from "../message-ids"
 import { getCurrentParams } from "../token-utils"
 import { renderMemo } from "../memo"
-import { sendIgnoredMessage } from "../ui/notification"
 import { formatTokenCount, truncate } from "../ui/utils"
 import { countTokens } from "../token-utils"
 import {
@@ -12,9 +11,10 @@ import {
     resolveCompressionTarget,
     type CompressionTarget,
 } from "./compression-targets"
+import type { CommandSendMessage } from "./output"
 
 export interface ViewCommandContext {
-    client: any
+    sendMessage: CommandSendMessage
     state: SessionState
     logger: Logger
     sessionId: string
@@ -155,19 +155,13 @@ function formatListView(targets: CompressionTarget[], memo: string | null): stri
 }
 
 export async function handleViewCommand(ctx: ViewCommandContext): Promise<void> {
-    const { client, state, logger, sessionId, messages, args } = ctx
+    const { sendMessage, state, logger, sessionId, messages, args } = ctx
 
     const params = getCurrentParams(state, messages, logger)
     const targetArg = args[0]
 
     if (args.length > 1) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Invalid arguments. Usage: /dcp view <n>",
-            params,
-            logger,
-        )
+        await sendMessage("Invalid arguments. Usage: /dcp view <n>", params)
         return
     }
 
@@ -177,34 +171,22 @@ export async function handleViewCommand(ctx: ViewCommandContext): Promise<void> 
     if (!targetArg) {
         const availableTargets = getActiveCompressionTargets(messagesState)
         const message = formatListView(availableTargets, state.memo ? renderMemo(state.memo) : null)
-        await sendIgnoredMessage(client, sessionId, message, params, logger)
+        await sendMessage(message, params)
         return
     }
 
     const targetBlockId = parseBlockIdArg(targetArg)
     if (targetBlockId === null) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            "Please enter a compression number. Example: /dcp view 2",
-            params,
-            logger,
-        )
+        await sendMessage("Please enter a compression number. Example: /dcp view 2", params)
         return
     }
 
     const target = resolveCompressionTarget(messagesState, targetBlockId)
     if (!target) {
-        await sendIgnoredMessage(
-            client,
-            sessionId,
-            `Compression ${targetBlockId} does not exist.`,
-            params,
-            logger,
-        )
+        await sendMessage(`Compression ${targetBlockId} does not exist.`, params)
         return
     }
 
     const message = formatSingleTargetView(target)
-    await sendIgnoredMessage(client, sessionId, message, params, logger)
+    await sendMessage(message, params)
 }
