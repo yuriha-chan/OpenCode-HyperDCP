@@ -344,3 +344,8 @@ export function renderMemo(memo: Memo): string {
     renderItems(memo, 0)
     return lines.join("\n")
 }
+
+export function renderContextMemo(memo: Memo): string {
+    const rendered = renderMemo(memo)
+    return rendered.length === 0 ? "" : `[Memo]\n${rendered}`
+}

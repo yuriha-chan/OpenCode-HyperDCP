@@ -2,7 +2,7 @@ import type { SessionState, WithParts } from "../state"
 import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import { isMessageCompacted } from "../state/utils"
-import { renderMemo } from "../memo"
+import { renderContextMemo } from "../memo"
 import {
     createSyntheticSkillMessage,
     createSyntheticUserMessage,
@@ -166,7 +166,7 @@ const filterCompressedRanges = (
     config: PluginConfig,
     messages: WithParts[],
 ): void => {
-    const memoContent = state.memo ? renderMemo(state.memo) : ""
+    const memoContent = state.memo ? renderContextMemo(state.memo) : ""
     const protectedSkills = Array.isArray(state.protectedSkills) ? state.protectedSkills : []
     if (
         state.prune.messages.byMessageId.size === 0 &&
@@ -275,7 +275,7 @@ const filterCompressedRanges = (
         if (latestEligibleUser) {
             const memoMsg = createSyntheticUserMessage(
                 latestEligibleUser,
-                `[Memo]\n${memoContent}`,
+                memoContent,
                 "dcp_memo",
             )
             memoIndex = lastBlockIndex >= 0 ? lastBlockIndex + 1 : 0

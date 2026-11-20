@@ -16,8 +16,8 @@ import {
     truncateToolOutputs,
 } from "./messages"
 import { getLastUserMessage } from "./messages/query"
-import { renderSystemPrompt, type PromptStore } from "./prompts"
-import { buildProtectedToolsExtension } from "./prompts/extensions/system"
+import { type PromptStore } from "./prompts"
+import { renderSystemGuidance } from "./prompts/system-guidance"
 import {
     applyPendingCompressionDurations,
     buildCompressionTimingKey,
@@ -65,13 +65,6 @@ import { projectHousekeepingHistory, reconcileHousekeepingHistory } from "./hous
 import { runHousekeepingCommandMutation } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
 
-const INTERNAL_AGENT_SIGNATURES = [
-    "You are a title generator",
-    "You are a helpful AI assistant tasked with summarizing conversations",
-    "You are an anchored context summarization assistant for coding sessions",
-    "Summarize what was done in this conversation",
-]
-
 function findLatestUserMessage(state: SessionState, messages: WithParts[]): string | null {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
@@ -97,33 +90,22 @@ export function createSystemPromptHandler(
             logger.debug("Cached model context limit", { limit: state.modelContextLimit })
         }
 
-        if (state.isSubAgent && !config.experimental.allowSubAgents) {
-            return
-        }
-
-        const systemText = output.system.join("\n")
-        if (INTERNAL_AGENT_SIGNATURES.some((sig) => systemText.includes(sig))) {
-            logger.info("Skipping DCP system prompt injection for internal agent")
-            return
-        }
-
         const effectivePermission =
             input.sessionID && state.sessionId === input.sessionID
                 ? compressPermission(state, config)
                 : config.compress.permission
 
-        if (effectivePermission === "deny") {
+        const newPrompt = renderSystemGuidance(
+            state,
+            logger,
+            config,
+            prompts,
+            output.system.join("\n"),
+            effectivePermission,
+        )
+        if (newPrompt === undefined) {
             return
         }
-
-        prompts.reload()
-        const runtimePrompts = prompts.getRuntimePrompts()
-        const newPrompt = renderSystemPrompt(
-            runtimePrompts,
-            buildProtectedToolsExtension(config.compress.protectedTools),
-            !!state.manualMode,
-            state.isSubAgent && config.experimental.allowSubAgents,
-        )
         if (output.system.length > 0) {
             output.system[output.system.length - 1] += "\n\n" + newPrompt
         } else {

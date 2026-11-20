@@ -29,7 +29,7 @@ const findLastMatchingRule = (
     return undefined
 }
 
-const wildcardMatch = (value: string, pattern: string): boolean => {
+export const wildcardMatch = (value: string, pattern: string): boolean => {
     const normalizedValue = value.replaceAll("\\", "/")
     let escaped = pattern
         .replaceAll("\\", "/")

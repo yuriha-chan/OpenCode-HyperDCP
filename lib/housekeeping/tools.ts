@@ -20,7 +20,13 @@ import { buildEntryGuidance, cloneDraft, publishDraft } from "./state"
 import type { HousekeepingTransaction } from "../state"
 import type { HousekeepingDraft, HousekeepingDraftRef } from "../state"
 import type { Memo } from "../memo"
-import type { ToolExecutionContext } from "./types"
+import type { SharedOperationContext, ToolExecutionContext } from "./types"
+
+export const ENTER_HOUSEKEEPING_DESCRIPTION =
+    "Enter housekeeping mode and return eligible ranges and maintenance guidance. Keep the mode active for the entire maintenance pass: memo updates, planned compression, and all summary edits across affected blocks. Call leave_housekeeping only after completing all intended changes."
+
+export const LEAVE_HOUSEKEEPING_DESCRIPTION =
+    "Commit the accumulated housekeeping draft and exit the mode. Finish all intended memo updates, compression, expansions, rewrites, version changes, and summary edits first. Preserve essential findings from housekeeping, then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks. Reading back the draft is optional."
 
 async function loadSessionMessages(ctx: ToolContext, sessionID: string): Promise<WithParts[]> {
     const response = await ctx.client.session.messages({ path: { id: sessionID } })
@@ -92,108 +98,115 @@ async function fetchTodoItems(ctx: ToolContext, sessionID: string): Promise<unkn
     }
 }
 
+export async function enterHousekeeping(
+    ctx: SharedOperationContext,
+    toolContext: ToolExecutionContext,
+    fetchTodos: (sessionID: string, messages: WithParts[]) => Promise<unknown[] | undefined>,
+): Promise<string> {
+    return withSessionCoordinator(ctx.state, async () => {
+        const messages = await ctx.refreshSession(toolContext.sessionID)
+        const callId = callIdentity(toolContext)
+        const previous = completedEntry(ctx.state, toolContext.messageID, callId)
+        if (
+            previous?.sessionId === toolContext.sessionID &&
+            previous.entryMessageId === toolContext.messageID
+        )
+            return previous.entryGuidance ?? "Housekeeping entry already completed."
+        const active = ctx.state.housekeeping
+        if (active && active.entryCallId === callId) {
+            return (
+                active.entryGuidance ??
+                "Housekeeping is active. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once for the whole maintenance pass."
+            )
+        }
+        if (active) {
+            throw new Error("Housekeeping is already active; recursive entry is not allowed.")
+        }
+        if (ctx.state.isSubAgent && !ctx.config.experimental.allowSubAgents) {
+            throw new Error("Housekeeping is unavailable in this subagent session.")
+        }
+        if (ctx.config.compress.permission === "deny") {
+            throw new Error("Compression permission is denied.")
+        }
+
+        const todos = await fetchTodos(toolContext.sessionID, messages)
+
+        const priorWork = projectHousekeepingHistory(messages, ctx.state.housekeepingHistory)
+        const sourceMessageIds = captureEligibleSourceMessages(
+            messages,
+            toolContext.messageID,
+            callId ?? "",
+            ctx.state.housekeepingHistory,
+        )
+        const eligibleBeforeEntry = projectEligibleSourceMessages(priorWork, {
+            sourceMessageIds,
+        })
+        const candidateState = structuredClone(ctx.state)
+        const guidance = buildEntryGuidance(
+            candidateState,
+            eligibleBeforeEntry,
+            ctx.prompts.getRuntimePrompts().housekeepingGuidance,
+            ctx.config,
+        )
+        const entryMessage = messages.find((message) => message.info.id === toolContext.messageID)
+        const baseDraft = cloneDraft(candidateState)
+        const baseRef = await writeHousekeepingDraft(toolContext.sessionID, baseDraft)
+        let draftRef: HousekeepingDraftRef = baseRef
+        if (todos !== undefined) {
+            const todoDraft = structuredClone(baseDraft)
+            todoDraft.memo = replaceTodoStatus(todoDraft.memo, todos)
+            draftRef = await writeHousekeepingDelta(
+                toolContext.sessionID,
+                baseRef,
+                baseDraft,
+                todoDraft,
+            )
+        }
+        const transaction: HousekeepingTransaction = {
+            id: `${toolContext.sessionID}:${toolContext.messageID}:${callId ?? ""}`,
+            sessionId: toolContext.sessionID,
+            entryMessageId: toolContext.messageID,
+            entryCallId: callId ?? "",
+            entryCreatedAt: entryMessage?.info.time.created ?? 0,
+            sourceMessageIds,
+            baseRevision: candidateState.contentRevision,
+            baseRef,
+            draftRef,
+            operations: {},
+            operationResults: {},
+            operationRecords: [],
+            entryGuidance: guidance,
+            operationOrder: [],
+            operationDraftRefs: {},
+        }
+        candidateState.housekeeping = transaction
+        candidateState.housekeepingHistory = [
+            ...candidateState.housekeepingHistory,
+            structuredClone(transaction),
+        ]
+        await saveSessionStateStrict(candidateState, ctx.logger)
+        ctx.state.messageIds = candidateState.messageIds
+        ctx.state.housekeeping = transaction
+        ctx.state.housekeepingHistory = candidateState.housekeepingHistory
+        ctx.state.revision = candidateState.revision
+        return guidance
+    })
+}
+
 export function createEnterHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description:
-            "Enter housekeeping mode and return eligible ranges and maintenance guidance. Keep the mode active for the entire maintenance pass: memo updates, planned compression, and all summary edits across affected blocks. Call leave_housekeeping only after completing all intended changes.",
+        description: ENTER_HOUSEKEEPING_DESCRIPTION,
         args: {},
         async execute(_args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext
-            return withSessionCoordinator(ctx.state, async () => {
-                const messages = await prepareToolSession(ctx, toolContext.sessionID)
-                const callId = callIdentity(toolContext)
-                const previous = completedEntry(ctx.state, toolContext.messageID, callId)
-                if (
-                    previous?.sessionId === toolContext.sessionID &&
-                    previous.entryMessageId === toolContext.messageID
-                )
-                    return previous.entryGuidance ?? "Housekeeping entry already completed."
-                const active = ctx.state.housekeeping
-                if (active && active.entryCallId === callId) {
-                    return (
-                        active.entryGuidance ??
-                        "Housekeeping is active. Complete all intended memo, compression, and summary work across every affected block before calling leave_housekeeping once for the whole maintenance pass."
-                    )
-                }
-                if (active) {
-                    throw new Error(
-                        "Housekeeping is already active; recursive entry is not allowed.",
-                    )
-                }
-                if (ctx.state.isSubAgent && !ctx.config.experimental.allowSubAgents) {
-                    throw new Error("Housekeeping is unavailable in this subagent session.")
-                }
-                if (ctx.config.compress.permission === "deny") {
-                    throw new Error("Compression permission is denied.")
-                }
-
-                const todos = await fetchTodoItems(ctx, toolContext.sessionID)
-
-                const priorWork = projectHousekeepingHistory(
-                    messages,
-                    ctx.state.housekeepingHistory,
-                )
-                const sourceMessageIds = captureEligibleSourceMessages(
-                    messages,
-                    toolContext.messageID,
-                    callId ?? "",
-                    ctx.state.housekeepingHistory,
-                )
-                const eligibleBeforeEntry = projectEligibleSourceMessages(priorWork, {
-                    sourceMessageIds,
-                })
-                const candidateState = structuredClone(ctx.state)
-                const guidance = buildEntryGuidance(
-                    candidateState,
-                    eligibleBeforeEntry,
-                    ctx.prompts.getRuntimePrompts().housekeepingGuidance,
-                    ctx.config,
-                )
-                const entryMessage = messages.find(
-                    (message) => message.info.id === toolContext.messageID,
-                )
-                const baseDraft = cloneDraft(candidateState)
-                const baseRef = await writeHousekeepingDraft(toolContext.sessionID, baseDraft)
-                let draftRef: HousekeepingDraftRef = baseRef
-                if (todos !== undefined) {
-                    const todoDraft = structuredClone(baseDraft)
-                    todoDraft.memo = replaceTodoStatus(todoDraft.memo, todos)
-                    draftRef = await writeHousekeepingDelta(
-                        toolContext.sessionID,
-                        baseRef,
-                        baseDraft,
-                        todoDraft,
-                    )
-                }
-                const transaction: HousekeepingTransaction = {
-                    id: `${toolContext.sessionID}:${toolContext.messageID}:${callId ?? ""}`,
-                    sessionId: toolContext.sessionID,
-                    entryMessageId: toolContext.messageID,
-                    entryCallId: callId ?? "",
-                    entryCreatedAt: entryMessage?.info.time.created ?? 0,
-                    sourceMessageIds,
-                    baseRevision: candidateState.contentRevision,
-                    baseRef,
-                    draftRef,
-                    operations: {},
-                    operationResults: {},
-                    operationRecords: [],
-                    entryGuidance: guidance,
-                    operationOrder: [],
-                    operationDraftRefs: {},
-                }
-                candidateState.housekeeping = transaction
-                candidateState.housekeepingHistory = [
-                    ...candidateState.housekeepingHistory,
-                    structuredClone(transaction),
-                ]
-                await saveSessionStateStrict(candidateState, ctx.logger)
-                ctx.state.messageIds = candidateState.messageIds
-                ctx.state.housekeeping = transaction
-                ctx.state.housekeepingHistory = candidateState.housekeepingHistory
-                ctx.state.revision = candidateState.revision
-                return guidance
-            })
+            return enterHousekeeping(
+                {
+                    ...ctx,
+                    refreshSession: (sessionID) => prepareToolSession(ctx, sessionID),
+                },
+                toolContext,
+                (sessionID) => fetchTodoItems(ctx, sessionID),
+            )
         },
     })
 }
@@ -217,108 +230,123 @@ function buildCommitReceipt(base: HousekeepingDraft, candidate: HousekeepingDraf
     return `Housekeeping complete: committed ${affected}; memo ${memo}.\n\nHousekeeping messages, including tool calls and results, are omitted from the model’s context. Missing tool-call history does not indicate that no compression occurred or that compression happened automatically.`
 }
 
+export async function leaveHousekeeping(
+    ctx: SharedOperationContext,
+    toolContext: ToolExecutionContext,
+    args: { force?: boolean },
+    finalize: (sessionID: string, transaction: HousekeepingTransaction) => Promise<void>,
+): Promise<string> {
+    return withSessionCoordinator(ctx.state, async () => {
+        await ctx.refreshSession(toolContext.sessionID)
+        const callId = callIdentity(toolContext)
+        const existingReceipt = callId
+            ? ctx.state.housekeepingHistory.find(
+                  (transaction) =>
+                      transaction.sessionId === toolContext.sessionID &&
+                      transaction.completed?.leaveCallId === callId &&
+                      transaction.completed.leaveMessageId === toolContext.messageID,
+              )?.completed?.receipt
+            : undefined
+        if (existingReceipt) return existingReceipt
+        const transaction = ctx.state.housekeeping
+        if (!transaction) {
+            throw new Error("No active housekeeping transaction; call enter_housekeeping first.")
+        }
+        if (ctx.state.contentRevision !== transaction.baseRevision) {
+            throw new Error(
+                "Committed context changed during housekeeping. Re-enter housekeeping from the current session state before committing.",
+            )
+        }
+        const hasQualifyingWork = transaction.operationRecords.some((record) =>
+            LEAVE_QUALIFYING_OPERATIONS.has(record.tool),
+        )
+        if (!hasQualifyingWork && args.force !== true) {
+            throw new Error(
+                "You must finish the compression plan before leaving. Don't use force=true to leave forcibly unless compression was not planned or you can't compress.",
+            )
+        }
+        const checkpoint = await readHousekeepingCheckpoint(
+            transaction.sessionId,
+            transaction.draftRef,
+        )
+        const candidateDraft = structuredClone(checkpoint.draft)
+        finalizePendingBuffers(candidateDraft)
+        candidateDraft.protectedSkills = structuredClone(ctx.state.loadedSkills)
+        candidateDraft.nudges = {
+            contextLimitAnchors: new Set(),
+            turnNudgeAnchors: new Set(),
+            iterationNudgeAnchors: new Set(),
+        }
+        const receipt = buildCommitReceipt(checkpoint.base, candidateDraft)
+        const committedDraftRef = await writeHousekeepingDelta(
+            transaction.sessionId,
+            checkpoint.baseRef,
+            checkpoint.base,
+            candidateDraft,
+        )
+        const candidateState = structuredClone(ctx.state)
+        publishDraft(candidateState, candidateDraft)
+        candidateState.contentRevision = transaction.baseRevision + 1
+        const completed = {
+            leaveMessageId: toolContext.messageID,
+            leaveCallId: callId ?? "",
+            receipt,
+            commitRevision: candidateState.revision + 1,
+            committedDraftRef,
+        }
+        const completedTransaction: HousekeepingTransaction = {
+            ...structuredClone(transaction),
+            draftRef: committedDraftRef,
+            completed,
+        }
+        candidateState.housekeeping = null
+        candidateState.housekeepingHistory = candidateState.housekeepingHistory.map((entry) =>
+            entry.id === transaction.id ? structuredClone(completedTransaction) : entry,
+        )
+        await saveSessionStateStrict(candidateState, ctx.logger)
+        publishDraft(ctx.state, candidateDraft)
+        ctx.state.contentRevision = candidateState.contentRevision
+        ctx.state.housekeeping = null
+        ctx.state.housekeepingHistory = candidateState.housekeepingHistory
+        ctx.state.revision = candidateState.revision
+
+        if (transaction.notifications?.length) {
+            try {
+                await finalize(toolContext.sessionID, transaction)
+            } catch (error) {
+                ctx.logger.warn("Housekeeping committed, but its notification failed", {
+                    error: error instanceof Error ? error.message : String(error),
+                })
+            }
+        }
+        return receipt
+    })
+}
+
 export function createLeaveHousekeepingTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description:
-            "Commit the accumulated housekeeping draft and exit the mode. Finish all intended memo updates, compression, expansions, rewrites, version changes, and summary edits first. Preserve essential findings from housekeeping, then call leave_housekeeping once to publish all changes together. Do not leave between individual edits or blocks. Reading back the draft is optional.",
+        description: LEAVE_HOUSEKEEPING_DESCRIPTION,
         args: { force: tool.schema.boolean().optional() },
         async execute(args, untypedToolContext) {
             const toolContext = untypedToolContext as ToolExecutionContext
-            return withSessionCoordinator(ctx.state, async () => {
-                await prepareToolSession(ctx, toolContext.sessionID)
-                const callId = callIdentity(toolContext)
-                const existingReceipt = callId
-                    ? ctx.state.housekeepingHistory.find(
-                          (transaction) =>
-                              transaction.sessionId === toolContext.sessionID &&
-                              transaction.completed?.leaveCallId === callId &&
-                              transaction.completed.leaveMessageId === toolContext.messageID,
-                      )?.completed?.receipt
-                    : undefined
-                if (existingReceipt) return existingReceipt
-                const transaction = ctx.state.housekeeping
-                if (!transaction) {
-                    throw new Error(
-                        "No active housekeeping transaction; call enter_housekeeping first.",
+            return leaveHousekeeping(
+                {
+                    ...ctx,
+                    refreshSession: (sessionID) => prepareToolSession(ctx, sessionID),
+                },
+                toolContext,
+                args,
+                async (sessionID, transaction) => {
+                    const messages = await loadSessionMessages(ctx, sessionID)
+                    await finalizeSession(
+                        ctx,
+                        toolContext as unknown as Parameters<typeof finalizeSession>[1],
+                        messages,
+                        transaction.notifications ?? [],
+                        transaction.batchTopic,
                     )
-                }
-                if (ctx.state.contentRevision !== transaction.baseRevision) {
-                    throw new Error(
-                        "Committed context changed during housekeeping. Re-enter housekeeping from the current session state before committing.",
-                    )
-                }
-                const hasQualifyingWork = transaction.operationRecords.some((record) =>
-                    LEAVE_QUALIFYING_OPERATIONS.has(record.tool),
-                )
-                if (!hasQualifyingWork && args.force !== true) {
-                    throw new Error(
-                        "You must finish the compression plan before leaving. Don't use force=true to leave forcibly unless compression was not planned or you can't compress.",
-                    )
-                }
-                const checkpoint = await readHousekeepingCheckpoint(
-                    transaction.sessionId,
-                    transaction.draftRef,
-                )
-                const candidateDraft = structuredClone(checkpoint.draft)
-                finalizePendingBuffers(candidateDraft)
-                candidateDraft.protectedSkills = structuredClone(ctx.state.loadedSkills)
-                candidateDraft.nudges = {
-                    contextLimitAnchors: new Set(),
-                    turnNudgeAnchors: new Set(),
-                    iterationNudgeAnchors: new Set(),
-                }
-                const receipt = buildCommitReceipt(checkpoint.base, candidateDraft)
-                const committedDraftRef = await writeHousekeepingDelta(
-                    transaction.sessionId,
-                    checkpoint.baseRef,
-                    checkpoint.base,
-                    candidateDraft,
-                )
-                const candidateState = structuredClone(ctx.state)
-                publishDraft(candidateState, candidateDraft)
-                candidateState.contentRevision = transaction.baseRevision + 1
-                const completed = {
-                    leaveMessageId: toolContext.messageID,
-                    leaveCallId: callId ?? "",
-                    receipt,
-                    commitRevision: candidateState.revision + 1,
-                    committedDraftRef,
-                }
-                const completedTransaction: HousekeepingTransaction = {
-                    ...structuredClone(transaction),
-                    draftRef: committedDraftRef,
-                    completed,
-                }
-                candidateState.housekeeping = null
-                candidateState.housekeepingHistory = candidateState.housekeepingHistory.map(
-                    (entry) =>
-                        entry.id === transaction.id ? structuredClone(completedTransaction) : entry,
-                )
-                await saveSessionStateStrict(candidateState, ctx.logger)
-                publishDraft(ctx.state, candidateDraft)
-                ctx.state.contentRevision = candidateState.contentRevision
-                ctx.state.housekeeping = null
-                ctx.state.housekeepingHistory = candidateState.housekeepingHistory
-                ctx.state.revision = candidateState.revision
-
-                if (transaction.notifications?.length) {
-                    try {
-                        const messages = await loadSessionMessages(ctx, toolContext.sessionID)
-                        await finalizeSession(
-                            ctx,
-                            toolContext as unknown as Parameters<typeof finalizeSession>[1],
-                            messages,
-                            transaction.notifications,
-                            transaction.batchTopic,
-                        )
-                    } catch (error) {
-                        ctx.logger.warn("Housekeeping committed, but its notification failed", {
-                            error: error instanceof Error ? error.message : String(error),
-                        })
-                    }
-                }
-                return receipt
-            })
+                },
+            )
         },
     })
 }

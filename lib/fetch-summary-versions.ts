@@ -1,9 +1,31 @@
 import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
+import type { SessionState } from "./state"
 import type { CompressionBlock } from "./state/types"
 import { draftState } from "./housekeeping/state"
 import { loadAndReconcileSession } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
+
+export const FETCH_SUMMARY_VERSIONS_DESCRIPTION = `Fetch all summary versions for a compressed block.
+
+Returns the original summary, every rewrite version, and the currently active version.
+Use this to inspect available versions before deciding to edit, revert, or rewrite.
+
+THE FORMAT
+{
+  blockId: number,
+  version?: number    // Optional: return full text of this version (e.g. 1 for original, 2+ for rewrites)
+}`
+
+export interface FetchSummaryVersionsInput {
+    blockId: number
+    version?: number
+}
+
+interface FetchSummaryVersionsContext {
+    state: SessionState
+    refreshSession(sessionID: string): Promise<unknown>
+}
 
 function summaryText(summary: string): string {
     return summary
@@ -45,18 +67,66 @@ function describeVersion(block: CompressionBlock, idx: number): string {
     return `${label}: (not found)`
 }
 
+export async function fetchSummaryVersions(
+    context: FetchSummaryVersionsContext,
+    sessionID: string,
+    input: FetchSummaryVersionsInput,
+): Promise<string> {
+    return withSessionCoordinator(context.state, async () => {
+        await context.refreshSession(sessionID)
+        const state = context.state.housekeeping ? await draftState(context.state) : context.state
+        const block = state.prune.messages.blocksById.get(input.blockId)
+        if (!block) throw new Error(`Block ${input.blockId} not found.`)
+
+        // If version specified, return full text of that version
+        if (input.version !== undefined) {
+            const content = getVersionContent(block, input.version)
+            if (content === null) {
+                throw new Error(`Version ${input.version} not found for block ${input.blockId}.`)
+            }
+            const label = versionLabel(block, input.version)
+            return `Block #${block.blockId} — ${block.topic}\n${label}:\n\n${content}`
+        }
+
+        const lines: string[] = []
+        lines.push(`Block #${block.blockId} — ${block.topic}`)
+        lines.push(
+            `Status: ${block.active ? "active" : block.deactivatedByUser ? "decompressed by user" : "inactive"}`,
+        )
+        lines.push(`Active version: ${versionLabel(block, block.activeVersionIndex)}`)
+        lines.push("")
+
+        // List all available versions
+        const totalVersions = 1 + block.summaryVersions.length
+        lines.push(`${totalVersions} version(s) available:`)
+        lines.push(`  ${describeVersion(block, 1)}`)
+
+        for (let i = 0; i < block.summaryVersions.length; i++) {
+            const vIdx = i + 2
+            const active = vIdx === block.activeVersionIndex ? "  ← active" : ""
+            lines.push(`  ${describeVersion(block, vIdx)}${active}`)
+        }
+
+        if (block.pendingEditBuffer !== undefined) {
+            const preview =
+                block.pendingEditBuffer.length > 120
+                    ? block.pendingEditBuffer.slice(0, 120) + "..."
+                    : block.pendingEditBuffer
+            lines.push("")
+            lines.push(`Pending edit buffer (${block.pendingEditBuffer.length} chars):`)
+            lines.push(`  ${preview}`)
+            lines.push(
+                `  (pending changes remain staged; call leave_housekeeping only after completing and reviewing the entire maintenance pass across all affected blocks)`,
+            )
+        }
+
+        return lines.join("\n")
+    })
+}
+
 export function createFetchSummaryVersionsTool(ctx: ToolContext): ReturnType<typeof tool> {
     return tool({
-        description: `Fetch all summary versions for a compressed block.
-
-Returns the original summary, every rewrite version, and the currently active version.
-Use this to inspect available versions before deciding to edit, revert, or rewrite.
-
-THE FORMAT
-{
-  blockId: number,
-  version?: number    // Optional: return full text of this version (e.g. 1 for original, 2+ for rewrites)
-}`,
+        description: FETCH_SUMMARY_VERSIONS_DESCRIPTION,
         args: {
             blockId: tool.schema.number().describe("Block ID to inspect (e.g. 3)"),
             version: tool.schema
@@ -65,59 +135,15 @@ THE FORMAT
                 .describe("Optional: return full text of this version (1=original, 2+=rewrite)"),
         },
         async execute(args, toolContext) {
-            const input = args as { blockId: number; version?: number }
-            return withSessionCoordinator(ctx.state, async () => {
-                await loadAndReconcileSession(ctx, toolContext.sessionID)
-                const state = ctx.state.housekeeping ? await draftState(ctx.state) : ctx.state
-                const block = state.prune.messages.blocksById.get(input.blockId)
-                if (!block) throw new Error(`Block ${input.blockId} not found.`)
-
-                // If version specified, return full text of that version
-                if (input.version !== undefined) {
-                    const content = getVersionContent(block, input.version)
-                    if (content === null) {
-                        throw new Error(
-                            `Version ${input.version} not found for block ${input.blockId}.`,
-                        )
-                    }
-                    const label = versionLabel(block, input.version)
-                    return `Block #${block.blockId} — ${block.topic}\n${label}:\n\n${content}`
-                }
-
-                const lines: string[] = []
-                lines.push(`Block #${block.blockId} — ${block.topic}`)
-                lines.push(
-                    `Status: ${block.active ? "active" : block.deactivatedByUser ? "decompressed by user" : "inactive"}`,
-                )
-                lines.push(`Active version: ${versionLabel(block, block.activeVersionIndex)}`)
-                lines.push("")
-
-                // List all available versions
-                const totalVersions = 1 + block.summaryVersions.length
-                lines.push(`${totalVersions} version(s) available:`)
-                lines.push(`  ${describeVersion(block, 1)}`)
-
-                for (let i = 0; i < block.summaryVersions.length; i++) {
-                    const vIdx = i + 2
-                    const active = vIdx === block.activeVersionIndex ? "  ← active" : ""
-                    lines.push(`  ${describeVersion(block, vIdx)}${active}`)
-                }
-
-                if (block.pendingEditBuffer !== undefined) {
-                    const preview =
-                        block.pendingEditBuffer.length > 120
-                            ? block.pendingEditBuffer.slice(0, 120) + "..."
-                            : block.pendingEditBuffer
-                    lines.push("")
-                    lines.push(`Pending edit buffer (${block.pendingEditBuffer.length} chars):`)
-                    lines.push(`  ${preview}`)
-                    lines.push(
-                        `  (pending changes remain staged; call leave_housekeeping only after completing and reviewing the entire maintenance pass across all affected blocks)`,
-                    )
-                }
-
-                return lines.join("\n")
-            })
+            const input = args as FetchSummaryVersionsInput
+            return fetchSummaryVersions(
+                {
+                    state: ctx.state,
+                    refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
+                },
+                toolContext.sessionID,
+                input,
+            )
         },
     })
 }

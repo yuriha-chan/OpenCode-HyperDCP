@@ -17,6 +17,9 @@ async function captureContextHook() {
     let transform:
         | ((event: {
               sessionID?: string
+              agent?: string
+              model?: { providerID: string; id: string }
+              system?: Array<{ type: "text"; text: string; cache?: unknown; metadata?: unknown }>
               messages: Array<{ content: unknown[] }>
               options: { stop?: string[] }
           }) => void | Promise<void>)
@@ -28,10 +31,43 @@ async function captureContextHook() {
                 assert.equal(name, "context")
                 transform = callback
             },
+            get: async (input: { sessionID: string }) => ({ id: input.sessionID }),
+            context: async (_input: { sessionID: string }) => [],
+        },
+        agent: {
+            get: async (input: { agentID: string }) => ({
+                location: { directory: dataDirectory },
+                data: {
+                    id: input.agentID,
+                    name: input.agentID,
+                    request: { settings: {}, headers: {}, body: {} },
+                    mode: "primary",
+                    hidden: false,
+                    permissions: [{ action: "*", resource: "*", effect: "allow" }],
+                },
+            }),
+        },
+        permission: {
+            assert: async () => {},
+        },
+        tool: {
+            transform: async (callback: (editor: { add(): void }) => void) => {
+                callback({ add() {} })
+                return { dispose: async () => {} }
+            },
+            hook: async () => ({ dispose: async () => {} }),
         },
     })
     assert.ok(transform, "the adapter should register a session context hook")
-    return transform
+    const context = transform
+    const defaultSessionID = `ses_native_context_${randomUUID()}`
+    return async (request: Parameters<typeof context>[0]) => {
+        request.sessionID ??= defaultSessionID
+        request.agent ??= "assistant"
+        request.model ??= { providerID: "test", id: "test" }
+        request.system ??= []
+        await context(request)
+    }
 }
 
 test("a project with HyperDCP disabled does not register a session context hook", async () => {

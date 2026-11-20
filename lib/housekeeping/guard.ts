@@ -1,6 +1,7 @@
 import type { ToolContext } from "../compress/types"
 import { withSessionCoordinator } from "./coordinator"
 import { loadAndReconcileSession } from "./state"
+import type { GuardOperationContext } from "./types"
 
 export interface ToolExecutionInput {
     tool: string
@@ -73,34 +74,44 @@ function assertChildToolsAllowed(
     throw new Error(`Tool ${toolName} is blocked during housekeeping.`)
 }
 
+export async function assertToolExecutionAllowed(
+    ctx: GuardOperationContext,
+    input: ToolExecutionInput,
+    args: unknown,
+): Promise<void> {
+    return withSessionCoordinator(ctx.state, async () => {
+        await ctx.refreshSession(input.sessionID)
+        if (!ctx.state.housekeeping) {
+            if (DISPATCH_TOOLS.has(input.tool) && isRecord(args)) {
+                assertNoParallelTransition(input.tool, args)
+            }
+            return
+        }
+        if (ctx.state.housekeeping.sessionId !== input.sessionID) {
+            throw new Error("Housekeeping session state does not match the executing tool session.")
+        }
+        try {
+            assertChildToolsAllowed(input.tool, args, ctx.config.housekeeping?.allowedTools ?? [])
+        } catch (error) {
+            if (input.tool === "enter_housekeeping") return
+            if (error instanceof Error && error.message.includes("Parallel tool dispatch"))
+                throw error
+            throw new Error(
+                `${error instanceof Error ? error.message : String(error)} Leave housekeeping or add the exact tool name to housekeeping.allowedTools.`,
+            )
+        }
+    })
+}
+
 export function createToolExecuteBeforeHandler(ctx: ToolContext) {
     return async (input: ToolExecutionInput, output: { args: unknown }): Promise<void> =>
-        withSessionCoordinator(ctx.state, async () => {
-            await loadAndReconcileSession(ctx, input.sessionID)
-            if (!ctx.state.housekeeping) {
-                if (DISPATCH_TOOLS.has(input.tool) && isRecord(output.args)) {
-                    assertNoParallelTransition(input.tool, output.args)
-                }
-                return
-            }
-            if (ctx.state.housekeeping.sessionId !== input.sessionID) {
-                throw new Error(
-                    "Housekeeping session state does not match the executing tool session.",
-                )
-            }
-            try {
-                assertChildToolsAllowed(
-                    input.tool,
-                    output.args,
-                    ctx.config.housekeeping?.allowedTools ?? [],
-                )
-            } catch (error) {
-                if (input.tool === "enter_housekeeping") return
-                if (error instanceof Error && error.message.includes("Parallel tool dispatch"))
-                    throw error
-                throw new Error(
-                    `${error instanceof Error ? error.message : String(error)} Leave housekeeping or add the exact tool name to housekeeping.allowedTools.`,
-                )
-            }
-        })
+        assertToolExecutionAllowed(
+            {
+                state: ctx.state,
+                config: ctx.config,
+                refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
+            },
+            input,
+            output.args,
+        )
 }

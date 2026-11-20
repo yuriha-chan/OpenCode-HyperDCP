@@ -9,10 +9,10 @@ import {
     readHousekeepingDraft,
     writeHousekeepingDelta,
 } from "../state/housekeeping-draft-store"
-import { operationIdentity, type ToolExecutionContext } from "./types"
+import { operationIdentity, type SharedOperationContext, type ToolExecutionContext } from "./types"
 import { HOUSEKEEPING_DRAFT_VIEW, withSessionCoordinator } from "./coordinator"
-import { ensureSessionInitialized } from "../state"
-import { findLastCompactionTimestamp, resetOnCompaction } from "../state/utils"
+import { initializeSessionState } from "../state"
+import { findLastCompactionTimestamp, isSubAgentSession, resetOnCompaction } from "../state/utils"
 import { reconcileHousekeepingHistory } from "./history"
 import { buildPriorityMap } from "../messages/priority"
 import {
@@ -74,15 +74,15 @@ export function publishDraft(state: SessionState, draft: HousekeepingDraft): voi
     state.protectedSkills = structuredClone(draft.protectedSkills)
 }
 
-export async function runHousekeepingMutation<T>(
-    ctx: ToolContext,
+export async function runSharedHousekeepingMutation<T, C extends SharedOperationContext>(
+    ctx: C,
     toolContext: ToolExecutionContext,
     toolName: string,
     input: unknown,
-    operation: (operationContext: ToolContext) => Promise<T>,
+    operation: (operationContext: Omit<C, "state"> & { state: SessionState }) => Promise<T>,
 ): Promise<T> {
     return withSessionCoordinator(ctx.state, async () => {
-        const messages = await loadAndReconcileSession(ctx, toolContext.sessionID)
+        await ctx.refreshSession(toolContext.sessionID)
         const callId = toolContext.callID
         const operationId = callId ? operationIdentity(toolContext.messageID, callId) : undefined
         const completedRetry = operationId
@@ -107,7 +107,7 @@ export async function runHousekeepingMutation<T>(
         const operationContext = {
             ...ctx,
             state: makeDraftView(ctx.state, candidateTransaction, candidateDraft),
-        }
+        } as Omit<C, "state"> & { state: SessionState }
         const result = await operation(operationContext)
         const checkpointRef = await writeHousekeepingDelta(
             transaction.sessionId,
@@ -158,14 +158,49 @@ export async function runHousekeepingMutation<T>(
     })
 }
 
+export async function runHousekeepingMutation<T>(
+    ctx: ToolContext,
+    toolContext: ToolExecutionContext,
+    toolName: string,
+    input: unknown,
+    operation: (operationContext: ToolContext) => Promise<T>,
+): Promise<T> {
+    return runSharedHousekeepingMutation<
+        T,
+        ToolContext & {
+            refreshSession: (sessionID: string) => Promise<WithParts[]>
+        }
+    >(
+        {
+            ...ctx,
+            refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
+        },
+        toolContext,
+        toolName,
+        input,
+        operation,
+    )
+}
+
 export async function loadAndReconcileSession(
     ctx: ToolContext,
     sessionID: string,
 ): Promise<WithParts[]> {
     const response = await ctx.client.session.messages({ path: { id: sessionID } })
     const messages = response.data as WithParts[]
-    await ensureSessionInitialized(
-        ctx.client,
+    return reconcileSessionHistory(ctx, sessionID, messages, () =>
+        isSubAgentSession(ctx.client, sessionID),
+    )
+}
+
+export async function reconcileSessionHistory(
+    ctx: Pick<ToolContext, "state" | "logger" | "config">,
+    sessionID: string,
+    messages: WithParts[],
+    resolveSubAgent: () => Promise<boolean>,
+): Promise<WithParts[]> {
+    await initializeSessionState(
+        resolveSubAgent,
         ctx.state,
         sessionID,
         ctx.logger,

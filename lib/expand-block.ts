@@ -2,7 +2,12 @@ import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import type { SessionState } from "./state"
 import { formatMessageRef, parseBoundaryId } from "./message-ids"
-import { runHousekeepingMutation } from "./housekeeping/state"
+import {
+    loadAndReconcileSession,
+    runHousekeepingMutation,
+    runSharedHousekeepingMutation,
+} from "./housekeeping/state"
+import type { SharedOperationContext, ToolExecutionContext } from "./housekeeping/types"
 
 function activeSummaryText(block: {
     summary: string
@@ -211,35 +216,56 @@ THE FORMAT
     })
 }
 
-export function createAppendSummaryTool(ctx: ToolContext): ReturnType<typeof tool> {
-    return tool({
-        description: `Append text to a block's summary editing buffer.
+export const APPEND_SUMMARY_DESCRIPTION = `Append text to a block's summary editing buffer.
 
 THE FORMAT
 {
   blockId: number,
   text: string   // Text to append to the current buffer
-}`,
+}`
+
+export interface AppendSummaryInput {
+    blockId: number
+    text: string
+}
+
+export async function appendSummary(
+    ctx: SharedOperationContext,
+    toolContext: ToolExecutionContext,
+    input: AppendSummaryInput,
+): Promise<string> {
+    return runSharedHousekeepingMutation(
+        ctx,
+        toolContext,
+        "append_summary",
+        input,
+        async (operationCtx) => {
+            const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
+            if (!block) throw new Error(`Block ${input.blockId} not found.`)
+
+            const current = activeSummaryText(block)
+            block.pendingEditBuffer = current + input.text
+
+            return `Appended to summary for block ${input.blockId}; changes are staged. Complete all remaining compression and summary edits across affected blocks before calling leave_housekeeping once for the whole maintenance pass.`
+        },
+    )
+}
+
+export function createAppendSummaryTool(ctx: ToolContext): ReturnType<typeof tool> {
+    return tool({
+        description: APPEND_SUMMARY_DESCRIPTION,
         args: {
             blockId: tool.schema.number().describe("Block ID (e.g. 1)"),
             text: tool.schema.string().describe("Text to append"),
         },
         async execute(args, toolCtx) {
-            return runHousekeepingMutation(
-                ctx,
-                toolCtx,
-                "append_summary",
-                args,
-                async (operationCtx) => {
-                    const input = args as { blockId: number; text: string }
-                    const block = operationCtx.state.prune.messages.blocksById.get(input.blockId)
-                    if (!block) throw new Error(`Block ${input.blockId} not found.`)
-
-                    const current = activeSummaryText(block)
-                    block.pendingEditBuffer = current + input.text
-
-                    return `Appended to summary for block ${input.blockId}; changes are staged. Complete all remaining compression and summary edits across affected blocks before calling leave_housekeeping once for the whole maintenance pass.`
+            return appendSummary(
+                {
+                    ...ctx,
+                    refreshSession: (sessionID) => loadAndReconcileSession(ctx, sessionID),
                 },
+                toolCtx,
+                args as AppendSummaryInput,
             )
         },
     })

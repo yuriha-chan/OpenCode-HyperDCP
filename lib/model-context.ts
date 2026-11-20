@@ -3,11 +3,12 @@ import { stripHallucinationsFromString } from "./messages/utils"
 import type { HousekeepingTransaction } from "./state"
 
 export interface ModelContextRequest {
-    messages: Array<{ id?: string; content: readonly unknown[] }>
+    messages: Array<{ id?: string; role?: string; content: readonly unknown[] }>
     options: { stop?: readonly string[] }
 }
 
 const DCP_TAG_STOPS = ["<dcp-", "</dcp-"]
+const DCP_MEMO_MESSAGE_ID = "msg_dcp_memo"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null
@@ -109,4 +110,20 @@ export function prepareModelContext(
     const existing = request.options.stop ?? []
     const missing = DCP_TAG_STOPS.filter((stop) => !existing.includes(stop))
     if (missing.length > 0) request.options.stop = [...existing, ...missing]
+}
+
+export function injectContextMemo(request: ModelContextRequest, memoText: string): void {
+    request.messages = request.messages.filter(
+        (message) => message.id !== DCP_MEMO_MESSAGE_ID,
+    )
+    if (memoText.length === 0) return
+    const hasUserContent = request.messages.some(
+        (message) => message.role === "user" && message.content.length > 0,
+    )
+    if (!hasUserContent) return
+    request.messages.unshift({
+        id: DCP_MEMO_MESSAGE_ID,
+        role: "user",
+        content: [{ type: "text", text: memoText }],
+    })
 }
