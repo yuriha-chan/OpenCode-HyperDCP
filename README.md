@@ -129,6 +129,25 @@ For example, to allow a specific read-only tool during housekeeping, add this to
 }
 ```
 
+Compression protection is configured separately from command protection:
+
+```json
+{
+    "compress": {
+        "protectSubagent": "metadata",
+        "protectedTools": ["read"]
+    }
+}
+```
+
+`compress.protectSubagent` accepts `none`, `metadata`, or `full` and defaults to `metadata`. `compress.protectedTools` protects configured tool outputs during compression; `task` and `subagent` outputs are not appended through this generic list.
+
+- `none` leaves subagent messages subject to ordinary compression.
+- `metadata` retains every running execution, plus terminal executions whose termination message is covered by the last summary block projected in conversation order. Records appear after protected skills and include the calling reference, child session, status, title, steering references, and a result reference for completed executions.
+- `full` also retains that execution's delivered report, without fetching a later answer from the child session.
+
+Steering a running child adds to its execution entry; resuming after termination creates a separate entry. Canceled and failed executions follow the same coverage rule as completed executions, but omit the result reference. Command protection defaults are independent of these settings.
+
 ## Notes
 
 - This README is an overview, not a manual. See the code and `KNOWN-ISSUES.md` for current behavior and limitations.

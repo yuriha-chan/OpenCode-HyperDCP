@@ -1,6 +1,7 @@
 import type { CompressionTimingState } from "../compress/timing"
 import { Message, Part } from "@opencode-ai/sdk/v2"
 import type { Memo } from "../memo"
+import type { SubagentExecution } from "../subagents/protection"
 
 export interface WithParts {
     info: Message
@@ -133,6 +134,7 @@ export interface SessionState {
     protectedRefs: Set<string>
     loadedSkills: SkillContext[]
     protectedSkills: SkillContext[]
+    subagentExecutions: SubagentExecution[]
     memo: Memo | null
     debug: DebugState
     autotoggle: boolean

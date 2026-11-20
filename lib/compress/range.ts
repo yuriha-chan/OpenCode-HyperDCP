@@ -133,15 +133,12 @@ export async function compressRanges(
             )
 
             const summaryWithTools = await appendProtectedTools(
-                operationCtx.fetchMessages,
                 operationCtx.state,
-                operationCtx.config.experimental.allowSubAgents,
                 summaryWithPromptInfo,
                 plan.selection,
                 searchContext,
                 operationCtx.config.compress.protectedTools,
                 operationCtx.config.protectedFilePatterns,
-                operationCtx.protectTaskOutputs,
             )
 
             preparedPlans.push({

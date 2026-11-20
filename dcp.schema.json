@@ -297,6 +297,12 @@
                     "default": [],
                     "description": "Tool names or wildcard patterns whose completed outputs should be appended to the compression summary. Accepts an array of names/patterns, or an object keyed by tool name with per-tool options. Supports glob wildcards: * matches any characters, ? matches a single character (e.g., \"mcp_*\", \"my_tool_?\")"
                 },
+                "protectSubagent": {
+                    "type": "string",
+                    "enum": ["none", "metadata", "full"],
+                    "default": "metadata",
+                    "description": "Subagent output protection mode. 'none' adds no subagent protection, 'metadata' injects metadata only, 'full' injects metadata and the delivered report text."
+                },
                 "protectTags": {
                     "type": "boolean",
                     "default": false,
@@ -319,6 +325,7 @@
                 "iterationNudgeThreshold": 15,
                 "nudgeForce": "soft",
                 "protectedTools": [],
+                "protectSubagent": "metadata",
                 "protectTags": false,
                 "protectUserMessages": false
             }

@@ -20,7 +20,9 @@ import {
     injectContextNudges,
     injectContextSkills,
     projectContextBlocks,
+    injectContextSubagents,
 } from "./lib/model-context"
+import { syncSubagentExecutions, v2SubagentObservations } from "./lib/subagents/observations"
 import { renderContextMemo } from "./lib/memo"
 import { assignMessageRefs } from "./lib/message-ids"
 import { saveSessionState } from "./lib/state/persistence"
@@ -286,6 +288,7 @@ const definition = {
                     messages,
                     config.manualMode.enabled,
                 )
+                await syncSubagentExecutions(state, logger, v2SubagentObservations(nativeMessages))
                 const models = await model.list({ location })
                 state.modelContextLimit = models.data.find(
                     (candidate) =>
@@ -325,20 +328,21 @@ const definition = {
                 if (memoAllowed && assignMessageRefs(state, selected) > 0) {
                     await saveSessionState(state, logger)
                 }
-                const lastSummaryId = memoAllowed
+                const lastSummary = memoAllowed
                     ? projectContextBlocks(request, state, logger, config)
                     : undefined
                 injectContextMemo(
                     request,
                     memoAllowed && state.memo ? renderContextMemo(state.memo) : "",
-                    lastSummaryId,
+                    lastSummary?.messageId,
                 )
                 injectContextSkills(
                     request,
                     memoAllowed ? state.protectedSkills : [],
-                    lastSummaryId,
+                    lastSummary?.messageId,
                 )
                 if (memoAllowed) {
+                    injectContextSubagents(request, state, config, lastSummary)
                     const priorities = buildPriorityMap(config, state, selected)
                     prompts.reload()
                     injectContextNudges(
@@ -584,7 +588,6 @@ const definition = {
                         fetchMessages: async (sessionID) =>
                             normalizeNativeHistory(await session.context({ sessionID }), sessionID),
                         reportCompressionStart: (title) => toolContext.progress({ title }),
-                        protectTaskOutputs: false,
                     }
                     const content = messageMode
                         ? await compressMessages(

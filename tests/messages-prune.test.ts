@@ -5,6 +5,11 @@ import { Logger } from "../lib/logger"
 import { prune } from "../lib/messages/prune"
 import { createSessionState, type SessionState, type WithParts } from "../lib/state"
 import type { CompressionBlock } from "../lib/state/types"
+import {
+    projectContextBlocks,
+    injectContextSubagents,
+    type ModelContextRequest,
+} from "../lib/model-context"
 
 const sessionID = "ses_messages_prune"
 
@@ -32,6 +37,7 @@ function buildConfig(): PluginConfig {
         },
         protectedFilePatterns: [],
         compress: {
+            protectSubagent: "metadata",
             mode: "range",
             permission: "allow",
             showCompression: false,
@@ -58,6 +64,121 @@ function buildConfig(): PluginConfig {
         },
     }
 }
+
+test("prune protects running executions after skills even without a compressed block", () => {
+    const state = createSessionState()
+    state.subagentExecutions = [
+        {
+            callingMessageId: "call-message",
+            callId: "call-a",
+            sessionId: "child-a",
+            status: "running",
+            title: "Investigate parser",
+            steeringMessages: [],
+        },
+    ]
+    state.protectedSkills = [
+        {
+            name: "Report",
+            callId: "skill-a",
+            input: { name: "Report" },
+            title: "Report",
+            output: "Skill instructions",
+            metadata: {},
+        },
+    ]
+    const messages = [userMessage("user", "model")]
+    runPrune(state, messages)
+    const skill = messages.findIndex((message) =>
+        message.parts.some((part) => part.type === "tool"),
+    )
+    const protectedIndex = messages.findIndex((message) =>
+        message.parts.some(
+            (part) => part.type === "text" && part.text.includes("session: child-a"),
+        ),
+    )
+    assert.ok(skill >= 0)
+    assert.equal(protectedIndex, skill + 1)
+    assert.match(JSON.stringify(messages[protectedIndex]), /status: running/)
+    state.protectedSkills = []
+    const withoutSkills = [userMessage("user", "model")]
+    runPrune(state, withoutSkills)
+    assert.match(JSON.stringify(withoutSkills[0]), /session: child-a/)
+})
+
+for (const host of ["v1", "v2"])
+    test(`${host} prune retains terminal reports only from the last actually projected block`, () => {
+        const state = createSessionState()
+        for (const [id, anchor, termination] of [
+            [9, "anchor-first", "terminal-first"],
+            [2, "anchor-last", "terminal-last"],
+            [20, "anchor-disabled", "terminal-disabled"],
+        ] as const) {
+            addSummary(state, id, anchor, `summary-${id}`)
+            state.prune.messages.blocksById.get(id)!.effectiveMessageIds = [termination]
+            state.subagentExecutions.push({
+                callingMessageId: `call-${id}`,
+                callId: `tool-${id}`,
+                sessionId: `child-${id}`,
+                title: `Execution ${id}`,
+                status: "completed",
+                steeringMessages: [],
+                terminationMessageId: termination,
+                report: `DELIVERED_${id}`,
+            })
+        }
+        state.prune.messages.blocksById.get(20)!.activeVersionIndex = 0
+        const config = buildConfig()
+        config.compress.protectSubagent = "full"
+        const messages = [
+            userMessage("user", "model"),
+            assistantMessage("anchor-first"),
+            assistantMessage("anchor-last"),
+            assistantMessage("anchor-disabled"),
+        ]
+        if (host === "v1") {
+            prune(state, new Logger(false), config, messages)
+            const protection = messages
+                .flatMap((message) =>
+                    message.parts.filter(
+                        (part) => part.type === "text" && part.text.includes("Subagent execution"),
+                    ),
+                )
+                .map((part) => (part as { text: string }).text)
+                .join("\n")
+            assert.match(protection, /DELIVERED_2/)
+            assert.doesNotMatch(protection, /DELIVERED_9|DELIVERED_20/)
+            return
+        }
+        const request: ModelContextRequest = {
+            messages: [
+                { id: "user", role: "user", content: [{ type: "text", text: "Continue" }] },
+                ...["anchor-first", "anchor-last", "anchor-disabled"].map((id) => ({
+                    id,
+                    role: "assistant" as const,
+                    content: [{ type: "text" as const, text: id }],
+                })),
+            ],
+            options: {},
+        }
+        const lastSummary = projectContextBlocks(request, state, new Logger(false), config)
+        injectContextSubagents(request, state, config, lastSummary)
+        const nativeProtection = request.messages.find(
+            (message) => message.id === "msg_dcp_subagents",
+        )
+        assert.match(JSON.stringify(nativeProtection), /DELIVERED_2/)
+        assert.doesNotMatch(JSON.stringify(nativeProtection), /DELIVERED_9|DELIVERED_20/)
+        injectContextSubagents(
+            request,
+            state,
+            { ...config, compress: { ...config.compress, protectSubagent: "none" } },
+            lastSummary,
+        )
+        assert.equal(
+            request.messages.some((message) => message.id === "msg_dcp_subagents"),
+            false,
+        )
+    })
 
 function textPart(id: string, text: string, extra: Record<string, unknown> = {}) {
     return {

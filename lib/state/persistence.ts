@@ -18,6 +18,7 @@ import type {
     HousekeepingTransaction,
     SkillContext,
 } from "./types"
+import type { SubagentExecution } from "../subagents/protection"
 import type { Logger } from "../logger"
 import { STORAGE_DIR, getSessionFilePath } from "../paths"
 import { serializePruneMessagesState } from "./utils"
@@ -66,6 +67,7 @@ export interface PersistedSessionState {
     protectedRefs?: string[]
     loadedSkills?: SkillContext[]
     protectedSkills?: SkillContext[]
+    subagentExecutions?: SubagentExecution[]
     memo?: string | Memo | null
     messageIds?: PersistedMessageIds
     autotoggle?: boolean
@@ -295,6 +297,66 @@ export function restoreHousekeepingTransaction(value: unknown): HousekeepingTran
     }
 }
 
+const SUBAGENT_STATUSES = new Set(["running", "completed", "canceled", "failed"])
+
+function invalidSubagent(detail: string): never {
+    throw new Error(detail)
+}
+
+export function decodeSubagentExecutions(
+    value: unknown,
+    label = "subagentExecutions",
+): SubagentExecution[] {
+    if (value === undefined) return []
+    if (!Array.isArray(value)) invalidSubagent(`${label} is not an array.`)
+    return value.map((raw, index) => {
+        if (!isRecord(raw)) invalidSubagent(`${label}[${index}] is not an object.`)
+        if (typeof raw.callingMessageId !== "string")
+            invalidSubagent(`${label}[${index}].callingMessageId is not a string.`)
+        if (typeof raw.callId !== "string")
+            invalidSubagent(`${label}[${index}].callId is not a string.`)
+        if (typeof raw.sessionId !== "string")
+            invalidSubagent(`${label}[${index}].sessionId is not a string.`)
+        if (typeof raw.status !== "string" || !SUBAGENT_STATUSES.has(raw.status))
+            invalidSubagent(`${label}[${index}].status is not a subagent status.`)
+        if (typeof raw.title !== "string")
+            invalidSubagent(`${label}[${index}].title is not a string.`)
+        if (!Array.isArray(raw.steeringMessages))
+            invalidSubagent(`${label}[${index}].steeringMessages is not an array.`)
+        const steeringMessages = raw.steeringMessages.map((message, messageIndex) => {
+            if (!isRecord(message))
+                invalidSubagent(
+                    `${label}[${index}].steeringMessages[${messageIndex}] is not an object.`,
+                )
+            if (typeof message.messageId !== "string")
+                invalidSubagent(
+                    `${label}[${index}].steeringMessages[${messageIndex}].messageId is not a string.`,
+                )
+            if (typeof message.callId !== "string")
+                invalidSubagent(
+                    `${label}[${index}].steeringMessages[${messageIndex}].callId is not a string.`,
+                )
+            return { messageId: message.messageId, callId: message.callId }
+        })
+        if (raw.terminationMessageId !== undefined && typeof raw.terminationMessageId !== "string")
+            invalidSubagent(`${label}[${index}].terminationMessageId is not a string.`)
+        if (raw.report !== undefined && typeof raw.report !== "string")
+            invalidSubagent(`${label}[${index}].report is not a string.`)
+        return {
+            callingMessageId: raw.callingMessageId,
+            callId: raw.callId,
+            sessionId: raw.sessionId,
+            status: raw.status as SubagentExecution["status"],
+            title: raw.title,
+            steeringMessages,
+            ...(raw.terminationMessageId !== undefined
+                ? { terminationMessageId: raw.terminationMessageId }
+                : {}),
+            ...(raw.report !== undefined ? { report: raw.report } : {}),
+        }
+    })
+}
+
 async function ensureStorageDir(): Promise<void> {
     if (!existsSync(STORAGE_DIR)) {
         await fs.mkdir(STORAGE_DIR, { recursive: true })
@@ -380,6 +442,7 @@ export async function saveSessionState(
                 protectedRefs: Array.from(sessionState.protectedRefs),
                 loadedSkills: structuredClone(sessionState.loadedSkills),
                 protectedSkills: structuredClone(sessionState.protectedSkills),
+                subagentExecutions: structuredClone(sessionState.subagentExecutions),
                 memo: sessionState.memo,
                 autotoggle: sessionState.autotoggle,
                 revision: sessionState.revision,
@@ -439,6 +502,7 @@ export async function saveSessionStateStrict(
             protectedRefs: Array.from(sessionState.protectedRefs),
             loadedSkills: structuredClone(sessionState.loadedSkills),
             protectedSkills: structuredClone(sessionState.protectedSkills),
+            subagentExecutions: structuredClone(sessionState.subagentExecutions),
             memo: sessionState.memo,
             autotoggle: sessionState.autotoggle,
             revision: sessionState.revision,

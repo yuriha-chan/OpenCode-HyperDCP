@@ -8,6 +8,8 @@ import { contextBlockSummary } from "./block-summary"
 import { isIgnoredUserMessage } from "./query"
 import { isMessageWithInfo } from "./shape"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type { CompressionBlock } from "../state/types"
+import { selectProtectedSubagents, renderProtectedSubagents } from "../subagents/protection"
 
 const PRUNED_TOOL_OUTPUT_REPLACEMENT =
     "[Output removed to save context - information superseded or no longer needed]"
@@ -169,13 +171,15 @@ const filterCompressedRanges = (
         state.prune.messages.byMessageId.size === 0 &&
         state.prune.messages.activeByAnchorMessageId.size === 0 &&
         memoContent.length === 0 &&
-        protectedSkills.length === 0
+        protectedSkills.length === 0 &&
+        state.subagentExecutions.length === 0
     ) {
         return
     }
 
     const result: WithParts[] = []
     let lastBlockIndex = -1
+    let lastProjectedBlock: CompressionBlock | undefined
     let latestEligibleUser: WithParts | null = null
     const messageEligibility = new Map<
         WithParts,
@@ -210,6 +214,7 @@ const filterCompressedRanges = (
                 const summarySeed = `${summary.blockId}:${summary.anchorMessageId}`
                 result.push(createSyntheticUserMessage(userMessage, summaryContent, summarySeed))
                 lastBlockIndex = result.length - 1
+                lastProjectedBlock = summary
 
                 logger.info("Injected compress summary", {
                     anchorMessageId: msgId,
@@ -242,6 +247,7 @@ const filterCompressedRanges = (
         }
     }
 
+    let skillEndIndex = -1
     if (protectedSkills.length > 0 && latestEligibleUser) {
         const skillMessages = protectedSkills.map((record) =>
             createSyntheticSkillMessage(latestEligibleUser!, record),
@@ -249,6 +255,32 @@ const filterCompressedRanges = (
         const skillIndex =
             memoIndex >= 0 ? memoIndex + 1 : lastBlockIndex >= 0 ? lastBlockIndex + 1 : 0
         result.splice(skillIndex, 0, ...skillMessages)
+        skillEndIndex = skillIndex + skillMessages.length
+    }
+
+    const protectedContent = renderProtectedSubagents(
+        selectProtectedSubagents(
+            state.subagentExecutions,
+            config.compress.protectSubagent,
+            lastProjectedBlock,
+        ),
+        config.compress.protectSubagent,
+        state.messageIds,
+    )
+    if (protectedContent && latestEligibleUser) {
+        const index =
+            skillEndIndex >= 0
+                ? skillEndIndex
+                : memoIndex >= 0
+                  ? memoIndex + 1
+                  : lastBlockIndex >= 0
+                    ? lastBlockIndex + 1
+                    : 0
+        result.splice(
+            index,
+            0,
+            createSyntheticUserMessage(latestEligibleUser, protectedContent, "dcp_subagents"),
+        )
     }
 
     // Replace messages array contents

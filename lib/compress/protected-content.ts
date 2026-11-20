@@ -1,4 +1,4 @@
-import type { SessionState, WithParts } from "../state"
+import type { SessionState } from "../state"
 import { isIgnoredUserMessage } from "../messages/query"
 import { getFilePathsFromParameters, isFilePathProtected } from "../protected-patterns"
 import {
@@ -7,11 +7,6 @@ import {
     type CompressProtectedToolSpec,
     type ProtectedToolsConfig,
 } from "../protected-tools"
-import {
-    buildSubagentResultText,
-    getSubAgentId,
-    mergeSubagentResult,
-} from "../subagents/subagent-results"
 import type { SearchContext, SelectionResolution } from "./types"
 
 export function appendProtectedUserMessages(
@@ -109,15 +104,12 @@ export function extractProtectedPromptInfo(text: string): string[] {
 }
 
 export async function appendProtectedTools(
-    fetchMessages: (sessionID: string) => Promise<WithParts[]>,
     state: SessionState,
-    allowSubAgents: boolean,
     summary: string,
     selection: SelectionResolution,
     searchContext: SearchContext,
     protectedTools: ProtectedToolsConfig<CompressProtectedToolSpec>,
     protectedFilePatterns: string[] = [],
-    protectTaskOutputs = true,
 ): Promise<string> {
     const collected: Array<{ tool: string; text: string; keepLast?: number }> = []
 
@@ -133,7 +125,7 @@ export async function appendProtectedTools(
         const parts = Array.isArray(message.parts) ? message.parts : []
         for (const part of parts) {
             if (part.type === "tool" && part.callID) {
-                if (!protectTaskOutputs && (part.tool === "task" || part.tool === "subagent")) continue
+                if (part.tool === "task" || part.tool === "subagent") continue
                 const spec = resolveProtectedTool(protectedTools, part.tool)
                 let protectTool = spec !== null && spec.protect === true
 
@@ -154,37 +146,6 @@ export async function appendProtectedTools(
                         typeof part.state.output === "string"
                             ? part.state.output
                             : JSON.stringify(part.state.output)
-                }
-
-                if (
-                    allowSubAgents &&
-                    part.tool === "task" &&
-                    part.state?.status === "completed" &&
-                    typeof part.state?.output === "string"
-                ) {
-                    const cachedSubAgentResult = state.subAgentResultCache.get(part.callID)
-
-                    if (cachedSubAgentResult !== undefined) {
-                        if (cachedSubAgentResult) {
-                            output = mergeSubagentResult(part.state.output, cachedSubAgentResult)
-                        }
-                    } else {
-                        const subAgentSessionId = getSubAgentId(part)
-                        if (subAgentSessionId) {
-                            let subAgentResultText = ""
-                            try {
-                                const subAgentMessages = await fetchMessages(subAgentSessionId)
-                                subAgentResultText = buildSubagentResultText(subAgentMessages)
-                            } catch {
-                                subAgentResultText = ""
-                            }
-
-                            if (subAgentResultText) {
-                                state.subAgentResultCache.set(part.callID, subAgentResultText)
-                                output = mergeSubagentResult(part.state.output, subAgentResultText)
-                            }
-                        }
-                    }
                 }
 
                 if (!output) continue

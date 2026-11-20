@@ -115,7 +115,6 @@ export function compressionOperationContext(
             })
             toolCtx.metadata({ title })
         },
-        protectTaskOutputs: true,
     }
 }
 

@@ -31,6 +31,7 @@ export interface CompressConfig {
     iterationNudgeThreshold: number
     nudgeForce: "strong" | "soft"
     protectedTools: ProtectedToolsConfig<CompressProtectedToolSpec>
+    protectSubagent: "none" | "metadata" | "full"
     protectTags: boolean
     protectUserMessages: boolean
     maxToolOutputChars: number
@@ -97,7 +98,7 @@ const DEFAULT_PROTECTED_TOOLS = [
     "edit",
 ]
 
-const COMPRESS_DEFAULT_PROTECTED_TOOLS = ["task"]
+const COMPRESS_DEFAULT_PROTECTED_TOOLS: string[] = []
 
 export const VALID_CONFIG_KEYS = new Set([
     "$schema",
@@ -133,6 +134,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.iterationNudgeThreshold",
     "compress.nudgeForce",
     "compress.protectedTools",
+    "compress.protectSubagent",
     "compress.protectTags",
     "compress.protectUserMessages",
     "compress.maxToolOutputChars",
@@ -552,6 +554,19 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
 
             validateProtectedTools("compress.protectedTools", compress.protectedTools, true)
 
+            if (
+                compress.protectSubagent !== undefined &&
+                compress.protectSubagent !== "none" &&
+                compress.protectSubagent !== "metadata" &&
+                compress.protectSubagent !== "full"
+            ) {
+                errors.push({
+                    key: "compress.protectSubagent",
+                    expected: '"none" | "metadata" | "full"',
+                    actual: JSON.stringify(compress.protectSubagent),
+                })
+            }
+
             if (compress.protectTags !== undefined && typeof compress.protectTags !== "boolean") {
                 errors.push({
                     key: "compress.protectTags",
@@ -837,6 +852,7 @@ const defaultConfig: PluginConfig = {
         protectedTools: normalizeProtectedTools<CompressProtectedToolSpec>(
             COMPRESS_DEFAULT_PROTECTED_TOOLS,
         ),
+        protectSubagent: "metadata",
         protectTags: false,
         protectUserMessages: false,
         maxToolOutputChars: 0,
@@ -1003,6 +1019,7 @@ function mergeCompress(
         iterationNudgeThreshold: override.iterationNudgeThreshold ?? base.iterationNudgeThreshold,
         nudgeForce: override.nudgeForce ?? base.nudgeForce,
         protectedTools: mergeProtectedTools(base.protectedTools, override.protectedTools),
+        protectSubagent: override.protectSubagent ?? base.protectSubagent,
         protectTags: override.protectTags ?? base.protectTags,
         protectUserMessages: override.protectUserMessages ?? base.protectUserMessages,
         maxToolOutputChars: override.maxToolOutputChars ?? base.maxToolOutputChars,

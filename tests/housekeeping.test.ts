@@ -1617,7 +1617,8 @@ test("public configuration defaults and explicit compression tool protections", 
     const ctx = { ...h.ctx, directory: h.root } as any
     const defaults = getConfig(ctx)
 
-    assert.deepEqual(Object.keys(defaults.compress.protectedTools), ["task"])
+    assert.equal(defaults.compress.protectSubagent, "metadata")
+    assert.deepEqual(Object.keys(defaults.compress.protectedTools), [])
     assert.deepEqual(Object.keys(defaults.commands.protectedTools), [
         "task",
         "todowrite",
@@ -1659,6 +1660,41 @@ test("public configuration defaults and explicit compression tool protections", 
         resolveProtectedTool(configured.compress.protectedTools, "todowrite")?.protect,
         true,
     )
+})
+
+test("public configuration loads each subagent protection mode", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    const ctx = { ...h.ctx, directory: h.root } as any
+    await mkdir(`${h.root}/.opencode`, { recursive: true })
+    const configPath = `${h.root}/.opencode/dcp.jsonc`
+
+    for (const mode of ["none", "metadata", "full"]) {
+        await writeFile(configPath, JSON.stringify({ compress: { protectSubagent: mode } }), "utf-8")
+        const configured = getConfig(ctx)
+        assert.equal(configured.compress.protectSubagent, mode)
+    }
+})
+
+test("public configuration rejects an invalid subagent protection mode", () => {
+    const input = { compress: { protectSubagent: "invalid" } }
+    assert.deepEqual(getInvalidConfigKeys(input), [])
+
+    const errors = validateConfigTypes(input)
+    const error = errors.find((entry) => entry.key === "compress.protectSubagent")
+    assert.ok(error)
+    assert.match(error.expected, /none/)
+    assert.match(error.expected, /metadata/)
+    assert.match(error.expected, /full/)
+})
+
+test("published configuration schema declares the subagent protection modes and metadata default", async () => {
+    const schema = JSON.parse(
+        await readFile(new URL("../dcp.schema.json", import.meta.url), "utf-8"),
+    ) as any
+    const protectSubagent = schema.properties.compress.properties.protectSubagent
+
+    assert.deepEqual(protectSubagent.enum, ["none", "metadata", "full"])
+    assert.equal(protectSubagent.default, "metadata")
 })
 
 for (const allowedTools of ["read", null, [1], ["read", false]]) {

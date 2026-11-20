@@ -14,6 +14,43 @@ import { contextBlockSummary } from "./messages/block-summary"
 import { injectCompressNudges, messageIdTag } from "./messages/inject/inject"
 import type { CompressionPriorityMap } from "./messages/priority"
 import type { RuntimePrompts } from "./prompts/store"
+import type { CompressionBlock } from "./state/types"
+import { selectProtectedSubagents, renderProtectedSubagents } from "./subagents/protection"
+
+export function injectContextSubagents(
+    request: ModelContextRequest,
+    state: SessionState,
+    config: PluginConfig,
+    lastSummary?: { messageId: string; block: CompressionBlock },
+): void {
+    const messages = request.messages.filter((message) => message.id !== "msg_dcp_subagents")
+    request.messages = messages
+    if (!messages.some((message) => message.role === "user" && message.content.length > 0)) return
+    const text = renderProtectedSubagents(
+        selectProtectedSubagents(
+            state.subagentExecutions,
+            config.compress.protectSubagent,
+            lastSummary?.block,
+        ),
+        config.compress.protectSubagent,
+        state.messageIds,
+    )
+    if (!text) return
+    let index = 0
+    for (const [position, message] of messages.entries()) {
+        if (
+            message.id?.startsWith("msg_dcp_skill_") ||
+            message.id === "msg_dcp_memo" ||
+            message.id === lastSummary?.messageId
+        )
+            index = position + 1
+    }
+    request.messages = [
+        ...messages.slice(0, index),
+        { id: "msg_dcp_subagents", role: "user", content: [{ type: "text", text }] },
+        ...messages.slice(index),
+    ]
+}
 
 export type ModelContextRequest = Pick<SessionRequest, "messages" | "options">
 type MessagePart = SessionRequestMessage["content"][number]
@@ -282,7 +319,7 @@ export function projectContextBlocks(
     state: SessionState,
     logger: Logger,
     config: PluginConfig,
-): string | undefined {
+): { messageId: string; block: CompressionBlock } | undefined {
     const covered = (id: string | undefined) =>
         id !== undefined &&
         (state.prune.messages.byMessageId.get(id)?.activeBlockIds.length ?? 0) > 0
@@ -295,7 +332,7 @@ export function projectContextBlocks(
     }
     const result: ModelContextRequest["messages"] = []
     let hasUser = false
-    let lastSummaryId: string | undefined
+    let lastSummary: { messageId: string; block: CompressionBlock } | undefined
     for (const message of request.messages) {
         if (message.role === "user" && message.content.length > 0) hasUser = true
         const summary =
@@ -304,9 +341,10 @@ export function projectContextBlocks(
                 : contextBlockSummary(state, logger, config, message.id)
         if (summary) {
             if (hasUser) {
-                lastSummaryId = `msg_dcp_block_${summary.block.blockId}_${summary.block.anchorMessageId}`
+                const messageId = `msg_dcp_block_${summary.block.blockId}_${summary.block.anchorMessageId}`
+                lastSummary = { messageId, block: summary.block }
                 result.push({
-                    id: lastSummaryId,
+                    id: messageId,
                     role: "user",
                     content: [{ type: "text", text: summary.content }],
                 })
@@ -326,7 +364,7 @@ export function projectContextBlocks(
         else if (content.length > 0) result.push(projected)
     }
     request.messages = result
-    return lastSummaryId
+    return lastSummary
 }
 
 export function injectContextMessageIds(

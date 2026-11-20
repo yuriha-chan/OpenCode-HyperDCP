@@ -15,7 +15,6 @@ export interface ToolContext {
 export interface CompressionOperationContext extends SharedOperationContext {
     fetchMessages(sessionID: string): Promise<WithParts[]>
     reportCompressionStart(title: string): Promise<void>
-    protectTaskOutputs: boolean
 }
 
 export interface CompressRangeEntry {

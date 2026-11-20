@@ -2,11 +2,11 @@ import type { SessionState, WithParts } from "./state"
 import type { Logger } from "./logger"
 import type { PluginConfig } from "./config"
 import { assignMessageRefs } from "./message-ids"
+import { syncSubagentExecutions, v1SubagentObservations } from "./subagents/observations"
 import {
     buildPriorityMap,
     buildToolIdList,
     injectCompressNudges,
-    injectExtendedSubAgentResults,
     injectMessageIds,
     prune,
     stripHallucinations,
@@ -113,6 +113,7 @@ export function createChatMessageTransformHandler(
             }
 
             await checkSession(client, state, logger, output.messages, config.manualMode.enabled)
+            await syncSubagentExecutions(state, logger, v1SubagentObservations(output.messages))
 
             const reconciledState = structuredClone(state)
             if (await reconcileHousekeepingHistory(reconciledState, output.messages)) {
@@ -174,13 +175,6 @@ export function createChatMessageTransformHandler(
             )
             const prePruneMessages = [...output.messages]
             prune(state, logger, config, output.messages)
-            await injectExtendedSubAgentResults(
-                client,
-                state,
-                logger,
-                output.messages,
-                config.experimental.allowSubAgents,
-            )
             const compressionPriorities = buildPriorityMap(config, state, output.messages)
             prompts.reload()
             if (!state.housekeeping)

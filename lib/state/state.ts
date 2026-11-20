@@ -2,12 +2,14 @@ import type { SessionState, SkillContext, ToolParameterEntry, WithParts } from "
 import type { Logger } from "../logger"
 import { applyPendingCompressionDurations } from "../compress/timing"
 import {
+    decodeSubagentExecutions,
     loadSessionState,
     saveSessionState,
     restoreHousekeepingTransaction,
     HousekeepingMetadataError,
 } from "./persistence"
 import { decodeSkillContexts } from "./housekeeping-draft-codec"
+import type { SubagentExecution } from "../subagents/protection"
 import {
     isSubAgentSession,
     findLastCompactionTimestamp,
@@ -106,6 +108,7 @@ export function createSessionState(): SessionState {
         protectedRefs: new Set<string>(),
         loadedSkills: [],
         protectedSkills: [],
+        subagentExecutions: [],
         memo: null,
         debug: {
             enabled: false,
@@ -154,6 +157,7 @@ export function resetSessionState(state: SessionState): void {
     state.protectedRefs = new Set<string>()
     state.loadedSkills = []
     state.protectedSkills = []
+    state.subagentExecutions = []
     state.memo = null
     state.autotoggle = false
     state.housekeeping = null
@@ -208,6 +212,16 @@ export async function initializeSessionState(
         const detail = error instanceof Error ? error.message : String(error)
         throw new HousekeepingMetadataError(`Invalid persisted skill state: ${detail}`)
     }
+    let subagentExecutions: SubagentExecution[]
+    try {
+        subagentExecutions = decodeSubagentExecutions(
+            persisted?.subagentExecutions,
+            "persisted subagentExecutions",
+        )
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new HousekeepingMetadataError(`Invalid persisted subagent executions: ${detail}`)
+    }
     const housekeeping = restoreHousekeepingTransaction(persisted?.housekeeping)
     const history = persisted?.housekeepingHistory ?? []
     if (!Array.isArray(history))
@@ -222,6 +236,7 @@ export async function initializeSessionState(
     resetSessionState(state)
     state.loadedSkills = loadedSkills
     state.protectedSkills = protectedSkills
+    state.subagentExecutions = subagentExecutions
     state.manualMode = manualModeEnabled ? "active" : false
     state.sessionId = sessionId
 

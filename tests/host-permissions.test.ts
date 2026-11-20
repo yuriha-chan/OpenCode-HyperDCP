@@ -640,6 +640,46 @@ async function createNativeHarness(t: TestContext, options: NativeHarnessOptions
     }
 }
 
+test("v2 subagent context observes running executions, persists steering and injects after skills", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await h.render()
+    const file = getSessionFilePath(h.sessionID)
+    const persisted = JSON.parse(await readFile(file, "utf8"))
+    persisted.protectedSkills = [{ name: "Report", callId: "skill-original", input: { id: "report" }, title: "Report", output: "Skill instructions", metadata: {} }]
+    await writeFile(file, JSON.stringify(persisted))
+    const history = toNativeHistory(h.history)
+    for (const [id, call] of [["msg_child_start", "call_start"], ["msg_child_steer", "call_steer"]]) {
+        history.push({ id, sessionID: h.sessionID, type: "assistant", time: { created: 1 }, agent: "build", model: { id: "test", providerID: "test" }, content: [{ type: "tool", id: call, name: "subagent", time: { created: 1 }, state: { status: "completed", input: { description: "Investigate parser", prompt: "Check records", sessionID: "child-running" }, content: [{ type: "text", text: "Running" }], metadata: { sessionID: "child-running", status: "running" } } }] } as any)
+    }
+    const native = await createNativeHarness(t, { root: h.root, sessionID: h.sessionID, contextMessages: history })
+    const request = { sessionID: h.sessionID, messages: [{ id: h.history[0]!.info.id, role: "user", content: [{ type: "text", text: "Continue" }] }], options: {} }
+    await native.projectContext(request)
+    const skillIndex = request.messages.findIndex(message => message.role === "tool")
+    assert.ok(skillIndex >= 0)
+    assert.match(JSON.stringify(request.messages[skillIndex + 1]), /session: child-running/)
+    assert.match(JSON.stringify(request.messages[skillIndex + 1]), /status: running/)
+    const entries = JSON.parse(await readFile(file, "utf8")).subagentExecutions
+    assert.equal(entries.length, 1)
+    assert.equal(entries[0].callingMessageId, "msg_child_start")
+    assert.deepEqual(entries[0].steeringMessages, [{ messageId: "msg_child_steer", callId: "call_steer" }])
+    await native.projectContext(request)
+    assert.equal(request.messages.filter(message => JSON.stringify(message).includes("session: child-running")).length, 1)
+})
+
+test("v1 subagent context persists delivered foreground reports without child refresh", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    h.config.experimental.allowSubAgents = true
+    const history = structuredClone(h.history)
+    history.push({ info: { ...history.find(message => message.info.role === "assistant")!.info, id: "msg_task_result" }, parts: [{ id: "part_task", messageID: "msg_task_result", sessionID: h.sessionID, type: "tool", callID: "call_task", tool: "task", state: { status: "completed", input: { description: "Investigate parser", prompt: "Check records" }, title: "Investigate parser", metadata: { sessionId: "child-completed" }, output: '<task id="child-completed" state="completed">\n<task_result>DELIVERED_FIRST</task_result>\n</task>', time: { start: 1, end: 2 } } }] } as any)
+    h.setHistory(history)
+    await h.render()
+    const persisted = JSON.parse(await readFile(getSessionFilePath(h.sessionID), "utf8"))
+    assert.equal(persisted.subagentExecutions.length, 1)
+    assert.equal(persisted.subagentExecutions[0].report, "DELIVERED_FIRST")
+    assert.equal(persisted.subagentExecutions[0].terminationMessageId, "msg_task_result")
+    for (const call of h.client.session.messages.mock.calls) assert.deepEqual(call.arguments[0], { path: { id: h.sessionID } })
+})
+
 test("v2 protected skill context inserts paired records after memo without changing native arguments", async (t) => {
     const h = await createHousekeepingHarness(t)
     await seedCommittedMemo(h, { action: "append", textItems: ["Retain the constraint."] })

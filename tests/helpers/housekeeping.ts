@@ -95,6 +95,7 @@ export async function createHousekeepingHarness(t: TestContext, options: Harness
         experimental: { allowSubAgents: options.allowSubAgents ?? false, customPrompts: false },
         protectedFilePatterns: [],
         compress: {
+            protectSubagent: "metadata",
             mode: options.mode ?? "range",
             permission: options.permission ?? "allow",
             showCompression: false,
