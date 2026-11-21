@@ -27,11 +27,10 @@ import time
 
 TERMINATE = b"\x03\x03"
 
-# Screen-to-PNG metrics. CHAR_W_PX is the advance of Terminus (TTF) at
-# FONT_SIZE_PX (0.571 em); keep the chromium viewport exactly this size so the
-# screenshot has no empty margin to the right.
-FONT_SIZE_PX = 14
-LINE_H_PX = 15
+# Screen-to-PNG metrics. Terminus uses an 8x16 cell at FONT_SIZE_PX; keep the
+# chromium viewport exactly this size so the screenshot has no empty margin.
+FONT_SIZE_PX = 16
+LINE_H_PX = 16
 CHAR_W_PX = 8.0
 SCREEN_PAD_PX = 6
 
