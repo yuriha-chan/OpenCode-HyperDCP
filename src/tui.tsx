@@ -300,7 +300,8 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
 function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
     const skin = props.ui.colors()
     const backLabel = !props.backTarget || props.backTarget === "home" ? "Session" : props.backTarget === "dcp-blocks" ? "Blocks" : "Back"
-    const backText = backLabel === "Session" || backLabel === "Blocks" ? `${backLabel} (Esc)` : backLabel
+    const backHint = backLabel === "Back" ? "" : commandKeyHint("dcp-tui.back")
+    const backText = backHint ? `${backLabel} ${backHint}` : backLabel
 
     return (
         <box flexDirection="row" gap={1}>
@@ -577,6 +578,8 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
     onCleanup(() => {
         if (props.ui.messagesNav === nav) props.ui.messagesNav = undefined
     })
+    const newerHint = commandKeyHint("dcp-tui.newer")
+    const olderHint = commandKeyHint("dcp-tui.older")
 
     return (
         <PageShell ui={props.ui} title="DCP Messages">
@@ -610,13 +613,13 @@ const MessagesDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) 
                         <box flexDirection="row" gap={1} alignItems="center">
                             {page() > 0 ? (
                                     <box onMouseDown={() => navTo(page() - 1)}>
-                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{" ← Newer (<) "}</text>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` ← Newer ${newerHint} `}</text>
                                     </box>
                                 ) : null}
                                 <text fg={skin.muted}>Page {page() + 1} of {totalPages()}</text>
                                 {page() < totalPages() - 1 ? (
                                     <box onMouseDown={() => navTo(page() + 1)}>
-                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{" Older → (>) "}</text>
+                                        <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` Older → ${olderHint} `}</text>
                                     </box>
                             ) : null}
                         </box>
@@ -710,6 +713,47 @@ function backToSession(ui: DcpUi): void {
     } else {
         ui.openSession()
     }
+}
+
+// --- Command descriptors (single source for both host registrations) ---
+
+type DcpCommandDescriptor = {
+    id: string
+    title: string
+    run: (ui: DcpUi) => void
+    palette?: boolean
+    configurable?: boolean
+    modes?: string[]
+    bind?: string
+    bindDesc?: string
+    bindingScope?: "always"
+}
+
+const DCP_COMMANDS: DcpCommandDescriptor[] = [
+    { id: "dcp-tui.blocks", title: "DCP Blocks", run: openBlocks, palette: true },
+    { id: "dcp-tui.messages", title: "DCP Messages", run: openMessages, palette: true },
+    { id: "dcp-tui.memo", title: "DCP Memo", run: openMemo, palette: true },
+    { id: "dcp-tui.edit", title: "DCP Edit Block Summary", run: editCurrentBlock, palette: true, modes: [DCP_BLOCK_MODE], bind: "e", bindDesc: "Edit summary" },
+    { id: "dcp-tui.edit-memo", title: "DCP Edit Memo", run: editCurrentMemo, palette: true, modes: [DCP_MEMO_MODE], bind: "e", bindDesc: "Edit memo" },
+    { id: "dcp-tui.newer", title: "DCP Messages: Newer page", run: newerMessagesPage, modes: [DCP_MESSAGES_MODE], bind: "<", bindDesc: "Newer page" },
+    { id: "dcp-tui.older", title: "DCP Messages: Older page", run: olderMessagesPage, modes: [DCP_MESSAGES_MODE], bind: ">", bindDesc: "Older page" },
+    { id: "dcp-tui.back", title: "Go back to session", run: backToSession, configurable: true, modes: [DCP_MODE, DCP_BLOCK_MODE, DCP_MESSAGES_MODE, DCP_MEMO_MODE], bind: "escape", bindDesc: "Back", bindingScope: "always" },
+]
+
+function commandDescriptor(id: string): DcpCommandDescriptor {
+    const descriptor = DCP_COMMANDS.find((candidate) => candidate.id === id)
+    if (!descriptor) throw new Error(`Unknown DCP command ${id}`)
+    return descriptor
+}
+
+function commandKeyHint(id: string): string {
+    const { bind } = commandDescriptor(id)
+    if (!bind) return ""
+    return `(${bind === "escape" ? "Esc" : bind})`
+}
+
+function slashNameOf(id: string): string {
+    return id.replace(".", "-")
 }
 
 // --- v1 native registration ---
@@ -807,118 +851,56 @@ const tui: TuiPlugin = async (api, options, meta) => {
         },
     ])
 
-    // Escape handler for DCP routes
     api.keymap.registerLayer({
-        commands: [
-            {
-                name: "dcp-tui.blocks",
-                title: "DCP Blocks",
-                category: "Plugin",
-                namespace: "palette",
-                slashName: "dcp-tui-blocks",
-                run() {
-                    openBlocks(ui)
-                },
-            },
-            {
-                name: "dcp-tui.messages",
-                title: "DCP Messages",
-                category: "Plugin",
-                namespace: "palette",
-                slashName: "dcp-tui-messages",
-                run() {
-                    openMessages(ui)
-                },
-            },
-            {
-                name: "dcp-tui.memo",
-                title: "DCP Memo",
-                category: "Plugin",
-                namespace: "palette",
-                slashName: "dcp-tui-memo",
-                run() {
-                    openMemo(ui)
-                },
-            },
-            {
-                name: "dcp-tui.edit",
-                title: "DCP Edit Block Summary",
-                category: "Plugin",
-                namespace: "palette",
-                slashName: "dcp-tui-edit",
-                run() {
-                    editCurrentBlock(ui)
-                },
-            },
-            {
-                name: "dcp-tui.edit-memo",
-                title: "DCP Edit Memo",
-                category: "Plugin",
-                namespace: "palette",
-                slashName: "dcp-tui-edit-memo",
-                run() {
-                    editCurrentMemo(ui)
-                },
-            },
-        ],
+        commands: DCP_COMMANDS.filter((descriptor) => descriptor.bindingScope !== "always").map((descriptor) =>
+            descriptor.palette
+                ? {
+                      name: descriptor.id,
+                      title: descriptor.title,
+                      category: "Plugin",
+                      namespace: "palette",
+                      slashName: slashNameOf(descriptor.id),
+                      run: () => descriptor.run(ui),
+                  }
+                : {
+                      name: descriptor.id,
+                      title: descriptor.title,
+                      category: "Plugin",
+                      hidden: true,
+                      run: () => descriptor.run(ui),
+                  },
+        ),
     })
 
-    // Global Escape binding for DCP routes — always registered, navigates to session
-    api.keymap.registerLayer({
-        commands: [
-            {
-                name: "dcp-tui.back",
-                title: "Go back to session",
-                category: "Plugin",
-                hidden: true,
-                run() {
-                    backToSession(ui)
+    const modeBindings = new Map<string, { key: string; cmd: string; desc: string }[]>()
+    for (const descriptor of DCP_COMMANDS) {
+        if (!descriptor.bind || !descriptor.modes || descriptor.bindingScope === "always") continue
+        for (const mode of descriptor.modes) {
+            const bindings = modeBindings.get(mode) ?? []
+            bindings.push({ key: descriptor.bind, cmd: descriptor.id, desc: descriptor.bindDesc ?? descriptor.title })
+            modeBindings.set(mode, bindings)
+        }
+    }
+    for (const [mode, bindings] of modeBindings) {
+        api.keymap.registerLayer({ mode, bindings })
+    }
+
+    // v1 has always registered the back Escape binding outside any mode, active beyond DCP pages; preserved
+    for (const descriptor of DCP_COMMANDS) {
+        if (descriptor.bindingScope !== "always" || !descriptor.bind || !descriptor.modes) continue
+        api.keymap.registerLayer({
+            commands: [
+                {
+                    name: descriptor.id,
+                    title: descriptor.title,
+                    category: "Plugin",
+                    hidden: true,
+                    run: () => descriptor.run(ui),
                 },
-            },
-        ],
-        bindings: [{ key: "escape", cmd: "dcp-tui.back", desc: "Back" }],
-    })
-
-    api.keymap.registerLayer({
-        mode: DCP_BLOCK_MODE,
-        bindings: [{ key: "e", cmd: "dcp-tui.edit", desc: "Edit summary" }],
-    })
-
-    api.keymap.registerLayer({
-        mode: DCP_MEMO_MODE,
-        bindings: [{ key: "e", cmd: "dcp-tui.edit-memo", desc: "Edit memo" }],
-    })
-
-    api.keymap.registerLayer({
-        commands: [
-            {
-                name: "dcp-tui.newer",
-                title: "DCP Messages: Newer page",
-                category: "Plugin",
-                hidden: true,
-                run() {
-                    newerMessagesPage(ui)
-                },
-            },
-            {
-                name: "dcp-tui.older",
-                title: "DCP Messages: Older page",
-                category: "Plugin",
-                hidden: true,
-                run() {
-                    olderMessagesPage(ui)
-                },
-            },
-        ],
-    })
-
-    api.keymap.registerLayer({
-        mode: DCP_MESSAGES_MODE,
-        bindings: [
-            { key: "<", cmd: "dcp-tui.newer", desc: "Newer page" },
-            { key: ">", cmd: "dcp-tui.older", desc: "Older page" },
-        ],
-    })
+            ],
+            bindings: [{ key: descriptor.bind, cmd: descriptor.id, desc: descriptor.bindDesc ?? descriptor.title }],
+        })
+    }
 }
 
 // --- v2 native registration ---
@@ -935,90 +917,34 @@ function v2PageState(route: Route): DcpPageState {
     }
 }
 
-function v2EditBlockCommand(ui: DcpUi, bind?: string): KeymapCommand {
-    return {
-        id: "dcp-tui.edit",
-        title: "DCP Edit Block Summary",
-        group: "Plugin",
-        palette: true,
-        slash: { name: "dcp-tui-edit" },
-        bind,
-        run: () => editCurrentBlock(ui),
-    }
+function v2GlobalCommands(ui: DcpUi): KeymapCommand[] {
+    return DCP_COMMANDS.filter((descriptor) => descriptor.palette || descriptor.configurable).map((descriptor) =>
+        descriptor.palette
+            ? {
+                  id: descriptor.id,
+                  title: descriptor.title,
+                  group: "Plugin",
+                  palette: true,
+                  slash: { name: slashNameOf(descriptor.id) },
+                  run: () => descriptor.run(ui),
+              }
+            : {
+                  id: descriptor.id,
+                  title: descriptor.title,
+                  group: "Plugin",
+                  run: () => descriptor.run(ui),
+              },
+    )
 }
 
-function v2EditMemoCommand(ui: DcpUi, bind?: string): KeymapCommand {
-    return {
-        id: "dcp-tui.edit-memo",
-        title: "DCP Edit Memo",
+function v2ModeCommands(ui: DcpUi, mode: string): KeymapCommand[] {
+    return DCP_COMMANDS.filter((descriptor) => descriptor.modes?.includes(mode)).map((descriptor) => ({
+        id: descriptor.id,
+        title: descriptor.title,
         group: "Plugin",
-        palette: true,
-        slash: { name: "dcp-tui-edit-memo" },
-        bind,
-        run: () => editCurrentMemo(ui),
-    }
-}
-
-function v2BackCommand(ui: DcpUi, bind?: string): KeymapCommand {
-    return {
-        id: "dcp-tui.back",
-        title: "Go back to session",
-        group: "Plugin",
-        bind,
-        run: () => backToSession(ui),
-    }
-}
-
-function v2NewerMessagesCommand(ui: DcpUi, bind?: string): KeymapCommand {
-    return {
-        id: "dcp-tui.newer",
-        title: "DCP Messages: Newer page",
-        group: "Plugin",
-        bind,
-        run: () => newerMessagesPage(ui),
-    }
-}
-
-function v2OlderMessagesCommand(ui: DcpUi, bind?: string): KeymapCommand {
-    return {
-        id: "dcp-tui.older",
-        title: "DCP Messages: Older page",
-        group: "Plugin",
-        bind,
-        run: () => olderMessagesPage(ui),
-    }
-}
-
-function v2Commands(ui: DcpUi): KeymapCommand[] {
-    return [
-        {
-            id: "dcp-tui.blocks",
-            title: "DCP Blocks",
-            group: "Plugin",
-            palette: true,
-            slash: { name: "dcp-tui-blocks" },
-            run: () => openBlocks(ui),
-        },
-        {
-            id: "dcp-tui.messages",
-            title: "DCP Messages",
-            group: "Plugin",
-            palette: true,
-            slash: { name: "dcp-tui-messages" },
-            run: () => openMessages(ui),
-        },
-        {
-            id: "dcp-tui.memo",
-            title: "DCP Memo",
-            group: "Plugin",
-            palette: true,
-            slash: { name: "dcp-tui-memo" },
-            run: () => openMemo(ui),
-        },
-        v2EditBlockCommand(ui),
-        v2EditMemoCommand(ui),
-        v2BackCommand(ui),
-    ]
+        bind: descriptor.bind,
+        run: () => descriptor.run(ui),
+    }))
 }
 
 const setup: TuiPluginV2.Definition["setup"] = (context) => {
@@ -1075,23 +1001,10 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
         render: ({ data }) => <MemoDetail ui={ui} params={data} />,
     })
 
-    context.keymap.layer(() => ({ mode: "global", commands: v2Commands(ui) }))
-    context.keymap.layer(() => ({
-        mode: DCP_MODE,
-        commands: [v2BackCommand(ui, "escape")],
-    }))
-    context.keymap.layer(() => ({
-        mode: DCP_BLOCK_MODE,
-        commands: [v2EditBlockCommand(ui, "e"), v2BackCommand(ui, "escape")],
-    }))
-    context.keymap.layer(() => ({
-        mode: DCP_MEMO_MODE,
-        commands: [v2EditMemoCommand(ui, "e"), v2BackCommand(ui, "escape")],
-    }))
-    context.keymap.layer(() => ({
-        mode: DCP_MESSAGES_MODE,
-        commands: [v2NewerMessagesCommand(ui, "<"), v2OlderMessagesCommand(ui, ">"), v2BackCommand(ui, "escape")],
-    }))
+    context.keymap.layer(() => ({ mode: "global", commands: v2GlobalCommands(ui) }))
+    for (const mode of [DCP_MODE, DCP_BLOCK_MODE, DCP_MESSAGES_MODE, DCP_MEMO_MODE]) {
+        context.keymap.layer(() => ({ mode, commands: v2ModeCommands(ui, mode) }))
+    }
 
     const unsubscribeToasts = context.location
         ? subscribeNotificationToasts(context.client, context.location, (toast) => {
