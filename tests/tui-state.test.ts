@@ -7,6 +7,34 @@ import { createDcpStateReader } from "../src/tui-state"
 
 let tempFileCounter = 0
 
+test("loaded skills show current protection status and refresh without listing protected-only entries", async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "dcp-tui-skills-"))
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+    const file = join(dir, "session.json")
+    const read = createDcpStateReader(() => file)
+    const loadedSkills = [
+        { name: "parser", title: "Parser guidance" },
+        { name: "review", title: "Review guidance" },
+    ]
+    writeAtomic(
+        file,
+        JSON.stringify({ loadedSkills, protectedSkills: [{ name: "review" }, { name: "old" }] }),
+    )
+    assert.deepEqual((await read("session")).skills, [
+        { name: "parser", title: "Parser guidance", status: "in context" },
+        { name: "review", title: "Review guidance", status: "injected" },
+    ])
+    writeAtomic(
+        file,
+        JSON.stringify({ loadedSkills: [loadedSkills[0]], protectedSkills: [{ name: "parser" }] }),
+    )
+    assert.deepEqual((await read("session")).skills, [
+        { name: "parser", title: "Parser guidance", status: "injected" },
+    ])
+    writeAtomic(file, "{}")
+    assert.deepEqual((await read("session")).skills, [])
+})
+
 function writeAtomic(path: string, contents: string): void {
     tempFileCounter += 1
     const tempPath = `${path}.${tempFileCounter}.tmp`
@@ -107,6 +135,7 @@ test("state reader projects committed blocks, refs, memo and stats and reuses th
     const state = await reader("session")
 
     assert.deepEqual(state, {
+        skills: [],
         blocks: [
             {
                 blockId: 1,
@@ -166,7 +195,13 @@ test("state reader republishes committed sections on atomic replacement, ignores
     const reader = createDcpStateReader(() => file)
 
     const initial = await reader("session")
-    assert.deepEqual(initial, { blocks: [], trackedMessages: [], memo: null, stats: null })
+    assert.deepEqual(initial, {
+        blocks: [],
+        trackedMessages: [],
+        memo: null,
+        stats: null,
+        skills: [],
+    })
 
     writeAtomic(file, JSON.stringify(mainFile("committed-1", "memo-1")))
     const first = await reader("session")

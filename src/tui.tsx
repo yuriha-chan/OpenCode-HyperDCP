@@ -23,7 +23,7 @@ const DCP_MESSAGES_MODE = "dcp-messages"
 const DCP_MEMO_MODE = "dcp-memo"
 const PLUGIN_ID = "dcp-blocks"
 
-type DcpPage = "dcp-blocks" | "dcp-block" | "dcp-messages" | "dcp-memo"
+type DcpPage = "dcp-blocks" | "dcp-block" | "dcp-messages" | "dcp-memo" | "dcp-skills"
 
 type DcpPageState = {
     page?: DcpPage
@@ -51,7 +51,7 @@ interface DcpUi {
 }
 
 function isDcpPage(name: string): name is DcpPage {
-    return name === "dcp-blocks" || name === "dcp-block" || name === "dcp-messages" || name === "dcp-memo"
+    return name === "dcp-blocks" || name === "dcp-block" || name === "dcp-messages" || name === "dcp-memo" || name === "dcp-skills"
 }
 
 function formatError(error: unknown): string {
@@ -385,6 +385,36 @@ const BlocksDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) =>
                             )
                         }}
                     </For>
+                </Show>
+            </Show>
+        </PageShell>
+    )
+}
+
+const SkillsDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
+    const popMode = props.ui.enterMode(DCP_MODE)
+    onCleanup(popMode)
+    const sessionID = () => props.params?.sessionID as string | undefined
+    const snapshot = useSessionSnapshot(props.ui, sessionID)
+    const skills = createMemo(() => snapshot().state.skills)
+    const skin = props.ui.colors()
+
+    return (
+        <PageShell ui={props.ui} title="DCP Skills" fill>
+            <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
+                <Show when={skills().length > 0} fallback={<text fg={skin.muted}>No loaded skills</text>}>
+                    <scrollbox flexGrow={1} flexBasis={0} minHeight={0}>
+                        <box flexDirection="column" flexShrink={0} gap={1}>
+                            <For each={skills()}>{(skill) => (
+                                <box flexDirection="column" flexShrink={0}>
+                                    <text fg={skin.text}><b>{skill.name}</b> — {skill.status}</text>
+                                    <Show when={skill.title && skill.title !== skill.name}>
+                                        <text fg={skin.muted}>{skill.title}</text>
+                                    </Show>
+                                </box>
+                            )}</For>
+                        </box>
+                    </scrollbox>
                 </Show>
             </Show>
         </PageShell>
@@ -745,6 +775,11 @@ function openMemo(ui: DcpUi): void {
     ui.openPage("dcp-memo", sessionID ? { sessionID } : undefined)
 }
 
+function openSkills(ui: DcpUi): void {
+    const sessionID = ui.current().sessionID
+    ui.openPage("dcp-skills", sessionID ? { sessionID } : undefined)
+}
+
 function editCurrentBlock(ui: DcpUi): void {
     const current = ui.current()
     if (!current.sessionID) {
@@ -808,6 +843,7 @@ const DCP_COMMANDS: DcpCommandDescriptor[] = [
     { id: "dcp-tui.blocks", title: "DCP Blocks", run: openBlocks, palette: true },
     { id: "dcp-tui.messages", title: "DCP Messages", run: openMessages, palette: true },
     { id: "dcp-tui.memo", title: "DCP Memo", run: openMemo, palette: true },
+    { id: "dcp-tui.skills", title: "DCP Skills", run: openSkills, palette: true },
     { id: "dcp-tui.edit", title: "DCP Edit Block Summary", run: editCurrentBlock, palette: true, modes: [DCP_BLOCK_MODE], bind: "e", bindDesc: "Edit summary" },
     { id: "dcp-tui.edit-memo", title: "DCP Edit Memo", run: editCurrentMemo, palette: true, modes: [DCP_MEMO_MODE], bind: "e", bindDesc: "Edit memo" },
     { id: "dcp-tui.newer", title: "DCP Messages: Newer page", run: newerMessagesPage, modes: [DCP_MESSAGES_MODE], bind: "<", bindDesc: "Newer page" },
@@ -929,6 +965,10 @@ const tui: TuiPlugin = async (api, options, meta) => {
         {
             name: "dcp-memo",
             render: ({ params }) => <MemoDetail ui={ui} params={params} />,
+        },
+        {
+            name: "dcp-skills",
+            render: ({ params }) => <SkillsDetail ui={ui} params={params} />,
         },
     ])
 
@@ -1080,6 +1120,10 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
     context.ui.router.register({
         name: "dcp-memo",
         render: ({ data }) => <MemoDetail ui={ui} params={data} />,
+    })
+    context.ui.router.register({
+        name: "dcp-skills",
+        render: ({ data }) => <SkillsDetail ui={ui} params={data} />,
     })
 
     context.keymap.layer(() => ({ mode: "global", commands: v2GlobalCommands(ui) }))

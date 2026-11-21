@@ -36,6 +36,7 @@ export type DcpStats = {
 }
 
 export type TuiCachedState = {
+    skills: { name: string; title: string; status: "in context" | "injected" }[]
     blocks: BlockInfo[]
     trackedMessages: MessageEntry[]
     memo: string | null
@@ -102,7 +103,7 @@ function isEnoent(error: unknown): boolean {
 }
 
 function emptyState(): TuiCachedState {
-    return { blocks: [], trackedMessages: [], memo: null, stats: null }
+    return { blocks: [], trackedMessages: [], memo: null, stats: null, skills: [] }
 }
 
 function estimateTokens(text: string): number {
@@ -120,7 +121,17 @@ function versionTokens(versions: string[], idx: number): number {
 }
 
 function projectCommittedState(root: any): TuiCachedState {
+    const protectedNames = new Set(
+        (Array.isArray(root?.protectedSkills) ? root.protectedSkills : []).map(
+            (skill: any) => skill.name,
+        ),
+    )
     return {
+        skills: (Array.isArray(root?.loadedSkills) ? root.loadedSkills : []).map((skill: any) => ({
+            name: skill.name,
+            title: skill.title,
+            status: protectedNames.has(skill.name) ? "injected" : "in context",
+        })),
         blocks: projectBlocks(root),
         trackedMessages: projectMessages(root),
         memo: renderStoredMemo(root?.memo),

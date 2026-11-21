@@ -62,8 +62,45 @@ function stats(overrides: Partial<DcpStats> = {}): DcpStats {
 }
 
 function state(overrides: Partial<TuiCachedState> = {}): TuiCachedState {
-    return { blocks: [], trackedMessages: [], memo: null, stats: null, ...overrides }
+    return { blocks: [], trackedMessages: [], memo: null, stats: null, skills: [], ...overrides }
 }
+
+test("skill-only changes notify observers without reloading conversation or changing other sections", async (t) => {
+    let current = state({ skills: [{ name: "parser", title: "Parser", status: "in context" }] })
+    let lists = 0
+    let notifications = 0
+    const cache = createTuiSessionCache({
+        readSessionMessages: async () => {
+            lists++
+            return [entry("m1")]
+        },
+        readSessionMessage: async () => {
+            throw new Error("unexpected targeted read")
+        },
+        readState: async () => current,
+        onError: (error) => {
+            throw error
+        },
+    })
+    t.after(() => cache.dispose())
+    cache.observe("session", () => {
+        notifications++
+    })
+    await flush()
+    const before = cache.get("session")
+    const count = notifications
+    current = state({ skills: [{ name: "parser", title: "Parser", status: "injected" }] })
+    await cache.refreshCommitted("session")
+    const after = cache.get("session")
+    assert.deepEqual(after.state.skills, current.skills)
+    assert.equal(notifications, count + 1)
+    assert.equal(after.messages, before.messages)
+    assert.equal(after.state.blocks, before.state.blocks)
+    assert.equal(lists, 1)
+    await cache.refreshCommitted("session")
+    assert.equal(cache.get("session").state.skills, after.state.skills)
+    assert.equal(notifications, count + 1)
+})
 
 test("two observers share one initial conversation fetch and completion reads only queued IDs", async () => {
     const list = deferred<TuiMessageEntry[]>()

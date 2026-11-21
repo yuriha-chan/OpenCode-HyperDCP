@@ -41,7 +41,7 @@ interface SessionCacheEntry {
 }
 
 function emptyState(): TuiCachedState {
-    return { blocks: [], trackedMessages: [], memo: null, stats: null }
+    return { blocks: [], trackedMessages: [], memo: null, stats: null, skills: [] }
 }
 
 function createSessionEntry(sessionID: string): SessionCacheEntry {
@@ -99,9 +99,11 @@ export function createTuiSessionCache(dependencies: TuiSessionCacheDependencies)
         const sameTracked = isDeepStrictEqual(previous.trackedMessages, incoming.trackedMessages)
         const sameMemo = previous.memo === incoming.memo
         const sameStats = isDeepStrictEqual(previous.stats, incoming.stats)
+        const sameSkills = isDeepStrictEqual(previous.skills, incoming.skills)
         session.hasState = true
-        if (sameBlocks && sameTracked && sameMemo && sameStats) return
+        if (sameBlocks && sameTracked && sameMemo && sameStats && sameSkills) return
         session.state = {
+            skills: sameSkills ? previous.skills : incoming.skills,
             blocks: sameBlocks ? previous.blocks : incoming.blocks,
             trackedMessages: sameTracked ? previous.trackedMessages : incoming.trackedMessages,
             memo: incoming.memo,
