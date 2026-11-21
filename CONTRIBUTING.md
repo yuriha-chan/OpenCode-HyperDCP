@@ -1,6 +1,6 @@
-# Contributing to DCP
+# Contributing to HyperDCP
 
-Thank you for your interest in contributing to Dynamic Context Pruning (DCP)!
+Thank you for your interest in contributing to HyperDCP!
 
 ## License and Contributions
 
@@ -10,17 +10,13 @@ This project uses the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
 By submitting a Pull Request to this project, you agree that:
 
-1.  Your contributions are licensed under the **AGPL-3.0**.
-2.  You grant the project maintainer(s) a non-exclusive, perpetual, irrevocable, worldwide, royalty-free, transferable license to use, modify, and re-license your contributions under any terms they choose, including commercial or proprietary licenses.
-
-This arrangement ensures the project remains Open Source while providing a path for commercial sustainability.
+Your contributions are licensed under the **AGPL-3.0**.
 
 ## Getting Started
 
-1.  Fork the repository.
-2.  Create a feature branch.
-3.  Implement your changes and add tests if applicable (please NO AI SLOP).
-4.  Ensure all tests pass and the code is formatted.
-5.  Submit a Pull Request.
+1.  Clone the repository and create a modified local build.
+2.  Use it on your own.
+3.  Submit a issue you want to fix/improve on GitHub issues.
+4.  Optionally submit a Pull Request.
 
-We look forward to your contributions!
+We look forward to your participations!
