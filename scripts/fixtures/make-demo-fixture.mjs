@@ -119,6 +119,12 @@ The robot carries pies to the deposit shelf and announces each order.
   not shouty). Volume is tuned so it is audible but never startles.
 - If a slot stays full past its pickup window, the robot asks the kitchen to
   clear it rather than double-stacking.`,
+        versions: [
+            `## Order handoff (v2)
+Slot announcements now include the pickup window, so the kitchen can clear a
+full slot instead of the robot re-announcing the same order.`,
+        ],
+        activeVersionIndex: 1,
     },
 ]
 
@@ -187,11 +193,12 @@ topics.forEach((entry, index) => {
     })
 })
 
-// Pointer to the newest tracked message.
+// Pointer to the newest tracked message, then the outstanding user turn and
+// reply that the demo session screen shows.
 byRawId[rawId(raw)] = `m${String(raw).padStart(4, "0")}`
 raw += 1
-const lastSeenRaw = Object.keys(byRawId).filter((id) => byRawId[id] === `m${String(raw - 1).padStart(4, "0")}`)
-const lastSeenUserMessageId = lastSeenRaw[lastSeenRaw.length - 1]
+fillByRawId(2)
+const lastSeenUserMessageId = rawId(235)
 
 const activeIds = Object.keys(byRawId)
 
@@ -206,11 +213,13 @@ Adorable pizza-delivery robot firmware ("Doughbot"). English only, no real data.
 # Constraints
 - Never exceed 0.42 N·m on the knead motor.
 - Oven handoff must fully retract the peel before the gate closes.
+- Peel retraction is logged against a 1.4 s deadline.
 - All announcements stay friendly and never shouty.
 
 # Takeaways
 - Keep the dough sensor in safe mode when its handshake fails; never guess flour.
-- Topping jitter above 6 mm breaks the cheese blanket coverage.`
+- Topping jitter above 6 mm breaks the cheese blanket coverage.
+- The oven slot IR beam needs a 50 ms debounce.`
 
 const totalPruneTokens = topics.reduce((sum, entry) => sum + entry.compressedTokens, 0)
 

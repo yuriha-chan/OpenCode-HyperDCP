@@ -60,6 +60,8 @@ Primary purpose of this transactional mechanism is protect cached tokens, where 
 
 Ordinary tools are blocked during housekeeping by default. (configurable via [`housekeeping.allowedTools`](docs/context-reference.md#configuration); OpenCode permissions still apply).
 
+![A housekeeping pass in the session view: two memo edits, a compression, and a version toggle, with the DCP sidebar](docs/screenshots/dcp-session-housekeeping.png)
+
 The agent has the same controls you do in the housekeeping mode, so context management can happen mid-task without breaking the observable model:
 
 - `recall_compressed` — search and retrieve the original messages folded into any block.

@@ -30,14 +30,19 @@ import process from "node:process"
 import {
     makeIsolatedProject,
     bootstrapSession,
+    readSessionInfo,
+    seedSessionTranscript,
     runTui,
     writeAsciicast,
     ansiToText,
     renderFrameSnapshots,
     htmlToPng,
     repoRoot,
+    DEFAULT_COLS,
+    DEFAULT_ROWS,
 } from "./tui-harness.mjs"
 import { scenarios, findScenario, DEFAULT_WAIT_FOR } from "./tui-scenarios.mjs"
+import { buildDemoTranscript } from "./fixtures/demo-session-transcript.mjs"
 
 // Neutral, committed fixture so the harness never depends on a real personal
 // session for demos/screenshots. Regenerate with scripts/fixtures/make-demo-fixture.mjs.
@@ -49,6 +54,8 @@ function parseArgs(argv) {
         keep: false,
         list: false,
         frames: false,
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
         startupMs: 2500,
         settleMs: 600,
         timeoutMs: 20000,
@@ -63,6 +70,10 @@ function parseArgs(argv) {
             options.keep = true
         } else if (arg === "--frames") {
             options.frames = true
+        } else if (arg === "--cols") {
+            options.cols = Number(argv[++i])
+        } else if (arg === "--rows") {
+            options.rows = Number(argv[++i])
         } else if (arg === "--list") {
             options.list = true
         } else if (arg === "--startup") {
@@ -99,6 +110,8 @@ Usage:
 Options:
   --list            list scenario names and exit
   --out DIR         output directory (default: <repo>/harness-out)
+  --cols N          terminal columns for the captured screen (default: 125)
+  --rows N          terminal rows for the captured screen (default: 32)
   --frames          record and write a frame-by-frame screen timeline per scenario
   --startup MS      wait before sending the first key (default: 2500)
   --wait-for TEXT   raw-output marker signalling readiness (default: "Ask anything")
@@ -155,6 +168,14 @@ async function main() {
         console.log(`missing fixture ${DEMO_FIXTURE}; scenarios run against an empty DCP state`)
     }
 
+    // The bootstrapped session only holds "hi"; replace it with the neutral demo
+    // housekeeping pass so the session screen has something to show.
+    const info = readSessionInfo(project, sessionId)
+    seedSessionTranscript(
+        project,
+        buildDemoTranscript({ sessionId, directory: info.directory, model: info.model }),
+    )
+
     const results = []
     try {
         for (const scenario of selected) {
@@ -170,6 +191,8 @@ async function main() {
                     commandArgs: ["--session", sessionId],
                     keys: scenario.keys,
                     steps: scenario.steps,
+                    cols: scenario.cols ?? options.cols,
+                    rows: scenario.rows ?? options.rows,
                     startupMs: scenario.startupMs ?? options.startupMs,
                     waitFor: scenario.waitFor ?? options.waitFor,
                     settleMs: options.settleMs,
@@ -183,9 +206,11 @@ async function main() {
                 continue
             }
 
-            writeAsciicast(outcome.text, path.join(options.out, `${scenario.name}.cast`))
+            const cols = scenario.cols ?? options.cols
+            const rows = scenario.rows ?? options.rows
+            writeAsciicast(outcome.text, path.join(options.out, `${scenario.name}.cast`), { cols, rows })
             if (options.frames && outcome.frames) {
-                const snapshots = renderFrameSnapshots(outcome.frames)
+                const snapshots = renderFrameSnapshots(outcome.frames, { cols, rows })
                 const timelineFile = path.join(options.out, `${scenario.name}.frames.txt`)
                 const body = snapshots
                     .map((snap, index) => `===== frame ${index} @ +${(snap.dtMs / 1000).toFixed(2)}s (${snap.bytes}B)${snap.changed ? " [changed]" : ""} =====\n${snap.text}`)

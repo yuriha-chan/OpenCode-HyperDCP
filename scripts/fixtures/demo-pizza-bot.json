@@ -939,6 +939,14 @@
         "msg_demo0234": {
           "tokenCount": 476,
           "activeBlockIds": []
+        },
+        "msg_demo0235": {
+          "tokenCount": 180,
+          "activeBlockIds": []
+        },
+        "msg_demo0236": {
+          "tokenCount": 217,
+          "activeBlockIds": []
         }
       },
       "blocksById": {
@@ -1583,7 +1591,9 @@
           "effectiveToolIds": [],
           "createdAt": "2026-05-06T09:16:00.000Z",
           "summary": "## Order handoff\nThe robot carries pies to the deposit shelf and announces each order.\n\n- Shelf has 4 numbered slots; the robot always fills the lowest free slot.\n- Announcement is a short tone pattern plus a spoken order label (friendly,\n  not shouty). Volume is tuned so it is audible but never startles.\n- If a slot stays full past its pickup window, the robot asks the kitchen to\n  clear it rather than double-stacking.",
-          "summaryVersions": [],
+          "summaryVersions": [
+            "## Order handoff (v2)\nSlot announcements now include the pickup window, so the kitchen can clear a\nfull slot instead of the robot re-announcing the same order."
+          ],
           "activeVersionIndex": 1
         }
       },
@@ -1605,7 +1615,7 @@
       },
       "nextBlockId": 7,
       "nextRunId": 7,
-      "lastSeenUserMessageId": "msg_demo0234",
+      "lastSeenUserMessageId": "msg_demo0235",
       "activeMessageIds": [
         "msg_demo0001",
         "msg_demo0002",
@@ -1840,7 +1850,9 @@
         "msg_demo0231",
         "msg_demo0232",
         "msg_demo0233",
-        "msg_demo0234"
+        "msg_demo0234",
+        "msg_demo0235",
+        "msg_demo0236"
       ]
     }
   },
@@ -1850,7 +1862,7 @@
     "iterationNudgeAnchors": []
   },
   "protectedRefs": [],
-  "memo": "# Project\nAdorable pizza-delivery robot firmware (\"Doughbot\"). English only, no real data.\n\n# Working commands\n- make flash-dough   -> flash the dough sensor board\n- make test-knead    -> run the knead routine in simulation\n- make sim-pie       -> dry-run one full order end to end\n\n# Constraints\n- Never exceed 0.42 N·m on the knead motor.\n- Oven handoff must fully retract the peel before the gate closes.\n- All announcements stay friendly and never shouty.\n\n# Takeaways\n- Keep the dough sensor in safe mode when its handshake fails; never guess flour.\n- Topping jitter above 6 mm breaks the cheese blanket coverage.",
+  "memo": "# Project\nAdorable pizza-delivery robot firmware (\"Doughbot\"). English only, no real data.\n\n# Working commands\n- make flash-dough   -> flash the dough sensor board\n- make test-knead    -> run the knead routine in simulation\n- make sim-pie       -> dry-run one full order end to end\n\n# Constraints\n- Never exceed 0.42 N·m on the knead motor.\n- Oven handoff must fully retract the peel before the gate closes.\n- Peel retraction is logged against a 1.4 s deadline.\n- All announcements stay friendly and never shouty.\n\n# Takeaways\n- Keep the dough sensor in safe mode when its handshake fails; never guess flour.\n- Topping jitter above 6 mm breaks the cheese blanket coverage.\n- The oven slot IR beam needs a 50 ms debounce.",
   "messageIds": {
     "byRawId": {
       "msg_demo0001": "m0001",
@@ -2086,9 +2098,11 @@
       "msg_demo0231": "m0231",
       "msg_demo0232": "m0232",
       "msg_demo0233": "m0233",
-      "msg_demo0234": "m0234"
+      "msg_demo0234": "m0234",
+      "msg_demo0235": "m0235",
+      "msg_demo0236": "m0236"
     },
-    "nextRef": 235
+    "nextRef": 237
   },
   "stats": {
     "totalPruneTokens": 182680,

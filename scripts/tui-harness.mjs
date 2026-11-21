@@ -9,11 +9,10 @@ export const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)
 
 const ptyDriverPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "tui-pty-driver.py")
 
-// 120x40 is too narrow: opencode hides the DCP sidebar slot below a width
-// threshold, so screenshots come back empty. 150x47 is wide enough to render
-// the sidebar while keeping the captured layout tight.
-export const DEFAULT_COLS = 150
-export const DEFAULT_ROWS = 47
+// opencode hides the DCP sidebar slot below a roughly 121x27 layout. 125x32
+// keeps some margin over that threshold while capturing a tight screen.
+export const DEFAULT_COLS = 125
+export const DEFAULT_ROWS = 32
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -263,6 +262,70 @@ export function bootstrapSession(project, { timeoutMs = 90000 } = {}) {
     return row.id
 }
 
+export function readSessionInfo(project, sessionId) {
+    const dbFile = path.join(project.dataHome, "opencode", "opencode.db")
+    const db = new DatabaseSync(dbFile)
+    try {
+        const row = db.prepare("SELECT directory, model FROM session WHERE id = ?").get(sessionId)
+        if (!row) throw new Error(`session ${sessionId} not found in ${dbFile}`)
+        let model = null
+        try {
+            model = row.model ? JSON.parse(row.model) : null
+        } catch {
+            model = null
+        }
+        return { directory: row.directory, model }
+    } finally {
+        db.close()
+    }
+}
+
+// Replaces the host session's messages and parts with a synthetic transcript so
+// the session screen (and the messages page) can be demoed without a real
+// conversation. The DCP plugin state is seeded separately.
+export function seedSessionTranscript(project, transcript) {
+    const dbFile = path.join(project.dataHome, "opencode", "opencode.db")
+    if (!existsSync(dbFile)) throw new Error(`no opencode database at ${dbFile}`)
+    const db = new DatabaseSync(dbFile)
+    try {
+        db.prepare("DELETE FROM part WHERE session_id = ?").run(transcript.sessionId)
+        db.prepare("DELETE FROM message WHERE session_id = ?").run(transcript.sessionId)
+        if (transcript.title) {
+            db.prepare("UPDATE session SET title = ? WHERE id = ?").run(transcript.title, transcript.sessionId)
+        }
+        const insertMessage = db.prepare(
+            "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+        )
+        const insertPart = db.prepare(
+            "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        let clock = Date.now() - 60_000
+        for (const message of transcript.messages) {
+            clock += 1000
+            insertMessage.run(
+                message.id,
+                transcript.sessionId,
+                clock,
+                clock,
+                JSON.stringify(message.data),
+            )
+            for (const [index, part] of message.parts.entries()) {
+                const partTime = clock + index
+                insertPart.run(
+                    `prt_demo_${message.id}_${index}`,
+                    message.id,
+                    transcript.sessionId,
+                    partTime,
+                    partTime,
+                    JSON.stringify(part),
+                )
+            }
+        }
+    } finally {
+        db.close()
+    }
+}
+
 export function cloneTemplateState(templatePath, sessionId) {
     const state = JSON.parse(readFileSync(templatePath, "utf8"))
     state.lastUpdated = Date.now()
@@ -412,7 +475,7 @@ export async function runTui(options) {
     if (!child.killed) child.kill("SIGKILL")
 
     const raw = existsSync(rawCapture) ? readFileSync(rawCapture, "utf8") : ""
-    const text = ansiToText(raw)
+    const text = ansiToText(raw, { cols, rows })
     if (framePoll) clearInterval(framePoll)
 
     let stepResults = null

@@ -374,7 +374,7 @@ class Screen:
             if run:
                 cells.append(html_mod.escape("".join(run)))
             rows_html.append('<div class="row">' + "".join(cells) + "</div>")
-        body = "\n".join(rows_html)
+        body = "".join(rows_html)
         screen_bg = self._dominant_bg() or "#080808"
         return (
             "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
@@ -594,14 +594,21 @@ def main():
                             failure = failure or f"assert failed: {expected}"
                             terminating = True
                             cleanup_at = now + 0.2
-                    elif "click" in step:
-                        label = step["click"]
+                    elif "click" in step or "clickIfPresent" in step:
+                        optional = "clickIfPresent" in step
+                        label = step["clickIfPresent"] if optional else step["click"]
                         spot = screen.find(label)
-                        if spot is None:
+                        if spot is None and not optional:
                             results.append({"step": "click", "label": label, "ok": False, "reason": "not found"})
                             failure = failure or f"click target not found: {label}"
                             terminating = True
                             cleanup_at = now + 0.2
+                        elif spot is None:
+                            results.append({"step": "clickIfPresent", "label": label, "ok": True, "skipped": True})
+                            delay_s = step.get("delay", args.settle_ms) / 1000.0
+                            complete_step()
+                            step_started_at = None
+                            wait_until = now + delay_s
                         else:
                             row_index, col_index = spot
                             col = col_index + 1

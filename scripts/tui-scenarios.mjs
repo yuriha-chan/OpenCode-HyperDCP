@@ -25,6 +25,16 @@ export function openCommand(name, { delay = 1500 } = {}) {
 
 export const scenarios = [
     {
+        name: "dcp-session-housekeeping",
+        title: "Session screen with a housekeeping pass and the DCP sidebar",
+        steps: [
+            { waitFor: DEFAULT_WAIT_FOR, timeout: 30000 },
+            { keys: "", delay: 1500 },
+            { clickIfPresent: "✕", delay: 800 },
+            { screenshot: "dcp-session-housekeeping.png" },
+        ],
+    },
+    {
         name: "dcp-blocks-list",
         title: "Open DCP block list from the palette",
         steps: [
