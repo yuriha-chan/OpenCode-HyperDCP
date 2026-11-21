@@ -163,41 +163,6 @@ Skills are not blanket-protected by default. Unloading stops the protected injec
 
 The sidebar and pages share a session-scoped cache. Conversation updates are fetched incrementally after assistant completion, rather than reloading the entire conversation on every event. Block, memo, and skill views observe persisted state; draft block and memo edits remain private until housekeeping commits. Editor saves use the same refresh path. Valid page, block, and explicit summary-version selections are preserved as data changes.
 
-## Installation
-
-OpenCode installs plugins directly from npm by name — no local build required.
-
-1. Add the package (and its TUI companion) to your OpenCode config,
-   `~/.config/opencode/opencode.json`:
-
-    ```json
-    {
-        "$schema": "https://opencode.ai/config.json",
-        "plugin": ["@architectural-composition/opencode-hyperdcp"]
-    }
-    ```
-
-    Scoped npm packages are supported. OpenCode installs the plugin automatically
-    with Bun at startup and caches it under `~/.cache/opencode/node_modules/`.
-
-2. The TUI pages and sidebar are registered through `~/.config/opencode/tui.json`:
-
-    ```json
-    {
-        "$schema": "https://opencode.ai/tui.json",
-        "plugin": ["@architectural-composition/opencode-hyperdcp"]
-    }
-    ```
-
-    Alternatively, add the package with the CLI, which writes these entries for you:
-
-    ```sh
-    opencode plugin @architectural-composition/opencode-hyperdcp
-    ```
-
-3. Restart OpenCode. Package updates are managed with `opencode plugin list`,
-   `opencode plugin check`, and `opencode plugin update`.
-
 ## Usage
 
 1. Open the DCP pages from the command palette (`ctrl+p`) with `/dcp-tui-blocks`,
