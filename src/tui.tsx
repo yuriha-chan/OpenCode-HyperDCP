@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { TextAttributes, type TextNodeOptions } from "@opentui/core"
+import { TextAttributes, type ScrollBoxRenderable, type TextNodeOptions } from "@opentui/core"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import type { Plugin as TuiPluginV2 } from "@opencode/plugin/tui"
 import type { KeymapCommand, Route } from "@opencode/plugin/tui/context"
@@ -31,6 +31,8 @@ type DcpPageState = {
     blockId?: number
 }
 
+type BlockScrollAction = "up" | "down" | "pageup" | "pagedown" | "home" | "end"
+
 interface DcpUi {
     colors(): ReturnType<typeof look>
     current(): DcpPageState
@@ -45,6 +47,7 @@ interface DcpUi {
     cache: TuiSessionCache
     log?(message: string): void
     messagesNav?: (delta: number) => void
+    blockScroll?: (action: BlockScrollAction) => void
 }
 
 function isDcpPage(name: string): name is DcpPage {
@@ -315,11 +318,11 @@ function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "h
     )
 }
 
-function PageShell(props: { ui: DcpUi; title: string; children: any; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
+function PageShell(props: { ui: DcpUi; title: string; children: any; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown>; fill?: boolean }) {
     const skin = props.ui.colors()
 
     return (
-        <box flexDirection="column" gap={1} padding={1}>
+        <box flexDirection="column" gap={1} padding={1} flexGrow={props.fill ? 1 : undefined} minHeight={props.fill ? 0 : undefined}>
             <PageHeader ui={props.ui} title={props.title} backTarget={props.backTarget} backParams={props.backParams} />
             <text fg={skin.muted}>{"─".repeat(40)}</text>
             {props.children}
@@ -423,6 +426,7 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
             title="Block Detail"
             backTarget={sessionID() ? "dcp-blocks" : undefined}
             backParams={sessionID() ? { sessionID: sessionID() } : undefined}
+            fill
         >
             <Show when={sessionID()} fallback={<text fg={skin.muted}>No active session</text>}>
                 <Show when={readCurrent()} fallback={<text fg={skin.muted}>Block b{blockId()} not found</text>}>
@@ -436,6 +440,48 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                             const text = versionTextOf(b().versions, idx)
                             return text.length > 0 ? text : "(empty)"
                         }
+                        let scroll: ScrollBoxRenderable | undefined
+                        const [barVisible, setBarVisible] = createSignal(false)
+                        // v1's bundled ScrollBox exposes the viewport height as the box height, not a viewport object
+                        const viewportHeight = (box: ScrollBoxRenderable): number =>
+                            typeof box.viewport === "object" ? box.viewport.height : box.height
+                        const refreshBar = () => {
+                            const box = scroll
+                            if (!box || box.isDestroyed) return
+                            const apply = () => {
+                                const current = scroll
+                                if (!current || current.isDestroyed) return
+                                setBarVisible(current.scrollHeight > viewportHeight(current))
+                            }
+                            if (typeof box.afterLayout === "function") box.afterLayout(apply)
+                            else setTimeout(apply, 50)
+                        }
+                        const handleBlockScroll = (action: BlockScrollAction) => {
+                            const box = scroll
+                            if (!box || box.isDestroyed) return
+                            if (action === "home") {
+                                box.scrollTo(0)
+                                return
+                            }
+                            if (action === "end") {
+                                box.scrollTo(box.scrollHeight)
+                                return
+                            }
+                            if (action === "up") box.scrollBy(-1)
+                            else if (action === "down") box.scrollBy(1)
+                            else box.scrollBy((action === "pageup" ? -1 : 1) * Math.max(1, viewportHeight(box) - 1))
+                        }
+                        props.ui.blockScroll = handleBlockScroll
+                        onCleanup(() => {
+                            if (props.ui.blockScroll === handleBlockScroll) props.ui.blockScroll = undefined
+                        })
+                        createEffect(() => {
+                            versionText(shownVersion())
+                            const box = scroll
+                            if (!box || box.isDestroyed) return
+                            box.scrollTo(0)
+                            refreshBar()
+                        })
                         return (
                             <>
                                 <text fg={skin.text}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
@@ -466,7 +512,24 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                                     {b().batchTopic ? ` | batch: ${b().batchTopic}` : ""}
                                 </text>
                                 <text fg={skin.muted}>{"─".repeat(40)}</text>
-                                <text fg={skin.text}>{versionText(shownVersion())}</text>
+                                <scrollbox
+                                    ref={(box: ScrollBoxRenderable) => {
+                                        scroll = box
+                                        refreshBar()
+                                    }}
+                                    viewportOptions={{ paddingRight: barVisible() ? 1 : 0 }}
+                                    verticalScrollbarOptions={{
+                                        paddingLeft: 1,
+                                        visible: barVisible(),
+                                        trackOptions: { backgroundColor: skin.panel, foregroundColor: skin.muted },
+                                    }}
+                                    flexGrow={1}
+                                    minHeight={0}
+                                >
+                                    <box flexShrink={0}>
+                                        <text fg={skin.text}>{versionText(shownVersion())}</text>
+                                    </box>
+                                </scrollbox>
                             </>
                         )
                     })()}
@@ -710,6 +773,10 @@ function olderMessagesPage(ui: DcpUi): void {
     ui.messagesNav?.(1)
 }
 
+const scrollBlock = (action: BlockScrollAction) => (ui: DcpUi): void => {
+    ui.blockScroll?.(action)
+}
+
 function backToSession(ui: DcpUi): void {
     const current = ui.current()
     if (current.page === "dcp-block" && current.sessionID) {
@@ -743,6 +810,12 @@ const DCP_COMMANDS: DcpCommandDescriptor[] = [
     { id: "dcp-tui.edit-memo", title: "DCP Edit Memo", run: editCurrentMemo, palette: true, modes: [DCP_MEMO_MODE], bind: "e", bindDesc: "Edit memo" },
     { id: "dcp-tui.newer", title: "DCP Messages: Newer page", run: newerMessagesPage, modes: [DCP_MESSAGES_MODE], bind: "<", bindDesc: "Newer page" },
     { id: "dcp-tui.older", title: "DCP Messages: Older page", run: olderMessagesPage, modes: [DCP_MESSAGES_MODE], bind: ">", bindDesc: "Older page" },
+    { id: "dcp-tui.block-up", title: "DCP Block: Scroll up", run: scrollBlock("up"), modes: [DCP_BLOCK_MODE], bind: "up", bindDesc: "Scroll up" },
+    { id: "dcp-tui.block-down", title: "DCP Block: Scroll down", run: scrollBlock("down"), modes: [DCP_BLOCK_MODE], bind: "down", bindDesc: "Scroll down" },
+    { id: "dcp-tui.block-page-up", title: "DCP Block: Previous page", run: scrollBlock("pageup"), modes: [DCP_BLOCK_MODE], bind: "pageup", bindDesc: "Previous page" },
+    { id: "dcp-tui.block-page-down", title: "DCP Block: Next page", run: scrollBlock("pagedown"), modes: [DCP_BLOCK_MODE], bind: "pagedown", bindDesc: "Next page" },
+    { id: "dcp-tui.block-home", title: "DCP Block: Scroll to top", run: scrollBlock("home"), modes: [DCP_BLOCK_MODE], bind: "home", bindDesc: "Scroll to top" },
+    { id: "dcp-tui.block-end", title: "DCP Block: Scroll to bottom", run: scrollBlock("end"), modes: [DCP_BLOCK_MODE], bind: "end", bindDesc: "Scroll to bottom" },
     { id: "dcp-tui.back", title: "Go back to session", run: backToSession, configurable: true, modes: [DCP_MODE, DCP_BLOCK_MODE, DCP_MESSAGES_MODE, DCP_MEMO_MODE], bind: "escape", bindDesc: "Back", bindingScope: "always" },
 ]
 
