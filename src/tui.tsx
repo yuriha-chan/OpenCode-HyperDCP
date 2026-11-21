@@ -471,6 +471,9 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                         )
                     })()}
                 </Show>
+                <box onMouseDown={() => editCurrentBlock(props.ui)}>
+                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` Edit ${commandKeyHint("dcp-tui.edit")} `}</text>
+                </box>
             </Show>
         </PageShell>
     )
@@ -648,6 +651,9 @@ const MemoDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
                     <text fg={skin.muted}>{"─".repeat(40)}</text>
                     <text fg={skin.text}>{memo()!}</text>
                 </Show>
+                <box onMouseDown={() => editCurrentMemo(props.ui)}>
+                    <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` Edit ${commandKeyHint("dcp-tui.edit-memo")} `}</text>
+                </box>
             </Show>
         </PageShell>
     )
