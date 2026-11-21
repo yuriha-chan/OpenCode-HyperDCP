@@ -2,9 +2,11 @@
 
 **OpenCode-HyperDCP** is a context management plugin for the [OpenCode](https://opencode.ai) AI coding agent. Forked from [opencode-dynamic-context-pruning](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning), it gives you an **observable and controllable** context environment optimized for model stability and cost efficiency.
 
-One npm package supports **OpenCode v1 and v2**, with native server and TUI registrations sharing the same DCP operations and persisted state. See [CHANGELOG.md](CHANGELOG.md) for release details.
+![A housekeeping pass in the session view: two memo edits, a compression, and a version toggle, with the DCP sidebar](docs/screenshots/dcp-session-housekeeping.png)
 
-[Installation](#installation) - [Quick Start](#quick-start-make-and-inspect-your-first-block) - [Features](#feature-tour) - [References](#reference)
+One npm package supports **OpenCode v1 and v2**.
+
+Quick Lins: [Installation](#installation) - [Quick Start](#quick-start-make-and-inspect-your-first-block) - [Features](#feature-tour) - [References](#reference)
 
 ## Philosophy
 
@@ -60,7 +62,6 @@ Primary purpose of this transactional mechanism is protect cached tokens, where 
 
 Ordinary tools are blocked during housekeeping by default. (configurable via [`housekeeping.allowedTools`](docs/context-reference.md#configuration); OpenCode permissions still apply).
 
-![A housekeeping pass in the session view: two memo edits, a compression, and a version toggle, with the DCP sidebar](docs/screenshots/dcp-session-housekeeping.png)
 
 The agent has the same controls you do in the housekeeping mode, so context management can happen mid-task without breaking the observable model:
 
