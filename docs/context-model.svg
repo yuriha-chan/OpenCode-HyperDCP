@@ -1,0 +1,116 @@
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="920"
+    height="460"
+    viewBox="0 0 920 460"
+    role="img"
+    aria-labelledby="title description"
+>
+    <title id="title">Original history and the agent's working context</title>
+    <desc id="description">
+        A selected completed range in session history is represented by summary block b3 in the
+        agent's context. The agent can recall original detail as a tool result when needed. In this
+        example, current work remains uncompressed. Both columns are excerpts, and the message and
+        block IDs are examples.
+    </desc>
+    <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 Z" fill="#475569" />
+        </marker>
+        <marker id="recall-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0 L8 4 L0 8 Z" fill="#0f766e" />
+        </marker>
+        <style>
+            text {
+                font-family:
+                    system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    sans-serif;
+                fill: #0f172a;
+            }
+            .heading {
+                font-size: 23px;
+                font-weight: 700;
+            }
+            .label {
+                font-size: 21px;
+                font-weight: 600;
+            }
+            .body {
+                font-size: 18px;
+            }
+            .small {
+                font-size: 16px;
+                fill: #334155;
+            }
+            .panel {
+                fill: #ffffff;
+                stroke: #64748b;
+                stroke-width: 2;
+            }
+            .flow {
+                fill: none;
+                stroke: #475569;
+                stroke-width: 2;
+                marker-end: url(#arrow);
+            }
+        </style>
+    </defs>
+    <rect width="920" height="460" rx="16" fill="#f8fafc" />
+    <text x="24" y="46" class="heading">Session history</text>
+    <text x="24" y="71" class="small">Excerpt of the original conversation</text>
+    <text x="566" y="46" class="heading">Agent context</text>
+    <text x="566" y="71" class="small">Excerpt of what the agent receives</text>
+    <rect x="24" y="92" width="330" height="154" rx="12" class="panel" />
+    <text x="44" y="129" class="label">Original messages</text>
+    <text x="44" y="163" class="body">Selected completed range</text>
+    <text x="44" y="198" class="small">m0062–m0108</text>
+    <rect
+        x="566"
+        y="92"
+        width="330"
+        height="96"
+        rx="12"
+        fill="#e0f2fe"
+        stroke="#0369a1"
+        stroke-width="2"
+    />
+    <text x="586" y="129" class="label">Summary block b3</text>
+    <text x="586" y="163" class="body">Active summary version</text>
+    <path d="M354 140 H556" class="flow" />
+    <text x="460" y="121" class="body" text-anchor="middle">Agent summarizes</text>
+    <rect
+        x="566"
+        y="220"
+        width="330"
+        height="76"
+        rx="12"
+        fill="#f0fdfa"
+        stroke="#0f766e"
+        stroke-width="2"
+        stroke-dasharray="6 4"
+    />
+    <text x="586" y="251" class="label">Retrieved messages</text>
+    <text x="586" y="279" class="small">Tool result, only when requested</text>
+    <path
+        d="M354 208 H382 V258 H556"
+        fill="none"
+        stroke="#0f766e"
+        stroke-width="2"
+        stroke-dasharray="6 4"
+        marker-end="url(#recall-arrow)"
+    />
+    <text x="466" y="239" class="body" text-anchor="middle">Recall detail</text>
+    <rect x="24" y="336" width="330" height="86" rx="12" class="panel" />
+    <text x="44" y="372" class="label">Current work</text>
+    <text x="44" y="402" class="small">Uncompressed messages</text>
+    <rect x="566" y="336" width="330" height="86" rx="12" class="panel" />
+    <text x="586" y="372" class="label">Current work</text>
+    <text x="586" y="402" class="small">Uncompressed messages</text>
+    <path d="M354 379 H556" class="flow" />
+    <text x="460" y="360" class="body" text-anchor="middle">Keep in context</text>
+    <text x="460" y="448" class="small" text-anchor="middle">
+        Example message and block IDs · dashed path: optional recall
+    </text>
+</svg>
