@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { TextAttributes, type ScrollBoxRenderable, type TextNodeOptions } from "@opentui/core"
+import { SyntaxStyle, TextAttributes, type CliRenderer, type ScrollBoxRenderable, type TextNodeOptions } from "@opentui/core"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import type { Plugin as TuiPluginV2 } from "@opencode/plugin/tui"
 import type { KeymapCommand, Route } from "@opencode/plugin/tui/context"
@@ -35,6 +35,7 @@ type BlockScrollAction = "up" | "down" | "pageup" | "pagedown" | "home" | "end"
 
 interface DcpUi {
     colors(): ReturnType<typeof look>
+    documentStyle: SyntaxStyle
     current(): DcpPageState
     openPage(page: DcpPage, data?: Record<string, unknown>): void
     openSession(sessionID?: string): void
@@ -49,6 +50,42 @@ interface DcpUi {
     messagesNav?: (delta: number) => void
     blockScroll?: (action: BlockScrollAction) => void
 }
+
+function createDocumentStyle(renderer: CliRenderer) {
+    // v1's style factory ignores the owner argument; v2 requires its renderer's native scene.
+    const style = SyntaxStyle.fromStyles({
+        "markup.heading": { fg: "#56d4e8", bold: true },
+        "markup.heading.1": { fg: "#56d4e8", bold: true },
+        "markup.heading.2": { fg: "#e8c768", bold: true },
+        "markup.heading.3": { fg: "#8bd49c", bold: true },
+        "markup.heading.4": { fg: "#8bd49c", bold: true },
+        "markup.heading.5": { fg: "#8bd49c", bold: true },
+        "markup.heading.6": { fg: "#8bd49c", bold: true },
+        "markup.strong": { bold: true },
+        "markup.italic": { italic: true },
+        "markup.raw": { fg: "#e8c768" },
+        "markup.link": { fg: "#56d4e8", underline: true },
+    }, renderer.nativeScene)
+    return {
+        style,
+        dispose() {
+            if (typeof renderer.idle === "function") {
+                void renderer.idle().then(() => style.destroy(), () => style.destroy())
+            } else style.destroy()
+        },
+    }
+}
+
+const DocumentBody = (props: { ui: DcpUi; content: string }) => (
+    <markdown
+        content={props.content}
+        syntaxStyle={props.ui.documentStyle}
+        conceal={false}
+        streaming={false}
+        fg={props.ui.colors().text}
+        flexShrink={0}
+    />
+)
 
 function isDcpPage(name: string): name is DcpPage {
     return name === "dcp-blocks" || name === "dcp-block" || name === "dcp-messages" || name === "dcp-memo" || name === "dcp-skills"
@@ -559,7 +596,7 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                                     minHeight={0}
                                 >
                                     <box flexShrink={0}>
-                                        <text fg={skin.text}>{versionText(shownVersion())}</text>
+                                        <DocumentBody ui={props.ui} content={versionText(shownVersion())} />
                                     </box>
                                 </scrollbox>
                             </>
@@ -744,7 +781,7 @@ const MemoDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => {
                 <Show when={memo() !== null} fallback={<text fg={skin.muted}>No memo set</text>}>
                     <text fg={skin.muted}>{memo()!.length} chars</text>
                     <text fg={skin.muted}>{"─".repeat(40)}</text>
-                    <text fg={skin.text}>{memo()!}</text>
+                    <DocumentBody ui={props.ui} content={memo()!} />
                 </Show>
                 <box onMouseDown={() => editCurrentMemo(props.ui)}>
                     <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` Edit ${commandKeyHint("dcp-tui.edit-memo")} `}</text>
@@ -893,12 +930,15 @@ const tui: TuiPlugin = async (api, options, meta) => {
         onError: (error) => log(`refresh error: ${formatError(error)}`),
     })
     const unsubscribeRefresh = subscribeV1Refresh(api.event, cache)
+    const document = createDocumentStyle(api.renderer)
     api.lifecycle.onDispose(() => {
         unsubscribeRefresh()
         cache.dispose()
+        document.dispose()
     })
     const ui: DcpUi = {
         colors: () => look(api.theme.current),
+        documentStyle: document.style,
         current: () => {
             const route = api.route.current as { name: string; params?: Record<string, unknown> }
             return {
@@ -1078,8 +1118,10 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
         onError: (error) => console.error("dcp-blocks: refresh error", error),
     })
     const unsubscribeRefresh = subscribeV2Refresh(context.data, cache)
+    const document = createDocumentStyle(context.renderer)
     const ui: DcpUi = {
         colors: () => look(context.theme),
+        documentStyle: document.style,
         current: () => v2PageState(context.ui.router.current()),
         openPage: (page, data) => context.ui.router.navigate({ type: "plugin", name: page, data }),
         openSession: (sessionID) => context.ui.router.navigate(sessionID ? { type: "session", sessionID } : { type: "home" }),
@@ -1141,6 +1183,7 @@ const setup: TuiPluginV2.Definition["setup"] = (context) => {
         unsubscribeToasts?.()
         unsubscribeRefresh()
         cache.dispose()
+        document.dispose()
     }
 }
 
