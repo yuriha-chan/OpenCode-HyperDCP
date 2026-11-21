@@ -27,12 +27,12 @@ import time
 
 TERMINATE = b"\x03\x03"
 
-# Screen-to-PNG metrics. CHAR_W_PX is the advance of DejaVu Sans Mono at
-# FONT_SIZE_PX (0.602 em); keep the chromium viewport exactly this size so the
+# Screen-to-PNG metrics. CHAR_W_PX is the advance of Terminus (TTF) at
+# FONT_SIZE_PX (0.571 em); keep the chromium viewport exactly this size so the
 # screenshot has no empty margin to the right.
 FONT_SIZE_PX = 14
 LINE_H_PX = 15
-CHAR_W_PX = FONT_SIZE_PX * 0.602
+CHAR_W_PX = 8.0
 SCREEN_PAD_PX = 6
 
 
@@ -379,7 +379,7 @@ class Screen:
         return (
             "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
             f"html,body{{margin:0;background:{screen_bg};}}"
-            ".screen{font-family:'DejaVu Sans Mono',monospace;"
+            ".screen{font-family:'Terminus (TTF)','DejaVu Sans Mono',monospace;"
             f"font-size:{FONT_SIZE_PX}px;color:#ffffff;"
             "white-space:pre;display:inline-block;"
             f"padding:{SCREEN_PAD_PX}px;}}"
