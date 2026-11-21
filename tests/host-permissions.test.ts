@@ -11,6 +11,7 @@ import { readHousekeepingDraft } from "../lib/state/housekeeping-draft-store"
 import type { SkillContext, WithParts } from "../lib/state"
 import { RECALL_COMPRESSED, RECALL_FORMAT_EXTENSION } from "../lib/prompts/recall"
 import { createSkillExecuteAfterHandler } from "../lib/skills"
+import { HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION } from "../lib/housekeeping/history"
 import { wrapCompressedSummary } from "../lib/summary-text"
 import {
     commitBlock,
@@ -3142,7 +3143,7 @@ test("native completed transcript projection keeps ordinary work and receipts wi
     ) as any
     assert.equal(
         projectedEntryResult.content[0].result.value,
-        "1 memo edit. details truncated.",
+        `1 memo edit. ${HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION}`,
     )
     assert.equal(
         request.messages.some((message: any) => message.id === edit.messageID),

@@ -26,3 +26,12 @@ export interface GuardOperationContext {
 export function operationIdentity(messageID: string, callID: string): string {
     return `${messageID}\0${callID}`
 }
+
+export const LEAVE_QUALIFYING_OPERATIONS = new Set([
+    "compress",
+    "rewrite_summary",
+    "expand_block",
+    "toggle_summary_version",
+    "command:decompress",
+    "command:toggle",
+])

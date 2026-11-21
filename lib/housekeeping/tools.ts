@@ -20,7 +20,11 @@ import { buildEntryGuidance, cloneDraft, publishDraft } from "./state"
 import type { HousekeepingTransaction } from "../state"
 import type { HousekeepingDraft, HousekeepingDraftRef } from "../state"
 import type { Memo } from "../memo"
-import type { SharedOperationContext, ToolExecutionContext } from "./types"
+import {
+    LEAVE_QUALIFYING_OPERATIONS,
+    type SharedOperationContext,
+    type ToolExecutionContext,
+} from "./types"
 
 export const ENTER_HOUSEKEEPING_DESCRIPTION =
     "Enter housekeeping mode and return eligible ranges and maintenance guidance. Keep the mode active for the entire maintenance pass: memo updates, planned compression, and all summary edits across affected blocks. Call leave_housekeeping only after completing all intended changes."
@@ -40,15 +44,6 @@ async function prepareToolSession(ctx: ToolContext, sessionID: string): Promise<
 function callIdentity(context: ToolExecutionContext): string | undefined {
     return context.callID || undefined
 }
-
-const LEAVE_QUALIFYING_OPERATIONS = new Set([
-    "compress",
-    "rewrite_summary",
-    "expand_block",
-    "toggle_summary_version",
-    "command:decompress",
-    "command:toggle",
-])
 
 function completedEntry(
     state: ToolContext["state"],

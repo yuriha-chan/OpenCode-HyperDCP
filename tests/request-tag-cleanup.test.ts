@@ -11,6 +11,7 @@ process.env.XDG_CONFIG_HOME = join(dataDirectory, "config")
 after(() => rm(dataDirectory, { recursive: true, force: true }))
 const { default: definition } = await import("../server")
 const { Logger } = await import("../lib/logger")
+const { HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION } = await import("../lib/housekeeping/history")
 const { createSessionState, saveSessionStateStrict } = await import("../lib/state")
 
 async function captureContextHook() {
@@ -258,7 +259,7 @@ test("session context projects only the current session's completed housekeeping
             content: [
                 {
                     ...results[0].content[0],
-                    result: { type: "text", value: "details truncated." },
+                    result: { type: "text", value: HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION },
                 },
             ],
         },

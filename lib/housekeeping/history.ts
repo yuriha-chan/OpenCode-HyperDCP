@@ -6,7 +6,12 @@ import type {
     WithParts,
 } from "../state"
 import { readHousekeepingDraft } from "../state/housekeeping-draft-store"
-import { operationIdentity } from "./types"
+import { LEAVE_QUALIFYING_OPERATIONS, operationIdentity } from "./types"
+
+export const HOUSEKEEPING_ENTRY_WITH_COMPRESSION =
+    "Housekeeping finished. Tool calls during housekeeping are removed from history. Missing tool calls in history is expected."
+export const HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION =
+    "Housekeeping finished. Tool calls during housekeeping are removed from history. No compression is done because of error or model decision. Do not retry housekeeping."
 
 const HOUSEKEEPING_TOOL_NAMES = new Set([
     "enter_housekeeping",
@@ -62,7 +67,12 @@ function formatOperationCounts(transaction: HousekeepingTransaction): string {
         if (!count) return []
         return [`${count} ${category}${count === 1 ? "" : "s"}`]
     }).join(", ")
-    return `${summary ? `${summary}. ` : ""}details truncated.`
+    const finish = transaction.operationRecords.some((operation) =>
+        LEAVE_QUALIFYING_OPERATIONS.has(operation.tool),
+    )
+        ? HOUSEKEEPING_ENTRY_WITH_COMPRESSION
+        : HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION
+    return `${summary ? `${summary}. ` : ""}${finish}`
 }
 
 export function captureEligibleSourceMessages(
@@ -316,9 +326,7 @@ export async function reconcileHousekeepingHistory(
         messages.some(
             (message) =>
                 message.info.id === messageId &&
-                message.parts.some(
-                    (part) => part.type === "tool" && part.callID === callId,
-                ),
+                message.parts.some((part) => part.type === "tool" && part.callID === callId),
         )
     const callSurvives = (record: HousekeepingTransaction["operationRecords"][number]): boolean =>
         record.tool.startsWith("command:")
@@ -353,10 +361,7 @@ export async function reconcileHousekeepingHistory(
     const undoTransactions = transactions
         .filter((transaction) => {
             if (!transaction.completed) return false
-            const entrySurvives = hasCall(
-                transaction.entryMessageId,
-                transaction.entryCallId,
-            )
+            const entrySurvives = hasCall(transaction.entryMessageId, transaction.entryCallId)
             const leaveSurvives = hasCall(
                 transaction.completed.leaveMessageId,
                 transaction.completed.leaveCallId,
@@ -371,15 +376,9 @@ export async function reconcileHousekeepingHistory(
         ...undoTransactions,
         ...transactions.filter((item) => !undoIds.has(item.id)),
     ]) {
-        const entrySurvives = hasCall(
-            transaction.entryMessageId,
-            transaction.entryCallId,
-        )
+        const entrySurvives = hasCall(transaction.entryMessageId, transaction.entryCallId)
         const leaveSurvives = transaction.completed
-            ? hasCall(
-                  transaction.completed.leaveMessageId,
-                  transaction.completed.leaveCallId,
-              )
+            ? hasCall(transaction.completed.leaveMessageId, transaction.completed.leaveCallId)
             : false
         const active = state.housekeeping?.id === transaction.id ? state.housekeeping : undefined
         const survivingOperations = transaction.operationRecords.filter(callSurvives)

@@ -2,6 +2,7 @@ import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { PluginConfig } from "../lib/config"
+import { HOUSEKEEPING_ENTRY_WITH_COMPRESSION } from "../lib/housekeeping/history"
 import {
     createChatMessageTransformHandler,
     createCommandExecuteHandler,
@@ -837,7 +838,7 @@ test("chat transform retains paired boundaries and outside parts while hiding co
     assert.ok(entryPart.state.status === "completed")
     assert.ok(leavePart.state.status === "completed")
     assert.ok(entryPart.state.output.trim().length <= 160)
-    assert.equal(entryPart.state.output, "1 compression. details truncated.")
+    assert.equal(entryPart.state.output, `1 compression. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`)
     assert.notEqual(entryPart.state.output, entry)
     assert.doesNotMatch(
         entryPart.state.output,

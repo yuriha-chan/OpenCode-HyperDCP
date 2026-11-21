@@ -3,6 +3,57 @@
 All notable changes to OpenCode-HyperDCP are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## [102.0.0]
+
+### Added
+
+- OpenCode v2 support alongside v1 in one package, with separate native server and
+  TUI registrations sharing DCP operations. Includes housekeeping, compression,
+  summary tools, memo, skill lifecycle, commands, and compression notifications.
+- V2 model-request cleanup for untrusted DCP tags, with default stop sequences
+  guarding DCP tag generation. Trusted context annotations are injected afterward;
+  request cleanup does not rewrite the saved transcript.
+- Lifecycle-based subagent protection on both hosts through
+  `compress.protectSubagent`: `none`, `metadata` (default), or `full`.
+    - Running executions are retained. Terminal executions are retained when their
+      termination message is covered by the last summary projected in conversation
+      order; coverage of the calling message alone does not qualify.
+    - Steering a running child extends its execution entry; resuming after
+      termination creates another entry. Full protection keeps the report delivered
+      for that execution, not a later answer fetched from the child session.
+- A read-only loaded-skills page (`/dcp-tui-skills`) showing `in context` for loaded
+  skills not in the protected list and `injected` for loaded, protected skills.
+- Scrollable block summaries with mouse-wheel and Up/Down, Page Up/Page Down,
+  Home/End controls; Messages paging with `<` and `>`; Edit buttons and key hints.
+- Markdown rendering for block summaries and memo documents, with distinct heading
+  colors and shared formatting styles.
+
+### Changed
+
+- TUI views share incremental per-session caches. Conversation changes refresh
+  after assistant completion; DCP views observe committed state, including editor
+  saves, while retaining valid page and summary-version selections.
+- Summary editing and inspection expose document text without the compression
+  header or block-reference tag. Model-context projection generates trusted
+  wrappers separately; existing persisted summaries remain readable.
+- Dedicated subagent protection replaces generic compression protection for
+  `task` and `subagent`. Removed `task` from default `compress.protectedTools`;
+  explicit and wildcard generic rules cannot restore that behavior.
+  `commands.protectedTools` defaults are unchanged.
+- Housekeeping source tracking uses message and tool-call identities instead of
+  persisted native part IDs, with compatibility for existing saved metadata.
+- Completed housekeeping entry messages retain operation counts and explain omitted
+  tool calls. Passes without work qualifying for an unforced leave explicitly
+  discourage retrying housekeeping, using the same criterion as the leave guard.
+
+### Fixed
+
+- Editor terminal restoration and the memo/summary save workflow.
+- Stale sidebar and page data after conversation completion or committed DCP edits.
+- White-on-white TUI button labels on dark terminals.
+- Missing block header and version rows when a long summary overflows its viewport.
+- V2 TUI module registration and command visibility in menus and slash completion.
+
 ## [101.1.0]
 
 ### Changed

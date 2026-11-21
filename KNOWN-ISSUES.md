@@ -1,14 +1,11 @@
 # Known Issues
 
-## Block Detail page does not refresh after editing a summary
+## Resolved: Block Detail page did not refresh after editing a summary
 
-Status: unresolved
+Status: resolved; editor save, terminal restoration, and persistence after restart verified by the user.
 
-When editing a block summary from the TUI (palette command `dcp-tui-edit` or the `e` binding on the Block Detail page), the edit is applied server-side, but the open Block Detail page keeps showing the old text. Re-entering the page shows the updated summary.
+Editing a block summary previously applied the edit server-side while the open Block Detail page kept showing the old text. Re-entering the page showed the updated summary.
 
-Attempts that did not change the behavior:
+The editor workflow awaits terminal suspension, child-process exit, and terminal restoration before submitting the saved document. Sidebar and page views observe the same session-scoped cache of committed DCP state, so editor saves refresh mounted views without route remounts. Valid page and explicit summary-version selections are preserved.
 
-- Remounting the page by cycling between two identical route names (`dcp-block` / `dcp-block-alt`).
-- Polling the session state file until the block summary matches the edited text, then remounting (poll stops when the user leaves the page or a newer edit supersedes it).
-
-Root cause unconfirmed. Candidates: `route.current`/params do not match after the handoff command, or the remount does not re-read the state file.
+The earlier route-remount workarounds and editor-specific polling are not used. This entry no longer represents an outstanding issue; it does not assert that the earlier route-parameter hypotheses were established causes.

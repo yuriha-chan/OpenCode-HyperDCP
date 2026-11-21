@@ -1,6 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { projectHousekeepingHistory } from "../lib/housekeeping/history"
+import {
+    HOUSEKEEPING_ENTRY_WITH_COMPRESSION,
+    HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION,
+    projectHousekeepingHistory,
+} from "../lib/housekeeping/history"
 import { prepareModelContext } from "../lib/model-context"
 import type { HousekeepingOperation, HousekeepingTransaction, WithParts } from "../lib/state"
 
@@ -11,7 +15,7 @@ type TestCompleted = NonNullable<HousekeepingTransaction["completed"]>
 type TestTransaction = HousekeepingTransaction
 
 const sessionID = "ses_housekeeping_history"
-const EMPTY_ENTRY_PLACEHOLDER = "details truncated."
+const EMPTY_ENTRY_PLACEHOLDER = HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION
 const ENTRY_TITLE = "Housekeeping entry"
 const LEAVE_TITLE = "Housekeeping receipt"
 
@@ -845,7 +849,7 @@ test("completed entry placeholder counts mixed operations in fixed category orde
 
     assert.equal(
         outputOf(result[0].parts[0]),
-        "2 compressions, 1 summary toggle, 4 memo edits. details truncated.",
+        `2 compressions, 1 summary toggle, 4 memo edits. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
     )
     assert.equal(titleOf(result[0].parts[0]), ENTRY_TITLE)
 })
@@ -878,7 +882,7 @@ test("completed entry placeholder inflects counts and omits zero categories", ()
 
     assert.equal(
         outputOf(result[0].parts[0]),
-        "5 summary edits, 2 expansions, 2 recompressions, 1 sweep. details truncated.",
+        `5 summary edits, 2 expansions, 2 recompressions, 1 sweep. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
     )
 })
 
@@ -932,7 +936,7 @@ test("completed entry placeholder never echoes operation inputs, results, or cal
     ])
 
     const output = outputOf(result[0].parts[0])
-    assert.equal(output, "1 compression. details truncated.")
+    assert.equal(output, `1 compression. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`)
     for (const secret of [
         "call-secret-identifier",
         "INPUT_SECRET_PATH",
@@ -955,7 +959,10 @@ test("completed placeholder leaves the receipt and incomplete entries untouched"
             operationRecords: [operation("m0", "compress-1", "compress")],
         }),
     ])
-    assert.equal(outputOf(completedResult[0].parts[0]), "1 compression. details truncated.")
+    assert.equal(
+        outputOf(completedResult[0].parts[0]),
+        `1 compression. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
+    )
     assert.equal(outputOf(completedResult[1].parts[0]), "receipt")
     assert.equal(titleOf(completedResult[1].parts[0]), LEAVE_TITLE)
 
@@ -996,8 +1003,14 @@ test("duplicate entry boundaries share one counted placeholder", () => {
         result.map((item) => item.info.id),
         ["dup", "dup", "done"],
     )
-    assert.equal(outputOf(result[0].parts[0]), "2 compressions, 1 memo edit. details truncated.")
-    assert.equal(outputOf(result[1].parts[0]), "2 compressions, 1 memo edit. details truncated.")
+    assert.equal(
+        outputOf(result[0].parts[0]),
+        `2 compressions, 1 memo edit. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
+    )
+    assert.equal(
+        outputOf(result[1].parts[0]),
+        `2 compressions, 1 memo edit. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
+    )
     assert.equal(outputOf(result[2].parts[0]), "receipt")
 })
 
@@ -1026,8 +1039,11 @@ test("completed entries count only their own transaction operations", () => {
         }),
     ])
 
-    assert.equal(outputOf(result[0].parts[0]), "1 compression. details truncated.")
-    assert.equal(outputOf(result[2].parts[0]), "1 sweep. details truncated.")
+    assert.equal(
+        outputOf(result[0].parts[0]),
+        `1 compression. ${HOUSEKEEPING_ENTRY_WITH_COMPRESSION}`,
+    )
+    assert.equal(outputOf(result[2].parts[0]), `1 sweep. ${HOUSEKEEPING_ENTRY_WITHOUT_COMPRESSION}`)
 })
 
 function randomGenerator(seed: number): () => number {
