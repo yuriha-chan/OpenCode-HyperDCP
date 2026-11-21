@@ -5,6 +5,7 @@ import { saveSessionState } from "../state/persistence"
 import { getCurrentParams } from "../token-utils"
 import { parseBlockIdArg } from "./edit"
 import type { CommandSendMessage } from "./output"
+import { summaryDocument } from "../summary-text"
 
 export interface EditFileCommandContext {
     sendMessage: CommandSendMessage
@@ -51,7 +52,7 @@ export async function handleEditFileCommand(ctx: EditFileCommandContext): Promis
         return
     }
 
-    const trimmed = content.trim()
+    const trimmed = summaryDocument(content).trim()
     if (!trimmed) {
         await sendMessage("Edited summary is empty; nothing applied.", params)
         return

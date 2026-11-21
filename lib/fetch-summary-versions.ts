@@ -5,6 +5,7 @@ import type { CompressionBlock } from "./state/types"
 import { draftState } from "./housekeeping/state"
 import { loadAndReconcileSession } from "./housekeeping/state"
 import { withSessionCoordinator } from "./housekeeping/coordinator"
+import { summaryDocument } from "./summary-text"
 
 export const FETCH_SUMMARY_VERSIONS_DESCRIPTION = `Fetch all summary versions for a compressed block.
 
@@ -27,13 +28,6 @@ interface FetchSummaryVersionsContext {
     refreshSession(sessionID: string): Promise<unknown>
 }
 
-function summaryText(summary: string): string {
-    return summary
-        .replace(/^\[Compressed conversation section\]\s*/, "")
-        .replace(/\s*<dcp-message-id[^>]*>b\d+<\/dcp-message-id>\s*$/, "")
-        .trim()
-}
-
 function versionLabel(block: CompressionBlock, idx: number): string {
     if (idx < 0) return ""
     if (idx === 0) return "disabled"
@@ -44,9 +38,9 @@ function versionLabel(block: CompressionBlock, idx: number): string {
 function getVersionContent(block: CompressionBlock, idx: number): string | null {
     if (idx < 0) return null
     if (idx === 0) return null
-    if (idx === 1) return summaryText(block.summary)
+    if (idx === 1) return summaryDocument(block.summary).trim()
     const vIdx = idx - 2
-    if (vIdx < block.summaryVersions.length) return block.summaryVersions[vIdx]
+    if (vIdx < block.summaryVersions.length) return summaryDocument(block.summaryVersions[vIdx])
     return null
 }
 
@@ -54,13 +48,13 @@ function describeVersion(block: CompressionBlock, idx: number): string {
     const label = versionLabel(block, idx)
     if (idx === 0) return `${label}: not displayed`
     if (idx === 1) {
-        const summary = summaryText(block.summary)
+        const summary = summaryDocument(block.summary).trim()
         const preview = summary.length > 120 ? summary.slice(0, 120) + "..." : summary
         return `${label}: ${preview}`
     }
     const vIdx = idx - 2
     if (vIdx < block.summaryVersions.length) {
-        const content = block.summaryVersions[vIdx]
+        const content = summaryDocument(block.summaryVersions[vIdx])
         const preview = content.length > 120 ? content.slice(0, 120) + "..." : content
         return `${label}: ${preview}`
     }
@@ -108,12 +102,10 @@ export async function fetchSummaryVersions(
         }
 
         if (block.pendingEditBuffer !== undefined) {
-            const preview =
-                block.pendingEditBuffer.length > 120
-                    ? block.pendingEditBuffer.slice(0, 120) + "..."
-                    : block.pendingEditBuffer
+            const document = summaryDocument(block.pendingEditBuffer)
+            const preview = document.length > 120 ? document.slice(0, 120) + "..." : document
             lines.push("")
-            lines.push(`Pending edit buffer (${block.pendingEditBuffer.length} chars):`)
+            lines.push(`Pending edit buffer (${document.length} chars):`)
             lines.push(`  ${preview}`)
             lines.push(
                 `  (pending changes remain staged; call leave_housekeeping only after completing and reviewing the entire maintenance pass across all affected blocks)`,

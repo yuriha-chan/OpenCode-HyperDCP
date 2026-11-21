@@ -1,9 +1,8 @@
 import type { CompressionBlock, PruneMessagesState, SessionState } from "../state"
-import { formatBlockRef, formatMessageIdTag } from "../message-ids"
 import { filterToActive } from "../messages/coverage"
 import type { AppliedCompressionResult, CompressionStateInput, SelectionResolution } from "./types"
 
-export const COMPRESSED_BLOCK_HEADER = "[Compressed conversation section]"
+export { COMPRESSED_BLOCK_HEADER, wrapCompressedSummary } from "../summary-text"
 
 export function allocateBlockId(state: SessionState): number {
     const next = state.prune.messages.nextBlockId
@@ -48,17 +47,6 @@ export function attachCompressionDuration(
     }
 
     return updates
-}
-
-export function wrapCompressedSummary(blockId: number, summary: string, range?: string): string {
-    const header = COMPRESSED_BLOCK_HEADER
-    const attrs = range ? { range } : undefined
-    const footer = formatMessageIdTag(formatBlockRef(blockId), attrs)
-    const body = summary.trim()
-    if (body.length === 0) {
-        return `${header}\n${footer}`
-    }
-    return `${header}\n${body}\n\n${footer}`
 }
 
 export function applyCompressionState(

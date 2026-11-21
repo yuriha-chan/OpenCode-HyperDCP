@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import { summaryDocument } from "./summary-text"
 import type { ToolContext } from "./compress/types"
 import { REWRITE_FORMAT_EXTENSION } from "./prompts/rewrite-summary"
 import type { PromptStore } from "./prompts/store"
@@ -43,7 +44,7 @@ export async function rewriteSummary(
                 )
             }
 
-            const trimmed = input.summary.trim()
+            const trimmed = summaryDocument(input.summary).trim()
             if (!trimmed) {
                 throw new Error("Summary must not be empty.")
             }

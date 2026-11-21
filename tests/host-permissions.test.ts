@@ -11,6 +11,7 @@ import { readHousekeepingDraft } from "../lib/state/housekeeping-draft-store"
 import type { SkillContext, WithParts } from "../lib/state"
 import { RECALL_COMPRESSED, RECALL_FORMAT_EXTENSION } from "../lib/prompts/recall"
 import { createSkillExecuteAfterHandler } from "../lib/skills"
+import { wrapCompressedSummary } from "../lib/summary-text"
 import {
     commitBlock,
     createHousekeepingHarness,
@@ -1230,7 +1231,7 @@ test("v2 block projection replaces committed coverage and keeps split tool resul
     await native.projectContext(request)
     assert.equal(request.messages.length, 5)
     assert.equal(request.messages[0].role, "user")
-    assert.deepEqual(request.messages[0].content, [{ type: "text", text: "Selected committed findings." }])
+    assert.deepEqual(request.messages[0].content, [{ type: "text", text: wrapCompressedSummary(1, "Selected committed findings.", "m0001-m0002") }])
     assert.equal(request.messages[1].id, "msg_dcp_memo")
     assert.match(JSON.stringify(request.messages[1]), /Keep the final constraint/)
     assert.match(JSON.stringify(request.messages[2]), /Keep this user/)

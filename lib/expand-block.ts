@@ -2,11 +2,9 @@ import { tool } from "@opencode-ai/plugin"
 import type { ToolContext } from "./compress/types"
 import type { SessionState } from "./state"
 import { formatMessageRef, parseBoundaryId } from "./message-ids"
-import {
-    loadAndReconcileSession,
-    runSharedHousekeepingMutation,
-} from "./housekeeping/state"
+import { loadAndReconcileSession, runSharedHousekeepingMutation } from "./housekeeping/state"
 import type { SharedOperationContext, ToolExecutionContext } from "./housekeeping/types"
+import { summaryDocument } from "./summary-text"
 
 function activeSummaryText(block: {
     summary: string
@@ -14,14 +12,12 @@ function activeSummaryText(block: {
     activeVersionIndex: number
     pendingEditBuffer?: string
 }): string {
-    if (block.pendingEditBuffer !== undefined) return block.pendingEditBuffer
+    if (block.pendingEditBuffer !== undefined) return summaryDocument(block.pendingEditBuffer)
     const idx = block.activeVersionIndex
     if (idx === 0) return ""
-    if (idx >= 2 && idx - 2 < block.summaryVersions.length) return block.summaryVersions[idx - 2]
-    return block.summary
-        .replace(/^\[Compressed conversation section\]\s*/, "")
-        .replace(/\s*<dcp-message-id[^>]*>b\d+<\/dcp-message-id>\s*$/, "")
-        .trim()
+    if (idx >= 2 && idx - 2 < block.summaryVersions.length)
+        return summaryDocument(block.summaryVersions[idx - 2])
+    return summaryDocument(block.summary).trim()
 }
 
 export function materializePendingSummary(block: {
@@ -32,7 +28,7 @@ export function materializePendingSummary(block: {
     effectiveMessageIds: string[]
 }): void {
     if (block.pendingEditBuffer !== undefined) {
-        const summary = block.pendingEditBuffer.trim()
+        const summary = summaryDocument(block.pendingEditBuffer).trim()
         if (!summary) throw new Error("Summary buffer is empty after trimming.")
         block.summaryVersions.push(summary)
         block.activeVersionIndex = block.summaryVersions.length + 1
@@ -100,9 +96,7 @@ export async function expandBlock(
                     : parsed.index
             const coveredRawIds: string[] = []
             for (let index = lowerBound; index <= parsed.index; index++) {
-                const messageId = operationCtx.state.messageIds.byRef.get(
-                    formatMessageRef(index),
-                )
+                const messageId = operationCtx.state.messageIds.byRef.get(formatMessageRef(index))
                 if (
                     messageId &&
                     eligibleSourceIds.has(messageId) &&

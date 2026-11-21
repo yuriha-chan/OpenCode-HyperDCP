@@ -2,6 +2,7 @@ import type { SessionState } from "../state"
 import type { Logger } from "../logger"
 import type { PluginConfig } from "../config"
 import { replaceBlockIdsWithBlocked } from "./utils"
+import { summaryDocument, wrapCompressedSummary } from "../summary-text"
 
 export function contextBlockSummary(
     state: SessionState,
@@ -37,11 +38,12 @@ export function contextBlockSummary(
         })
         return
     }
+    const document = summaryDocument(rawSummaryContent)
+    const range =
+        summary.mode === "message" ? summary.startId : `${summary.startId}-${summary.endId}`
+    const content = wrapCompressedSummary(summary.blockId, document, range)
     return {
         block: summary,
-        content:
-            config.compress.mode === "message"
-                ? replaceBlockIdsWithBlocked(rawSummaryContent)
-                : rawSummaryContent,
+        content: config.compress.mode === "message" ? replaceBlockIdsWithBlocked(content) : content,
     }
 }

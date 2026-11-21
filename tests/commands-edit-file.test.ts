@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { handleEditFileCommand } from "../lib/commands/edit-file"
+import { wrapCompressedSummary } from "../lib/compress/state"
 import { createSessionState, type WithParts } from "../lib/state"
 import type { CompressionBlock } from "../lib/state/types"
 import type { PluginConfig } from "../lib/config"
@@ -115,7 +116,10 @@ function makeBlock(overrides: Partial<CompressionBlock>): CompressionBlock {
     }
 }
 
-function seedBlock(state: ReturnType<typeof createSessionState>, overrides?: Partial<CompressionBlock>) {
+function seedBlock(
+    state: ReturnType<typeof createSessionState>,
+    overrides?: Partial<CompressionBlock>,
+) {
     const block = makeBlock(overrides ?? {})
     state.prune.messages.blocksById.set(block.blockId, block)
     return block
@@ -136,7 +140,7 @@ test("/dcp edit-file applies file content as a new active version", async () => 
     const block = seedBlock(state)
     const logger = new Logger(false)
     const { client, ignoredMessages } = makeClient()
-    const path = writeTempFile("Brand new summary\nsecond line")
+    const path = writeTempFile(wrapCompressedSummary(99, "Brand new summary\nsecond line", "m0099"))
 
     await handleEditFileCommand({
         sendMessage: ignoredSender(client, sessionID),

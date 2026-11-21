@@ -9,6 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { runEditor } from "./editor"
 import { buildSummaryFile, parseSummaryFile } from "../lib/summary-file"
+import { summaryDocument } from "../lib/summary-text"
 import { buildMemoFile, parseMemoFile } from "../lib/memo-file"
 import { createV1TuiTransport, createV2TuiTransport } from "./tui-client"
 import { subscribeNotificationToasts } from "../lib/notification-rpc"
@@ -171,7 +172,7 @@ async function editBlockSummary(ui: DcpUi, sessionID: string, blockId: number): 
         return
     }
 
-    const original = versionTextOf(block.versions, block.activeVersionIndex)
+    const original = summaryDocument(versionTextOf(block.versions, block.activeVersionIndex))
     const filePath = join(tmpdir(), `dcp-summary-${blockId}-${Date.now()}.md`)
     writeFileSync(filePath, buildSummaryFile(original), "utf-8")
 

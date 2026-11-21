@@ -5,6 +5,8 @@ import { Logger } from "../lib/logger"
 import { prune } from "../lib/messages/prune"
 import { createSessionState, type SessionState, type WithParts } from "../lib/state"
 import type { CompressionBlock } from "../lib/state/types"
+import { wrapCompressedSummary } from "../lib/compress/state"
+import { summaryDocument } from "../lib/summary-text"
 import {
     projectContextBlocks,
     injectContextSubagents,
@@ -278,7 +280,10 @@ function syntheticMessages(messages: WithParts[], text: string): WithParts[] {
     return messages.filter(
         (message) =>
             message.info.id.startsWith("msg_dcp_summary") &&
-            message.parts.some((part) => part.type === "text" && part.text === text),
+            message.parts.some(
+                (part) =>
+                    part.type === "text" && summaryDocument(part.text) === summaryDocument(text),
+            ),
     )
 }
 
@@ -288,6 +293,50 @@ function syntheticModel(message: WithParts): string | undefined {
 
 function runPrune(state: SessionState, messages: WithParts[]): void {
     prune(state, new Logger(false), buildConfig(), messages)
+}
+
+for (const host of ["v1", "v2"]) {
+    test(`${host} context owns wrappers for a plain rewritten document`, () => {
+        const state = createSessionState()
+        addSummary(state, 1, "anchor", wrapCompressedSummary(1, "Original", "m0001"))
+        const block = state.prune.messages.blocksById.get(1)!
+        block.summaryVersions = ["## Edited\nDocument body."]
+        block.activeVersionIndex = 2
+        const expected = wrapCompressedSummary(1, block.summaryVersions[0]!, "m0001-m0001")
+        if (host === "v1") {
+            const messages = [userMessage("user", "model"), assistantMessage("anchor")]
+            runPrune(state, messages)
+            assert.equal(
+                messages.filter(
+                    (message) =>
+                        message.info.id.startsWith("msg_dcp_summary") &&
+                        message.parts.some(
+                            (part) => part.type === "text" && part.text === expected,
+                        ),
+                ).length,
+                1,
+            )
+        } else {
+            const request: ModelContextRequest = {
+                messages: [
+                    { id: "user", role: "user", content: [{ type: "text", text: "Question" }] },
+                    {
+                        id: "anchor",
+                        role: "assistant",
+                        content: [{ type: "text", text: "Answer" }],
+                    },
+                ],
+                options: {},
+            }
+            projectContextBlocks(request, state, new Logger(false), buildConfig())
+            assert.ok(
+                request.messages.some((message) =>
+                    message.content.some((part) => part.type === "text" && part.text === expected),
+                ),
+            )
+        }
+        assert.equal(block.summaryVersions[0], "## Edited\nDocument body.")
+    })
 }
 
 test("prune summary skips empty and ignored user messages", () => {

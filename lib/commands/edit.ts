@@ -7,6 +7,7 @@ import { saveSessionState } from "../state/persistence"
 import { formatTokenCount } from "../ui/utils"
 import { getActiveCompressionTargets, resolveCompressionTarget } from "./compression-targets"
 import type { CommandSendMessage } from "./output"
+import { summaryDocument } from "../summary-text"
 
 export interface EditCommandContext {
     sendMessage: CommandSendMessage
@@ -119,9 +120,9 @@ export async function handleEditCommand(ctx: EditCommandContext): Promise<void> 
 
     for (const block of target.blocks) {
         if (isAppend) {
-            block.summary = block.summary + "\n\n" + newText
+            block.summary = summaryDocument(block.summary) + "\n\n" + summaryDocument(newText)
         } else {
-            block.summary = newText
+            block.summary = summaryDocument(newText)
         }
     }
 

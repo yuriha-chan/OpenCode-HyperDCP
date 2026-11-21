@@ -1,6 +1,7 @@
 import "./helpers/storage-env"
 import assert from "node:assert/strict"
 import test from "node:test"
+import { wrapCompressedSummary } from "../lib/compress/state"
 import {
     commitBlock,
     createHousekeepingHarness,
@@ -17,6 +18,33 @@ async function contextText(h: HousekeepingHarness): Promise<string> {
         })),
     )
 }
+
+test("summary tools edit document text without exposing legacy wrappers in any version", async (t) => {
+    const h = await createHousekeepingHarness(t)
+    await commitBlock(h)
+    const original = await h.run("fetch_summary_versions", { blockId: 1, version: 1 })
+    assert.match(original, /Parser findings\./)
+    assert.doesNotMatch(original, /Compressed conversation section|dcp-message-id/)
+
+    await h.enter()
+    await h.run("rewrite_summary", {
+        blockId: 1,
+        summary: wrapCompressedSummary(99, "## Findings\nOriginal body.", "m0099"),
+    })
+    const rewritten = await h.run("fetch_summary_versions", { blockId: 1, version: 2 })
+    assert.match(rewritten, /## Findings\nOriginal body\./)
+    assert.doesNotMatch(rewritten, /Compressed conversation section|dcp-message-id/)
+    await h.run("edit_summary", { blockId: 1, oldString: "Original", newString: "Edited" })
+    await h.run("append_summary", { blockId: 1, text: " More details." })
+    const pending = await h.versions()
+    assert.match(pending, /Edited body\. More details\./)
+    assert.doesNotMatch(pending, /Compressed conversation section|dcp-message-id/)
+    await h.leave({ force: true })
+    const projected = await contextText(h)
+    assert.match(projected, /\[Compressed conversation section\]\n## Findings/)
+    assert.match(projected, /<dcp-message-id[^>]*>b1<\/dcp-message-id>/)
+    assert.doesNotMatch(projected, />b99<|m0099/)
+})
 
 test("expand_block requires housekeeping and leaves ordinary messages uncompressed", async (t) => {
     const h = await createHousekeepingHarness(t)
