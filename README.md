@@ -4,7 +4,7 @@
 
 One npm package supports **OpenCode v1 and v2**, with native server and TUI registrations sharing the same DCP operations and persisted state. See [CHANGELOG.md](CHANGELOG.md) for release details.
 
-[Installation](#Installation) - [Quick Start](#Quick start: make and inspect your first block) - [Features](#Feature tour) - [References](#Reference)
+[Installation](#installation) - [Quick Start](#quick-start-make-and-inspect-your-first-block) - [Features](#feature-tour) - [References](#reference)
 
 ## Philosophy
 
