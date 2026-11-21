@@ -1,8 +1,8 @@
 # Context controls reference
 
-For guided learning, use [Make and inspect your first block](../README.new.md#make-and-inspect-your-first-block).
+For guided learning, use [Quick start: make and inspect your first block](../README.md#quick-start-make-and-inspect-your-first-block).
 For task instructions, see [Work with compressed context](context-tasks.md).
-For the model behind these controls, see [A summary you can revisit](../README.new.md#a-summary-you-can-revisit).
+For the model behind these controls, see [Observable summary blocks (DCP blocks)](../README.md#observable-summary-blocks-dcp-blocks).
 
 ## Blocks and summary versions
 
@@ -228,4 +228,4 @@ rather than inferring loads from historical calls.
   `/dcp rewrite` deliberately invoke the agent. Toast notifications use the
   TUI connection.
 
-Return to the [README's documentation map](../README.new.md#find-your-next-answer).
+Return to the [README](../README.md).

@@ -1,8 +1,8 @@
 # Work with compressed context
 
 These tasks assume HyperDCP is installed and an OpenCode session is active.
-For a guided introduction, use [Make and inspect your first block](../README.new.md#make-and-inspect-your-first-block).
-For the underlying model, see [What compression changes](../README.new.md#what-compression-changes).
+For a guided introduction, use [Quick start: make and inspect your first block](../README.md#quick-start-make-and-inspect-your-first-block).
+For the underlying model, see [Message compression and recall](../README.md#message-compression-and-recall).
 The [command reference](context-reference.md#commands-and-tui-controls) is a direct lookup route.
 
 ## Correct a summary
@@ -205,5 +205,5 @@ a particular tool during that pass, add its exact registered name to
 This allows `read`; it does not grant all read-like tools access, and it does
 not override an OpenCode permission denial.
 
-Return to the [README's documentation map](../README.new.md#find-your-next-answer)
+Return to the [README](../README.md)
 or look up [host-specific behavior](context-reference.md#host-behavior-and-known-issues).
