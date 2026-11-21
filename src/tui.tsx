@@ -300,14 +300,14 @@ const BlockList = (props: { ui: DcpUi; session_id: string }) => {
 
 // --- Basic page wrapper ---
 
-function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown> }) {
+function PageHeader(props: { ui: DcpUi; title: string; backTarget?: DcpPage | "home"; backParams?: Record<string, unknown>; fixed?: boolean }) {
     const skin = props.ui.colors()
     const backLabel = !props.backTarget || props.backTarget === "home" ? "Session" : props.backTarget === "dcp-blocks" ? "Blocks" : "Back"
     const backHint = backLabel === "Back" ? "" : commandKeyHint("dcp-tui.back")
     const backText = backHint ? `${backLabel} ${backHint}` : backLabel
 
     return (
-        <box flexDirection="row" gap={1}>
+        <box flexDirection="row" gap={1} flexShrink={props.fixed ? 0 : undefined}>
             <box onMouseDown={() => goBack(props.ui, props.backTarget ?? "home", props.backParams)}>
                 <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}> ← {backText} </text>
             </box>
@@ -323,8 +323,8 @@ function PageShell(props: { ui: DcpUi; title: string; children: any; backTarget?
 
     return (
         <box flexDirection="column" gap={1} padding={1} flexGrow={props.fill ? 1 : undefined} minHeight={props.fill ? 0 : undefined}>
-            <PageHeader ui={props.ui} title={props.title} backTarget={props.backTarget} backParams={props.backParams} />
-            <text fg={skin.muted}>{"─".repeat(40)}</text>
+            <PageHeader ui={props.ui} title={props.title} backTarget={props.backTarget} backParams={props.backParams} fixed={props.fill} />
+            <text fg={skin.muted} flexShrink={props.fill ? 0 : undefined}>{"─".repeat(40)}</text>
             {props.children}
         </box>
     )
@@ -484,8 +484,8 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                         })
                         return (
                             <>
-                                <text fg={skin.text}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
-                                <box flexDirection="row" gap={1}>
+                                <text fg={skin.text} flexShrink={0}><b>b{b().blockId} — {b().topic || "(no topic)"}</b></text>
+                                <box flexDirection="row" gap={1} flexShrink={0}>
                                     <text fg={skin.muted}>Versions:</text>
                                     <For each={Array.from({ length: versionCount() }, (_, i) => i)}>
                                         {(idx) => {
@@ -504,14 +504,14 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                                         }}
                                     </For>
                                 </box>
-                                <text fg={skin.muted}>
+                                <text fg={skin.muted} flexShrink={0}>
                                     {b().startId}→{b().endId} | {mode()} | {statusLabel(b())} | {tokenLabelPrecise(b().compressedTokens)}→{tokenLabelPrecise(b().summaryTokens)}
                                     {b().durationMs ? ` | ${b().durationMs}ms` : ""}
                                     {b().parentBlockIds.length > 0 ? ` | parents: b${b().parentBlockIds.join(" b")}` : ""}
                                     {b().includedBlockIds.length > 0 ? ` | includes: b${b().includedBlockIds.join(" b")}` : ""}
                                     {b().batchTopic ? ` | batch: ${b().batchTopic}` : ""}
                                 </text>
-                                <text fg={skin.muted}>{"─".repeat(40)}</text>
+                                <text fg={skin.muted} flexShrink={0}>{"─".repeat(40)}</text>
                                 <scrollbox
                                     ref={(box: ScrollBoxRenderable) => {
                                         scroll = box
@@ -524,6 +524,8 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                                         trackOptions: { backgroundColor: skin.panel, foregroundColor: skin.muted },
                                     }}
                                     flexGrow={1}
+                                    flexBasis={0}
+                                    flexShrink={1}
                                     minHeight={0}
                                 >
                                     <box flexShrink={0}>
@@ -534,7 +536,7 @@ const BlockDetail = (props: { ui: DcpUi; params?: Record<string, unknown> }) => 
                         )
                     })()}
                 </Show>
-                <box onMouseDown={() => editCurrentBlock(props.ui)}>
+                <box flexShrink={0} onMouseDown={() => editCurrentBlock(props.ui)}>
                     <text fg={skin.panel} bg={skin.text} attributes={TextAttributes.BOLD}>{` Edit ${commandKeyHint("dcp-tui.edit")} `}</text>
                 </box>
             </Show>
