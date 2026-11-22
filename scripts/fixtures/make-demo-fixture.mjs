@@ -19,9 +19,14 @@ function rawId(n) {
 
 // Each topic owns a contiguous ref range. refs are session-scoped and only
 // need to be internally consistent for the TUI to render.
+//
+// `creationOrder` assigns the visible block ID. Block IDs follow compression
+// order, which does not have to match the order of the message ranges; in this
+// demo the oven block is compressed after the later trolley and deposit topics.
 const topics = [
     {
         topic: "Bootloader handshake for the dough sensor",
+        creationOrder: 1,
         start: 3,
         end: 28,
         compressedTokens: 24610,
@@ -37,6 +42,7 @@ handshake before the arm firmware will talk to it.
     },
     {
         topic: "Knead routine timing and torque limits",
+        creationOrder: 2,
         start: 29,
         end: 61,
         compressedTokens: 31220,
@@ -55,6 +61,7 @@ Goal: a repeatable 90-second knead that never stalls the motor.
     },
     {
         topic: "Topping placement vision pipeline",
+        creationOrder: 3,
         start: 62,
         end: 108,
         compressedTokens: 41970,
@@ -76,6 +83,7 @@ was widened by 3 px after the "onion on the crust" bug.`,
     },
     {
         topic: "Oven handoff and temperature safety",
+        creationOrder: 6,
         start: 109,
         end: 147,
         compressedTokens: 28640,
@@ -91,6 +99,7 @@ After toppings, the robot waits for the oven slot to open before extending.
     },
     {
         topic: "Delivery route trolley docking",
+        creationOrder: 4,
         start: 148,
         end: 196,
         compressedTokens: 33480,
@@ -107,6 +116,7 @@ The robot docks onto the delivery trolley to hand off finished pies.
     },
     {
         topic: "Deposit queue and order handoff UX",
+        creationOrder: 5,
         start: 197,
         end: 233,
         compressedTokens: 22760,
@@ -124,7 +134,7 @@ The robot carries pies to the deposit shelf and announces each order.
 Slot announcements now include the pickup window, so the kitchen can clear a
 full slot instead of the robot re-announcing the same order.`,
         ],
-        activeVersionIndex: 1,
+        activeVersionIndex: 2,
     },
 ]
 
@@ -132,29 +142,39 @@ const FLOUR = 0 // placeholder to keep lint quiet if edited later
 
 const blocks = {}
 const byRawId = {}
+const refToRawId = {}
 let raw = 1
 
-// Synthetic non-block context messages before the first block.
-function fillByRawId(count) {
-    for (let i = 0; i < count; i += 1) {
-        byRawId[rawId(raw)] = `m${String(raw).padStart(4, "0")}`
+function messageRef(ref) {
+    return `m${String(ref).padStart(4, "0")}`
+}
+
+function registerMessageRange(start, end) {
+    for (let ref = start; ref <= end; ref += 1) {
+        const id = rawId(raw)
+        byRawId[id] = messageRef(ref)
+        refToRawId[messageRef(ref)] = id
         raw += 1
     }
 }
 
-fillByRawId(2) // m0001-m0002 preamble
+// Message refs follow conversation order regardless of when a block was created.
+registerMessageRange(1, 2) // m0001-m0002 preamble
+for (const entry of [...topics].sort((left, right) => left.start - right.start)) {
+    registerMessageRange(entry.start, entry.end)
+}
 
 const blockList = []
-topics.forEach((entry, index) => {
+const creationOrderTopics = [...topics].sort(
+    (left, right) => left.creationOrder - right.creationOrder,
+)
+creationOrderTopics.forEach((entry, index) => {
     const blockId = index + 1
-    const refStart = `m${String(entry.start).padStart(4, "0")}`
-    const refEnd = `m${String(entry.end).padStart(4, "0")}`
+    const refStart = messageRef(entry.start)
+    const refEnd = messageRef(entry.end)
     const effectiveMessageIds = []
-    for (let r = entry.start; r <= entry.end; r += 1) {
-        const id = rawId(raw)
-        byRawId[id] = `m${String(r).padStart(4, "0")}`
-        effectiveMessageIds.push(id)
-        raw += 1
+    for (let ref = entry.start; ref <= entry.end; ref += 1) {
+        effectiveMessageIds.push(refToRawId[messageRef(ref)])
     }
     const summaryVersions = entry.versions ?? []
     const versions = Array.isArray(summaryVersions) ? summaryVersions : []
@@ -195,9 +215,7 @@ topics.forEach((entry, index) => {
 
 // Pointer to the newest tracked message, then the outstanding user turn and
 // reply that the demo session screen shows.
-byRawId[rawId(raw)] = `m${String(raw).padStart(4, "0")}`
-raw += 1
-fillByRawId(2)
+registerMessageRange(234, 236)
 const lastSeenUserMessageId = rawId(235)
 
 const activeIds = Object.keys(byRawId)
@@ -265,7 +283,7 @@ const state = {
         totalToolsPruned: 0,
         compressionRatio: 0.68,
     },
-    autotoggle: false,
+    autotoggle: true,
     lastUpdated: "2026-05-06T09:20:00.000Z",
 }
 

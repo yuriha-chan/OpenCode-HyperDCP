@@ -5,6 +5,9 @@
 // This transcript replaces it with a neutral housekeeping pass so demo
 // screenshots show real session UI (tool calls, sidebar) without a personal
 // session. Regenerate nothing: it is deterministic from the constants below.
+//
+// The DCP state fixture is the post-pass snapshot, so the block created below
+// and the toggled version already appear in the seeded sidebar.
 
 const USER_TEXT =
     "Oven handoff is finished and tested. Run housekeeping: add the retraction deadline to the memo, compress the finished oven work, and switch the deposit summary to v2."
@@ -13,7 +16,7 @@ const ASSISTANT_INTRO =
     "Running one housekeeping pass for the memo, compression, and version change."
 
 const ASSISTANT_OUTRO =
-    "Housekeeping committed: the memo records the retraction deadline, the oven work is compressed into b4, and b6 is now on v2."
+    "Housekeeping committed: the memo records the retraction deadline, the oven work is compressed into b6, and b5 is now on v2."
 
 function part(type, payload, time) {
     return { type, ...payload, time: { start: time, end: time + 4 } }
@@ -115,14 +118,14 @@ export function buildDemoTranscript({ sessionId, directory, model }) {
                     },
                 ],
             },
-            "Compressed m0109-m0147 into block b4 (28.6K -> 104 tokens).",
+            "Compressed m0109-m0147 into block b6 (28.6K -> 104 tokens).",
             4600,
         ),
         tool(
             "toggle_summary_version",
             "call_demo_toggle",
-            { blockId: 6, version: 2 },
-            "Block #6 summary set to v2.",
+            { blockId: 5, version: 2 },
+            "Block #5 summary set to v2.",
             5600,
         ),
         tool("leave_housekeeping", "call_demo_leave", {}, "Housekeeping committed.", 6600),
