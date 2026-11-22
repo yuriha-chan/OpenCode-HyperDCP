@@ -10,14 +10,14 @@
     <desc id="description">
         Two aligned columns. The session history lists original messages in order, colored by kind:
         user messages, assistant messages, tool calls, tool results, skill load and its result, and
-        messages that mix those kinds. Each compression block brackets its messages on the left,
-        and one long arrow runs from the bracket to the model-input row it becomes: the summary of
-        b1, b2 or b4 with its version and message range, or a culled marker for b3. The model input
-        also contains system prompts, tool descriptions, the memo, injected skills, and the
-        uncompressed messages after b4, then the next user message, active thinking and tool calls.
-        Lower down, a recall_compressed tool call returns two original messages; only the m0012 and
-        m0046 message boxes feed that arrow, which merges and ends at the tool result. The columns
-        are excerpts, and message and block IDs are examples.
+        further messages that mix those kinds. A bracket stands to the right of each compression
+        block's messages, and one long arrow runs from the bracket to the model-input row the block
+        becomes: the summary of b1, b2 or b4 with its version and message range, or a culled marker
+        for b3. The model input also contains system prompts, tool descriptions, the memo, injected
+        skills, and the uncompressed messages after b4, then the next user message, active thinking
+        and tool calls. Lower down, a recall_compressed tool call returns two original messages;
+        only the m0012 and m0046 message boxes feed that dashed arrow, which merges and ends at the
+        tool result. The columns are excerpts, and message and block IDs are examples.
     </desc>
     <defs>
         <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -53,7 +53,7 @@
             }
             .ellipsis {
                 font-size: 14px;
-                fill: #94a3b8;
+                fill: #475569;
             }
             .panel {
                 fill: #ffffff;
@@ -84,16 +84,6 @@
                 fill: #f3e8ff;
                 stroke: #9333ea;
             }
-            .user-culled {
-                fill: #dbeafe;
-                stroke: #94a3b8;
-                stroke-dasharray: 6 4;
-            }
-            .assistant-culled {
-                fill: #dcfce7;
-                stroke: #94a3b8;
-                stroke-dasharray: 6 4;
-            }
             .culled {
                 fill: #f1f5f9;
                 stroke: #94a3b8;
@@ -116,11 +106,6 @@
                 stroke: #db2777;
                 stroke-dasharray: 4 3;
             }
-            .gap {
-                fill: #ffffff;
-                stroke: #e2e8f0;
-                stroke-dasharray: 4 3;
-            }
             .bracket {
                 fill: none;
                 stroke: #475569;
@@ -131,11 +116,6 @@
                 stroke: #94a3b8;
                 stroke-width: 2;
                 stroke-dasharray: 5 4;
-            }
-            .link {
-                fill: none;
-                stroke: #475569;
-                stroke-width: 2;
             }
             .link-out {
                 fill: none;
@@ -164,7 +144,7 @@
     <text x="24" y="44" class="heading">Session history</text>
     <text x="600" y="44" class="heading">Agent context</text>
 
-    <rect x="20" y="70" width="290" height="1046" rx="12" class="panel" />
+    <rect x="20" y="70" width="270" height="1046" rx="12" class="panel" />
     <text x="32" y="96" class="panellabel">Original messages</text>
 
     <rect x="600" y="70" width="380" height="1046" rx="12" class="panel" />
@@ -176,79 +156,79 @@
     <rect x="612" y="140" width="356" height="28" rx="5" class="box host" />
     <text x="626" y="159" class="row">Tool descriptions</text>
 
-    <rect x="30" y="178" width="268" height="28" rx="5" class="box user" />
+    <rect x="30" y="178" width="250" height="28" rx="5" class="box user" />
     <text x="44" y="197" class="row">user message</text>
 
-    <rect x="30" y="206" width="268" height="28" rx="5" class="box assistant" />
+    <rect x="30" y="206" width="250" height="28" rx="5" class="box assistant" />
     <text x="44" y="225" class="row">assistant message</text>
 
-    <rect x="30" y="234" width="268" height="28" rx="5" class="box user" />
+    <rect x="30" y="234" width="250" height="28" rx="5" class="box user" />
     <text x="44" y="253" class="row">user message</text>
 
-    <rect x="30" y="262" width="268" height="28" rx="5" class="box toolcall" />
+    <rect x="30" y="262" width="250" height="28" rx="5" class="box toolcall" />
     <text x="44" y="281" class="row">tool call</text>
 
-    <rect x="30" y="290" width="268" height="28" rx="5" class="box toolresult" />
+    <rect x="30" y="290" width="250" height="28" rx="5" class="box toolresult" />
     <text x="44" y="309" class="row">tool result</text>
 
-    <rect x="30" y="318" width="268" height="28" rx="5" class="box assistant" />
+    <rect x="30" y="318" width="250" height="28" rx="5" class="box assistant" />
     <text x="44" y="337" class="row">assistant message</text>
 
-    <rect x="30" y="346" width="268" height="28" rx="5" class="box user" />
+    <rect x="30" y="346" width="250" height="28" rx="5" class="box user" />
     <text x="44" y="365" class="row">user message</text>
 
-    <rect x="30" y="374" width="268" height="28" rx="5" class="box skill" />
+    <rect x="30" y="374" width="250" height="28" rx="5" class="box skill" />
     <text x="44" y="393" class="row">skill load</text>
 
-    <rect x="30" y="402" width="268" height="28" rx="5" class="box skill" />
+    <rect x="30" y="402" width="250" height="28" rx="5" class="box skill" />
     <text x="44" y="421" class="row">loaded skill</text>
 
-    <rect x="30" y="430" width="268" height="28" rx="5" class="box assistant" />
+    <rect x="30" y="430" width="250" height="28" rx="5" class="box assistant" />
     <text x="44" y="449" class="row">assistant message</text>
 
-    <rect x="30" y="468" width="268" height="28" rx="5" class="box assistant" />
+    <rect x="30" y="468" width="250" height="28" rx="5" class="box assistant" />
     <text x="44" y="487" class="row">message</text>
 
-    <rect x="30" y="496" width="268" height="28" rx="5" class="gap" />
-    <text x="164" y="515" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="496" width="250" height="28" rx="5" class="box toolresult" />
+    <text x="155" y="515" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="524" width="268" height="28" rx="5" class="gap" />
-    <text x="164" y="543" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="524" width="250" height="28" rx="5" class="box user" />
+    <text x="155" y="543" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="562" width="268" height="28" rx="5" class="box user-culled" />
+    <rect x="30" y="562" width="250" height="28" rx="5" class="box user" />
     <text x="44" y="581" class="row">message</text>
 
-    <rect x="30" y="590" width="268" height="28" rx="5" class="culled" />
-    <text x="164" y="609" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="590" width="250" height="28" rx="5" class="box toolcall" />
+    <text x="155" y="609" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="618" width="268" height="28" rx="5" class="box assistant-culled" />
+    <rect x="30" y="618" width="250" height="28" rx="5" class="box assistant" />
     <text x="44" y="637" class="row">message</text>
 
-    <rect x="30" y="646" width="268" height="28" rx="5" class="culled" />
-    <text x="164" y="665" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="646" width="250" height="28" rx="5" class="box skill" />
+    <text x="155" y="665" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="684" width="268" height="28" rx="5" class="box toolresult" />
+    <rect x="30" y="684" width="250" height="28" rx="5" class="box toolresult" />
     <text x="44" y="703" class="row">message</text>
 
-    <rect x="30" y="712" width="268" height="28" rx="5" class="gap" />
-    <text x="164" y="731" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="712" width="250" height="28" rx="5" class="box user" />
+    <text x="155" y="731" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="740" width="268" height="28" rx="5" class="gap" />
-    <text x="164" y="759" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="740" width="250" height="28" rx="5" class="box assistant" />
+    <text x="155" y="759" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="844" width="268" height="28" rx="5" class="box toolcall" />
+    <rect x="30" y="844" width="250" height="28" rx="5" class="box toolcall" />
     <text x="44" y="863" class="row">message</text>
 
-    <rect x="30" y="872" width="268" height="28" rx="5" class="gap" />
-    <text x="164" y="891" class="ellipsis" text-anchor="middle">…</text>
+    <rect x="30" y="872" width="250" height="28" rx="5" class="box toolresult" />
+    <text x="155" y="891" class="ellipsis" text-anchor="middle">…</text>
 
-    <rect x="30" y="900" width="268" height="28" rx="5" class="box toolcall" />
+    <rect x="30" y="900" width="250" height="28" rx="5" class="box toolcall" />
     <text x="44" y="919" class="row">tool call</text>
 
-    <rect x="30" y="928" width="268" height="28" rx="5" class="box toolresult" />
+    <rect x="30" y="928" width="250" height="28" rx="5" class="box toolresult" />
     <text x="44" y="947" class="row">tool result</text>
 
-    <rect x="30" y="982" width="268" height="28" rx="5" class="box user" />
+    <rect x="30" y="982" width="250" height="28" rx="5" class="box user" />
     <text x="44" y="1001" class="row">user message</text>
 
     <rect x="612" y="178" width="356" height="34" rx="5" class="box summary" />
@@ -276,7 +256,7 @@
     <rect x="612" y="844" width="356" height="28" rx="5" class="box toolcall" />
     <text x="626" y="863" class="row">Message</text>
 
-    <rect x="612" y="872" width="356" height="28" rx="5" class="gap" />
+    <rect x="612" y="872" width="356" height="28" rx="5" class="box toolresult" />
     <text x="790" y="891" class="ellipsis" text-anchor="middle">…</text>
 
     <rect x="612" y="900" width="356" height="28" rx="5" class="box toolcall" />
@@ -301,16 +281,16 @@
     <rect x="612" y="1076" width="356" height="28" rx="5" class="box toolresult" />
     <text x="626" y="1095" class="row">Tool result</text>
 
-    <path d="M314 178 H322 V458 H314" class="bracket" />
-    <path d="M314 468 H322 V552 H314" class="bracket" />
-    <path d="M314 562 H322 V674 H314" class="bracket-culled" />
-    <path d="M314 684 H322 V768 H314" class="bracket" />
+    <path d="M372 178 H380 V458 H372" class="bracket" />
+    <path d="M372 468 H380 V552 H372" class="bracket" />
+    <path d="M372 562 H380 V674 H372" class="bracket-culled" />
+    <path d="M372 684 H380 V768 H372" class="bracket" />
 
-    <path d="M322 195 H594" class="link-out" />
-    <path d="M322 485 H594" class="link-out" />
-    <path d="M322 579 H594" class="link-out" />
-    <path d="M322 701 H594" class="link-out" />
+    <path d="M380 195 H594" class="link-out" />
+    <path d="M380 485 H594" class="link-out" />
+    <path d="M380 579 H594" class="link-out" />
+    <path d="M380 701 H594" class="link-out" />
 
-    <path d="M298 248 H470 M298 636 H470" class="recall" />
-    <path d="M470 248 V960 H594" class="recall-out" />
+    <path d="M280 248 H500 M280 636 H500" class="recall" />
+    <path d="M500 248 V960 H594" class="recall-out" />
 </svg>
