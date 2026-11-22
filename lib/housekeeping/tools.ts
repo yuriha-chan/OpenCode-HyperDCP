@@ -257,7 +257,7 @@ export async function leaveHousekeeping(
         )
         if (!hasQualifyingWork && args.force !== true) {
             throw new Error(
-                "You must finish the compression plan before leaving. Don't use force=true to leave forcibly unless compression was not planned or you can't compress.",
+                "You must finish the compression plan before leaving. If a listed range is not safe as a whole, divide it and compress the safely closed contiguous sub-range; do not abandon compression because the full range is unsuitable. Don't use force=true to leave forcibly unless compression was not planned or no safely closed sub-range can be compressed.",
             )
         }
         const checkpoint = await readHousekeepingCheckpoint(

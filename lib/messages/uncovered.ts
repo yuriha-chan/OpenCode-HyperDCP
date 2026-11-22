@@ -127,7 +127,9 @@ export function formatUncoveredRanges(
     if (ranges.length === 0) return ""
 
     const lines: string[] = []
-    lines.push("UNCOVERED MESSAGE RANGES (not in any active compression block):")
+    lines.push(
+        "UNCOVERED MESSAGE RANGES (not in any active compression block; each is a maximal gap that may be divided):",
+    )
 
     for (const range of ranges) {
         const tokenStr = formatTokenCount(

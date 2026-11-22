@@ -45,6 +45,11 @@ All notable changes to OpenCode-HyperDCP are documented here. This project follo
 - Completed housekeeping entry messages retain operation counts and explain omitted
   tool calls. Passes without work qualifying for an unforced leave explicitly
   discourage retrying housekeeping, using the same criterion as the leave guard.
+- Housekeeping entry guidance and the uncovered-range list explain that each listed
+  range is a maximal gap that may be divided: agents may compress any contiguous
+  sub-range and leave the remainder uncompressed, and splitting a range is optional.
+  The leave guard likewise directs dividing an unsuitable whole range instead of
+  abandoning compression.
 
 ### Fixed
 
