@@ -123,6 +123,13 @@
                 stroke-width: 2;
                 marker-end: url(#arrow);
             }
+            .link-out-culled {
+                fill: none;
+                stroke: #475569;
+                stroke-width: 2;
+                stroke-dasharray: 6 4;
+                marker-end: url(#arrow);
+            }
             .recall {
                 fill: none;
                 stroke: #475569;
@@ -281,14 +288,14 @@
     <rect x="612" y="1076" width="356" height="28" rx="5" class="box toolresult" />
     <text x="626" y="1095" class="row">Tool result</text>
 
-    <path d="M372 178 H380 V458 H372" class="bracket" />
-    <path d="M372 468 H380 V552 H372" class="bracket" />
-    <path d="M372 562 H380 V674 H372" class="bracket-culled" />
-    <path d="M372 684 H380 V768 H372" class="bracket" />
+    <path d="M280 178 H380 V458 H280" class="bracket" />
+    <path d="M280 468 H380 V552 H280" class="bracket" />
+    <path d="M280 562 H380 V674 H280" class="bracket-culled" />
+    <path d="M280 684 H380 V768 H280" class="bracket" />
 
     <path d="M380 195 H594" class="link-out" />
     <path d="M380 485 H594" class="link-out" />
-    <path d="M380 579 H594" class="link-out" />
+    <path d="M380 579 H594" class="link-out-culled" />
     <path d="M380 701 H594" class="link-out" />
 
     <path d="M280 248 H500 M280 636 H500" class="recall" />
