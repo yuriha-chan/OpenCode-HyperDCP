@@ -22,7 +22,9 @@ An AI agent's context window should be **100% observable and 100% controllable**
 
 The agent summarizes a completed range of conversation. In subsequent context, that summary occupies the place of the original messages. Unlike default compaction, only selected ranges are compressed at chosen times; messages outside compressed ranges remain untouched.
 
-The agent can retrieve individual original messages by calling `recall_compressed` when later discussion involves details of prior arguments, debug output, or earlier evidence.
+In dynamic context pruning pougins like HyperDCP, system distinguishes stored conversation history from the context presented to the model. The plugin replaces a selected message range with a versioned summary in model context.
+
+Agents can retrieve individual original messages by calling `recall_compressed` when later discussion involves details of prior arguments, debug output, or earlier evidence.
 
 ### Observable summary blocks (DCP blocks)
 
@@ -40,8 +42,7 @@ The **DCP Messages** view (`/dcp-tui-messages`) lets you browse underlying messa
 
 ### Memo — durable project memory
 
-The **memo** is a per-session document that survives compaction. The agent keeps working commands, user constraints, and procedural knowledge there, so the most active facts does not get stale or buried in middle of the context. Agents are instructed to maintain this document when they once get into the context maintainance mode.
-
+The **memo** is a per-session document that survives compaction. The agent keeps working commands, user constraints, and procedural knowledge there, so frequently needed facts remain accessible rather than becoming buried in conversation history. Agents are instructed to update the memo every time entering housekeeping mode.
 ### Skills
 
 The native `skill` tool loads skills through OpenCode. A successful load marks the skill loaded; `unload_skill` removes it. The protected list is separate: only a successful `leave_housekeeping` copies the loaded list into it, and protected skill calls and results are injected immediately after the memo, or at the same context anchor when there is no memo. Open **DCP Skills** (`/dcp-tui-skills`) to inspect the current session's loaded list and which skills are being injected as protected context.
@@ -50,15 +51,15 @@ The native `skill` tool loads skills through OpenCode. A successful load marks t
 
 The agent writes summaries and calls compression tools. HyperDCP supplies guidance and nudges as context grows; a nudge is not itself a compression operation.
 
-By default, the agent can request compression without a manual trigger, subject to OpenCode permissions. To require an explicit trigger, use `/dcp manual on`, then `/dcp compress` when you want a maintenance pass. Manual mode can also be set in configuration.
+By default, the agent can request compression without a manual trigger, subject to OpenCode permissions. To require an explicit trigger, use `/dcp manual on`, then `/dcp compress` when you want a housekeeping pass. Manual mode can also be set in configuration.
 
 **Autotoggle** is a separate control. `/dcp autotoggle on` allows the agent to switch an existing block's summary version, including version `0` (cull). It is not a prerequisite for creating a block, and you do not need it to switch versions yourself with `/dcp toggle`.
 
 ### Housekeeping transactions
 
-The agent's context-maintenance edits are transactional. Agents are allowed to call context modifying tools only in housekeeping mode. Compression, memo edits, expansions, and summary changes accumulate in a draft.
+The agent's context-maintenance edits are transactional. The agent enters housekeeping mode, applies compression and other context edits to a draft, and commits the resulting changes when it successfully leaves housekeeping. Until then, draft block and memo changes are not reflected in the committed context.
 
-Primary purpose of this transactional mechanism is protect cached tokens, where model requests are required to share exactly equal preceding history events to utilize cache read (prefix-based KV caching).
+The primary purpose of this transactional design is to preserve prefix-based KV cache reuse. By committing context modifications together rather than incrementally, HyperDCP reduces changes to the preceding conversation history between model requests, helping maintain stable cacheable prefixes.
 
 Ordinary tools are blocked during housekeeping by default. This restriction keeps the housekeeping section focused, so the agen't doesn't drift into task work before leaving the transaction. (configurable via [`housekeeping.allowedTools`](docs/context-reference.md#configuration); OpenCode permissions still apply).
 
@@ -72,12 +73,18 @@ The agent has the same controls you do in the housekeeping mode, so context mana
 
 ## Installation
 
-Install from official npm respository:
+Install from the npm registry:
 
 OpenCode v1:
-    ```sh
-    opencode plugin @architectural-composition/opencode-hyperdcp
-    ```
+```sh
+opencode plugin @architectural-composition/opencode-hyperdcp@latest
+```
+
+OpenCode v2:
+```sh
+opencode plugin add  @architectural-composition/opencode-hyperdcp@latest
+```
+
 In an active session, open the command palette (`ctrl+p`) and look for **DCP Blocks**, **DCP Messages**, **DCP Memo**, and **DCP Skills**. These pages confirm the TUI plugin is registered; `/dcp` provides the server command entry point.
 
 HyperDCP's own settings belong in a separate [`dcp.jsonc` file](docs/context-reference.md#configuration).
@@ -86,7 +93,7 @@ HyperDCP's own settings belong in a separate [`dcp.jsonc` file](docs/context-ref
 
 Use an installed OpenCode session with a completed investigation or other finished conversation worth summarizing.
 
-1. Use context by reading some files (The default rejects ranges smaller than 2,000 tokens.)
+1. Read a few files to build up context. (Compression requires at least 2,000 tokens by default.)
 ```txt
 Read /path/to/file1 and /path/to/file2
 ```
@@ -98,17 +105,17 @@ Read /path/to/file1 and /path/to/file2
 
 2. Request a compression pass:
 
-   ```text
-   compress; keep the summary of read files
-   ```
+```text
+compress; keep the summary of read files
+```
 
-    The command invokes the agent, which enters housekeeping, selects completed ranges, writes summaries, and commits the maintenance pass. Wait for it to finish. If there is no eligible completed range of sufficient size, continue reading to increase context usage.
+The command invokes the agent, which enters housekeeping, selects completed ranges, writes summaries, and commits the housekeeping pass. Wait for it to finish. If there is no eligible completed range of sufficient size, continue reading to increase context usage.
 
 3. Open **DCP Blocks** from the command palette (`/dcp-tui-blocks`). You will see a block created by the pass. Click the entry to read its summary.
 
 4. Press **e** to open the block's active summary in your text editor (`$VISUAL`, then `$EDITOR`, then `vi`). Add a line and save and exit. The saved text becomes a new active version.
 
-5. You will see the two versions of summaries. Click the tab to compare older and current version. The `*` marker denotes the active version. Press **Esc** to return.
+5. The block now has two summary versions. Click the tab to compare older and current version. The `*` marker denotes the active version. Press **Esc** to return.
 
 6. Ask the agent to recall the precise wording of the former prompt and see if the agent calls `recall_compressed` to retrieve older messages.
 
@@ -175,39 +182,6 @@ The sidebar and pages share a session-scoped cache. Conversation updates are fet
     - rewrite or switch a summary version,
     - protect messages you must keep, or cull blocks you no longer need.
 
-The plugin ships alongside server-side commands (`/dcp ...`) and AI tools (search & retrieve of compressed messages) for finer-grained control.
-
-On v2, informational command output and message-style compression notifications are queued without waking the agent just to display them; immediate transcript display is not guaranteed. `/dcp compress` and `/dcp rewrite` deliberately invoke the agent. Toast notifications use the TUI connection.
-
-For example, to allow a specific read-only tool during housekeeping, add this to the DCP configuration:
-
-```json
-{
-    "housekeeping": {
-        "allowedTools": ["read"]
-    }
-}
-```
-
-Compression protection is configured separately from command protection:
-
-```json
-{
-    "compress": {
-        "protectSubagent": "metadata",
-        "protectedTools": ["read"]
-    }
-}
-```
-
-`compress.protectSubagent` accepts `none`, `metadata`, or `full` and defaults to `metadata`. `compress.protectedTools` protects configured tool outputs during compression; `task` and `subagent` outputs are not appended through this generic list.
-
-- `none` leaves subagent messages subject to ordinary compression.
-- `metadata` retains every running execution, plus terminal executions whose termination message is covered by the last summary block projected in conversation order. Records appear after protected skills and include the calling reference, child session, status, title, steering references, and a result reference for completed executions.
-- `full` also retains that execution's delivered report, without fetching a later answer from the child session.
-
-Steering a running child adds to its execution entry; resuming after termination creates a separate entry. Canceled and failed executions follow the same coverage rule as completed executions, but omit the result reference. Command protection defaults are independent of these settings.
-
 ## Configuration
 
 DCP settings live in `dcp.jsonc`. For example, to allow a specific read-only tool during housekeeping:
@@ -241,8 +215,7 @@ See the [configuration reference](docs/context-reference.md#configuration) for a
 
 ## Notes
 
-- On OpenCode v1, manual block edits, memo edits, and summary-version toggles trigger a user message. On v2, server-side informational command (such as /dcp stats) output and message-style compression notifications may be queued rather than appearing immediately in the transcript. `/dcp compress` and `/dcp rewrite` deliberately invoke the agent. See [host behavior and known issues](docs/context-reference.md#host-behavior-and-known-issues).
-- Screenshots are generated by the PTY-driven capture harness in `scripts/` (see `scripts/README.md`).
+- On OpenCode v1, manual block edits, memo edits, and summary-version toggles trigger a user message.
 
 ## Reference
 
@@ -253,7 +226,6 @@ See the [configuration reference](docs/context-reference.md#configuration) for a
 
 ## Project
 
-HyperDCP is a fork of [opencode-dynamic-context-pruning](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning). See [CHANGELOG.md](CHANGELOG.md) for release details, [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for host-specific caveats, and [CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
+HyperDCP is a fork of [opencode-dynamic-context-pruning](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning). See [CHANGELOG.md](CHANGELOG.md) for release details, [KNOWN-ISSUES.md](KNOWN-ISSUES.md) for caveats, and [CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
 
 Report reproducible problems in the [issue tracker](https://github.com/yuriha-chan/OpenCode-HyperDCP/issues). Licensed under [AGPL-3.0-or-later](LICENSE).
-
